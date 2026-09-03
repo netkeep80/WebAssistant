@@ -1,0 +1,15 @@
+[Unit]
+Description=WebAssistant local service
+After=network.target
+
+[Service]
+Type=simple
+User=webassist
+Group=webassist
+WorkingDirectory=/opt/webassist
+ExecStart=/opt/webassist/WebAssistant
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
