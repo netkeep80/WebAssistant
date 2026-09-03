@@ -122,6 +122,14 @@ public sealed class SystemServiceProductTests
         Assert.Contains("sc.exe create", install, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("start= auto", install, StringComparison.OrdinalIgnoreCase);
 
+        var installBatText = File.ReadAllText(installBatch);
+        Assert.Contains("%~dp0", installBatText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("..\\..\\artifacts\\windows-x64", installBatText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("app\\WebAssistant.exe", installBatText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("if not exist", installBatText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("install.ps1", installBatText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("%*", installBatText, StringComparison.Ordinal);
+
         var uninstall = File.ReadAllText(uninstallScript);
         Assert.Contains("sc.exe delete", uninstall, StringComparison.OrdinalIgnoreCase);
     }
