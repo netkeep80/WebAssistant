@@ -1,8 +1,6 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$PackageDirectory,
-    [Parameter(Mandatory = $true)]
     [string]$InstallDirectory,
     [ValidateRange(1024, 65535)]
     [int]$Port = 17654
@@ -11,9 +9,12 @@ param(
 $ErrorActionPreference = "Stop"
 $serviceName = "WebAssistant"
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
-$packageBatch = Join-Path $repositoryRoot "webassist/build/windows/package.bat"
-$installScript = Join-Path $PackageDirectory "install.ps1"
-$uninstallScript = Join-Path $PackageDirectory "uninstall.ps1"
+$productRoot = Join-Path $repositoryRoot "webassist"
+$packageBatch = Join-Path $productRoot "build/windows/package.bat"
+$sourceInstallBatch = Join-Path $productRoot "install/windows/install.bat"
+$packageDirectory = Join-Path $productRoot "artifacts/windows-x64"
+$installScript = Join-Path $packageDirectory "install.ps1"
+$uninstallScript = Join-Path $packageDirectory "uninstall.ps1"
 $logDirectory = Join-Path $env:ProgramData "WebAssistant\logs"
 $uninstalled = $false
 
@@ -66,25 +67,32 @@ function Wait-NoListener {
 }
 
 if (-not (Test-Path $packageBatch)) { throw "Отсутствует package.bat: $packageBatch" }
+if (-not (Test-Path $sourceInstallBatch)) { throw "Отсутствует source-tree install.bat: $sourceInstallBatch" }
 
 $originalLocation = Get-Location
 try {
     Set-Location $env:RUNNER_TEMP
-    & $packageBatch $PackageDirectory
-    if ($LASTEXITCODE -ne 0) { throw "package.bat завершился с кодом $LASTEXITCODE." }
+    & $packageBatch
+    if ($LASTEXITCODE -ne 0) { throw "package.bat без аргументов завершился с кодом $LASTEXITCODE." }
 }
 finally {
     Set-Location $originalLocation
 }
 
-if (-not (Test-Path $installScript)) { throw "В package отсутствует install.ps1." }
-if (-not (Test-Path $uninstallScript)) { throw "В package отсутствует uninstall.ps1." }
+if (-not (Test-Path (Join-Path $packageDirectory "app/WebAssistant.exe"))) {
+    throw "Canonical Windows package не содержит app/WebAssistant.exe."
+}
+if (-not (Test-Path $installScript)) { throw "В canonical package отсутствует install.ps1." }
+if (-not (Test-Path $uninstallScript)) { throw "В canonical package отсутствует uninstall.ps1." }
 if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
     throw "На контрольной машине уже зарегистрирована служба WebAssistant."
 }
 
 try {
-    & $installScript -InstallDirectory $InstallDirectory -Port $Port
+    & $sourceInstallBatch -InstallDirectory $InstallDirectory -Port $Port
+    if ($LASTEXITCODE -ne 0) {
+        throw "Source-tree install.bat завершился с кодом $LASTEXITCODE."
+    }
 
     $service = Get-Service -Name $serviceName
     if ($service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Running) {
@@ -137,7 +145,7 @@ try {
     if (-not (Test-Path $logDirectory -PathType Container)) { throw "Uninstall не должен удалять журналы по умолчанию." }
     Wait-NoListener -ExpectedPort $Port
 
-    Write-Host "windows_service_acceptance=PASS"
+    Write-Host "windows_source_tree_service_acceptance=PASS"
 }
 finally {
     if (-not $uninstalled) {
