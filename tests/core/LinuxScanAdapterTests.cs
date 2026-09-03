@@ -3,6 +3,8 @@ using NAPS2.Scan;
 using WebAssistant.Scanning;
 using Xunit;
 
+#pragma warning disable CA2252
+
 namespace WebAssistant.CoreTests;
 
 public sealed class LinuxScanAdapterTests
@@ -108,3 +110,5 @@ public sealed class LinuxScanAdapterTests
         throw new DirectoryNotFoundException("Не найден корень репозитория WebAssistant.");
     }
 }
+
+#pragma warning restore CA2252
