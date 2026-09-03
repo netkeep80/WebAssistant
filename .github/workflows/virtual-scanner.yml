@@ -1,20 +1,7 @@
 name: virtual scanner
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - '.gitattributes'
-      - 'tests/virtual-scanner/**'
-      - 'tests/core/LinuxVirtualScanAdapterTests.cs'
-      - 'tests/core/WindowsScanAdapterTests.cs'
-      - 'tests/core/PlatformEndToEndTests.cs'
-      - 'tests/core/VirtualScannerWorkflowTests.cs'
-      - 'webassist/vendor/**'
-      - 'webassist/NuGet.Config'
-      - 'webassist/src/WebAssistant/Scanning/**'
-      - 'webassist/src/WebAssistant/WebAssistant.csproj'
-      - '.github/workflows/virtual-scanner.yml'
+  workflow_call:
   push:
     branches: [main]
     paths:
