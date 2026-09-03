@@ -37,13 +37,11 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Exercise real Windows Service lifecycle
+      - name: Exercise source-tree install and real Windows Service lifecycle
         shell: pwsh
         run: |
-          $packageDirectory = Join-Path $env:RUNNER_TEMP 'webassistant-package'
           $installDirectory = Join-Path $env:RUNNER_TEMP 'webassistant-installed'
           .\tests\windows-service\run-service-acceptance.ps1 `
-              -PackageDirectory $packageDirectory `
               -InstallDirectory $installDirectory `
               -Port 17654
 
@@ -59,4 +57,8 @@ jobs:
           $installDirectory = Join-Path $env:RUNNER_TEMP 'webassistant-installed'
           if (Test-Path $installDirectory) {
               Remove-Item $installDirectory -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          $packageDirectory = Join-Path $env:GITHUB_WORKSPACE 'webassist\artifacts\windows-x64'
+          if (Test-Path $packageDirectory) {
+              Remove-Item $packageDirectory -Recurse -Force -ErrorAction SilentlyContinue
           }
