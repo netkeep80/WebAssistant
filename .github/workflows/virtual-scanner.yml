@@ -4,6 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
+      - '.gitattributes'
       - 'tests/virtual-scanner/**'
       - 'tests/core/LinuxVirtualScanAdapterTests.cs'
       - 'tests/core/WindowsScanAdapterTests.cs'
@@ -17,6 +18,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '.gitattributes'
       - 'tests/virtual-scanner/**'
       - 'tests/core/LinuxVirtualScanAdapterTests.cs'
       - 'tests/core/WindowsScanAdapterTests.cs'
