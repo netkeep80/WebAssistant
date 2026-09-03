@@ -4,6 +4,7 @@ namespace WebAssistant.Runtime;
 
 internal sealed class WebAssistantRuntimeOptions
 {
+    // Policy probe: ordinary product-only changes must not require a governance bypass.
     internal const int DefaultPort = 17654;
 
     private WebAssistantRuntimeOptions(
