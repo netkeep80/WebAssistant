@@ -13,3 +13,11 @@ Runtime configuration загружается из JSON. CORS по умолчан
 Текущая accepted baseline pair:
 - [`contracts/webassistant-contract-v0.1.json`](contracts/webassistant-contract-v0.1.json)
 - [`contracts/webassistant-conformance-v0.1.json`](contracts/webassistant-conformance-v0.1.json)
+
+## Repository governance
+
+Repository policy задаётся в [`repo-policy.json`](repo-policy.json) и исполняется `repo-guard` в blocking mode. Accepted contract/conformance pair, обязательные repository paths и автономность `webassist/` являются частью этой исполняемой границы.
+
+Каждый обычный PR объявляет `ChangeIntent`. Канонический блок находится в [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md); Issue form — в [`.github/ISSUE_TEMPLATE/change-intent.yml`](.github/ISSUE_TEMPLATE/change-intent.yml). Минимальные обязательные поля intent: `change_type`, `scope` и `anchors.affects`; budgets, `must_touch`, `must_not_touch` и `expected_effects` уточняют исполняемую форму изменения.
+
+Изменение governance paths требует отдельного `GovernanceGrant` в связанной Issue. Grant в PR не считается доверенным источником. Broad root policy relaxation не является штатным способом разработки.

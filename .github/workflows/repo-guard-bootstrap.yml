@@ -1,0 +1,26 @@
+name: repo-guard bootstrap
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-head-policy:
+    name: repo-guard bootstrap
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate head policy and repository state
+        uses: netkeep80/repo-guard@063169d658b2915392f42544fed260d07380a4cd
+        with:
+          mode: check-diff
+          enforcement: blocking
+          base: HEAD
+          head: HEAD

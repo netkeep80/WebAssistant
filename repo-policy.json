@@ -1,0 +1,125 @@
+{
+  "policy_format_version": "0.3.0",
+  "repository_kind": "application",
+  "enforcement": {
+    "mode": "blocking"
+  },
+  "integration": {
+    "templates": [
+      {
+        "id": "pull-request-template",
+        "kind": "markdown",
+        "path": ".github/PULL_REQUEST_TEMPLATE.md",
+        "requires_change_intent_block": true,
+        "required_block_kind": "repo-guard-yaml",
+        "required_change_intent_fields": ["change_type", "scope", "anchors.affects"]
+      },
+      {
+        "id": "change-intent-issue-form",
+        "kind": "github_issue_form",
+        "path": ".github/ISSUE_TEMPLATE/change-intent.yml",
+        "requires_change_intent_block": true,
+        "optional": true,
+        "required_block_kind": "repo-guard-yaml",
+        "required_change_intent_fields": ["change_type", "scope", "anchors.affects"]
+      }
+    ],
+    "docs": [
+      {
+        "id": "readme-governance",
+        "kind": "markdown",
+        "path": "README.md",
+        "must_mention": ["repo-guard", "ChangeIntent", "GovernanceGrant", "webassist"],
+        "must_reference_files": [
+          "repo-policy.json",
+          ".github/PULL_REQUEST_TEMPLATE.md",
+          ".github/ISSUE_TEMPLATE/change-intent.yml",
+          "contracts/webassistant-contract-v0.1.json",
+          "contracts/webassistant-conformance-v0.1.json",
+          "webassist/README.md"
+        ],
+        "must_mention_change_intent_fields": ["change_type", "scope", "anchors.affects"]
+      }
+    ]
+  },
+  "contract_conformance": {
+    "current": {
+      "contract": {
+        "path": "contracts/webassistant-contract-v0.1.json",
+        "format": "json"
+      },
+      "conformance": {
+        "path": "contracts/webassistant-conformance-v0.1.json",
+        "format": "json"
+      }
+    },
+    "pair_fields": {
+      "contract_id": "/schema",
+      "conformance_contract_id": "/contract",
+      "contract_conformance_path": "/conformanceCorpus",
+      "contract_status": "/status",
+      "conformance_status": "/status",
+      "contract_accepted": "/accepted",
+      "conformance_accepted": "/accepted"
+    },
+    "accepted_state": {
+      "status": "accepted",
+      "accepted": true
+    },
+    "required_paths": [
+      {
+        "document": "current.conformance",
+        "pointer": "/requiredRepositoryPaths",
+        "projection": "array_items"
+      }
+    ],
+    "cochange": ["current.contract", "current.conformance"],
+    "control_paths": [
+      "contracts/webassistant-contract-v*.json",
+      "contracts/webassistant-conformance-v*.json"
+    ]
+  },
+  "paths": {
+    "forbidden": ["*.bak", "*.tmp", "*.orig"],
+    "canonical_docs": ["README.md", "webassist/README.md"],
+    "governance_paths": [
+      "repo-policy.json",
+      "contracts/**",
+      ".github/workflows/**",
+      ".github/PULL_REQUEST_TEMPLATE.md",
+      ".github/ISSUE_TEMPLATE/**"
+    ],
+    "operational_paths": []
+  },
+  "diff_rules": {
+    "max_new_docs": 3,
+    "max_new_files": 20,
+    "max_net_added_lines": 2500
+  },
+  "content_rules": [
+    {
+      "id": "standalone-product-no-parent-governance-references",
+      "glob": "webassist/**",
+      "mode": "added_lines",
+      "forbid_regex": [
+        "netkeep80/WebAssistant",
+        "repo-policy\\.json",
+        "\\.github/workflows/",
+        "docs/superpowers/",
+        "contracts/webassistant-"
+      ]
+    },
+    {
+      "id": "no-legacy-or-environment-identities",
+      "glob": "**",
+      "mode": "added_lines",
+      "forbid_regex": [
+        "ScannerAgent",
+        "tmk5scan",
+        "Triumf",
+        "depfin\\.nnov\\.ru"
+      ]
+    }
+  ],
+  "cochange_rules": []
+}
