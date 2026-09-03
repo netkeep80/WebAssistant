@@ -61,7 +61,6 @@
           "repo-policy.json",
           ".github/PULL_REQUEST_TEMPLATE.md",
           ".github/ISSUE_TEMPLATE/change-intent.yml",
-          ".github/workflows/repo-guard.yml",
           "contracts/webassistant-contract-v0.1.json",
           "contracts/webassistant-conformance-v0.1.json",
           "webassist/README.md"
