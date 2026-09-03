@@ -60,6 +60,27 @@ build\windows\package.bat
 
 По умолчанию пакеты создаются в `artifacts/` внутри product root.
 
+## GitLab CI
+
+В корне продукта находится самостоятельный `.gitlab-ci.yml`. Он использует те же canonical package entrypoints, что и ручная сборка, и не требует внешних include-файлов.
+
+Windows job требует переменную проекта/группы:
+
+```text
+WEBASSISTANT_WINDOWS_RUNNER_TAG
+```
+
+Её значение должно совпадать с tag доступного Windows runner. Сам tag в публичной конфигурации не фиксируется.
+
+Package jobs выполняют:
+
+```text
+Windows: build\windows\package.bat artifacts\windows-x64
+Linux:   build/linux/package.sh artifacts/linux-x64
+```
+
+Результаты публикуются как GitLab artifacts из `artifacts/windows-x64/` и `artifacts/linux-x64/`.
+
 ## Установка
 
 После создания package запускайте installer из package directory с административными правами.
