@@ -4,6 +4,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
+      - '.gitattributes'
+      - 'webassist/.gitattributes'
       - 'tests/linux-systemd/**'
       - 'tests/core/SystemServiceProductTests.cs'
       - 'webassist/build/linux/**'
@@ -15,6 +17,8 @@ on:
   push:
     branches: [main]
     paths:
+      - '.gitattributes'
+      - 'webassist/.gitattributes'
       - 'tests/linux-systemd/**'
       - 'tests/core/SystemServiceProductTests.cs'
       - 'webassist/build/linux/**'
