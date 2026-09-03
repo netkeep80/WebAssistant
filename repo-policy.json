@@ -148,5 +148,17 @@
       ]
     }
   ],
-  "cochange_rules": []
+  "cochange_rules": [
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Program.cs",
+        "webassist/src/WebAssistant/Http/ApiVersion.cs",
+        "webassist/src/WebAssistant/Http/ScannerEndpointHandlers.cs",
+        "webassist/src/WebAssistant/Http/ScanCoordinator.cs"
+      ],
+      "must_change_any": [
+        "webassist/docs/api.md"
+      ]
+    }
+  ]
 }
