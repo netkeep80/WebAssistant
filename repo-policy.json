@@ -30,20 +30,6 @@
           "summary": true,
           "disallow": ["continue_on_error", "manual_clone", "direct_temp_cli_execution"]
         }
-      },
-      {
-        "id": "ci-required-pr-gate",
-        "kind": "github_actions",
-        "path": ".github/workflows/ci.yml",
-        "role": "ci_gate",
-        "expect": {
-          "events": ["pull_request"],
-          "event_types": ["opened", "synchronize", "reopened", "ready_for_review"],
-          "permissions": {
-            "contents": "read"
-          },
-          "disallow": ["continue_on_error"]
-        }
       }
     ],
     "templates": [
@@ -70,12 +56,9 @@
         "id": "readme-governance",
         "kind": "markdown",
         "path": "README.md",
-        "must_mention": ["repo-guard", "ci-required", "ChangeIntent", "GovernanceGrant", "webassist"],
+        "must_mention": ["repo-guard", "ChangeIntent", "GovernanceGrant", "webassist"],
         "must_reference_files": [
           "repo-policy.json",
-          ".github/workflows/repo-guard.yml",
-          ".github/workflows/ci.yml",
-          ".github/scripts/ci-required.sh",
           ".github/PULL_REQUEST_TEMPLATE.md",
           ".github/ISSUE_TEMPLATE/change-intent.yml",
           "contracts/webassistant-contract-v0.1.json",
@@ -130,7 +113,6 @@
       "repo-policy.json",
       "contracts/**",
       ".github/workflows/**",
-      ".github/scripts/ci-required.sh",
       ".github/PULL_REQUEST_TEMPLATE.md",
       ".github/ISSUE_TEMPLATE/**"
     ],

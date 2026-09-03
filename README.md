@@ -18,11 +18,7 @@ Runtime configuration загружается из JSON. CORS по умолчан
 
 Repository policy задаётся в [`repo-policy.json`](repo-policy.json) и исполняется `repo-guard` в blocking mode. Accepted contract/conformance pair, обязательные repository paths и автономность `webassist/` являются частью этой исполняемой границы.
 
-Permanent governance check находится в [`.github/workflows/repo-guard.yml`](.github/workflows/repo-guard.yml). Workflow запускает exact-pinned `netkeep80/repo-guard@063169d658b2915392f42544fed260d07380a4cd` в `mode: check-pr` и `enforcement: blocking`; governance failure или cancelled run не являются допустимым merge-ready состоянием.
-
-Product CI PR orchestration находится в [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Его стабильный внешний check называется `ci-required`: он собирает результаты обязательных reusable product suites и завершается success только при fail-closed verdict. Таблица допустимых `(required, result)` состояний принадлежит repository-owned evaluator [`.github/scripts/ci-required.sh`](.github/scripts/ci-required.sh); `failure` и `cancelled` никогда не преобразуются в успешный gate, а `skipped` допустим только для явно необязательной suite.
-
-`ci-required` и `repo-guard` — разные trust boundaries. Product aggregator не вызывает и не агрегирует `repo-guard`. Branch protection/ruleset для `main` должен требовать оба check отдельно и запрещать ordinary direct push. Пока repository settings ещё не включены, действует fixed-head discipline: fresh `main`, GREEN applicable checks, `behind_by=0`, exact expected head SHA и post-merge reread.
+Permanent merge-readiness check находится в [`.github/workflows/repo-guard.yml`](.github/workflows/repo-guard.yml). Workflow запускает exact-pinned `netkeep80/repo-guard@063169d658b2915392f42544fed260d07380a4cd` в `mode: check-pr` и `enforcement: blocking`; governance failure или cancelled run не являются допустимым merge-ready состоянием.
 
 Каждый обычный PR объявляет `ChangeIntent`. Канонический блок находится в [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md); Issue form — в [`.github/ISSUE_TEMPLATE/change-intent.yml`](.github/ISSUE_TEMPLATE/change-intent.yml). Минимальные обязательные поля intent: `change_type`, `scope` и `anchors.affects`; budgets, `must_touch`, `must_not_touch` и `expected_effects` уточняют исполняемую форму изменения.
 

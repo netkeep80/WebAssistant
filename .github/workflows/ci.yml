@@ -63,27 +63,10 @@ jobs:
       - virtual-scanner
     runs-on: ubuntu-24.04
     steps:
-      - name: Require requirements policy
+      - name: Evaluate fail-closed product CI verdict
         shell: bash
         env:
           REQUIREMENTS_RESULT: ${{ needs.requirements.result }}
-        run: |
-          set -euo pipefail
-          if [[ "$REQUIREMENTS_RESULT" != 'success' ]]; then
-            echo "ci-required: requirements job result=$REQUIREMENTS_RESULT" >&2
-            exit 1
-          fi
-
-      - name: Checkout gate evaluator
-        uses: actions/checkout@v6
-
-      - name: Self-test gate evaluator
-        shell: bash
-        run: bash .github/scripts/ci-required.sh --self-test
-
-      - name: Evaluate required product CI
-        shell: bash
-        env:
           CORE_REQUIRED: ${{ needs.requirements.outputs.core }}
           CORE_RESULT: ${{ needs.core.result }}
           LINUX_SYSTEMD_REQUIRED: ${{ needs.requirements.outputs.linux_systemd }}
@@ -92,4 +75,82 @@ jobs:
           WINDOWS_SERVICE_RESULT: ${{ needs.windows-service.result }}
           VIRTUAL_SCANNER_REQUIRED: ${{ needs.requirements.outputs.virtual_scanner }}
           VIRTUAL_SCANNER_RESULT: ${{ needs.virtual-scanner.result }}
-        run: bash .github/scripts/ci-required.sh
+        run: |
+          set -euo pipefail
+
+          check_result() {
+            local name="$1"
+            local required="$2"
+            local result="$3"
+
+            case "$required" in
+              true|false) ;;
+              *)
+                echo "ci-required: invalid requirement flag for $name: $required" >&2
+                return 1
+                ;;
+            esac
+
+            case "$result" in
+              success|skipped|failure|cancelled) ;;
+              *)
+                echo "ci-required: unknown result for $name: $result" >&2
+                return 1
+                ;;
+            esac
+
+            case "$required:$result" in
+              true:success|false:success|false:skipped) return 0 ;;
+              *)
+                echo "ci-required: $name required=$required result=$result" >&2
+                return 1
+                ;;
+            esac
+          }
+
+          assert_case() {
+            local required="$1"
+            local result="$2"
+            local expected="$3"
+            local actual
+
+            if check_result self-test "$required" "$result" >/dev/null 2>&1; then
+              actual=pass
+            else
+              actual=fail
+            fi
+
+            if [[ "$actual" != "$expected" ]]; then
+              echo "ci-required self-test mismatch: required=$required result=$result expected=$expected actual=$actual" >&2
+              exit 1
+            fi
+          }
+
+          assert_case true success pass
+          assert_case true skipped fail
+          assert_case true failure fail
+          assert_case true cancelled fail
+          assert_case false success pass
+          assert_case false skipped pass
+          assert_case false failure fail
+          assert_case false cancelled fail
+          assert_case false unknown fail
+          assert_case invalid success fail
+
+          if [[ "$REQUIREMENTS_RESULT" != 'success' ]]; then
+            echo "ci-required: requirements job result=$REQUIREMENTS_RESULT" >&2
+            exit 1
+          fi
+
+          failures=0
+          check_result core "$CORE_REQUIRED" "$CORE_RESULT" || failures=1
+          check_result linux-systemd "$LINUX_SYSTEMD_REQUIRED" "$LINUX_SYSTEMD_RESULT" || failures=1
+          check_result windows-service "$WINDOWS_SERVICE_REQUIRED" "$WINDOWS_SERVICE_RESULT" || failures=1
+          check_result virtual-scanner "$VIRTUAL_SCANNER_REQUIRED" "$VIRTUAL_SCANNER_RESULT" || failures=1
+
+          if [[ "$failures" -ne 0 ]]; then
+            echo 'ci-required: FAIL' >&2
+            exit 1
+          fi
+
+          echo 'ci-required: PASS'
