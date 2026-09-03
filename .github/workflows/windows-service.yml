@@ -1,15 +1,7 @@
 name: Windows Service acceptance
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - 'tests/windows-service/**'
-      - 'tests/core/SystemServiceProductTests.cs'
-      - 'webassist/build/windows/**'
-      - 'webassist/install/windows/**'
-      - 'webassist/src/WebAssistant/**'
-      - '.github/workflows/windows-service.yml'
+  workflow_call:
   push:
     branches: [main]
     paths:
