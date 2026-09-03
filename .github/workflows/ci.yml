@@ -10,7 +10,7 @@ permissions:
 concurrency:
   group: webassistant-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
-# cancellation-probe: 1
+# cancellation-probe: 2
 
 jobs:
   requirements:
