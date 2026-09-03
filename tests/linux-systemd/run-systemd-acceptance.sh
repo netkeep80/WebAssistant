@@ -2,6 +2,7 @@
 set -euo pipefail
 
 PACKAGE_DIRECTORY="${1:-}"
+PRODUCT_ROOT="${2:-}"
 ALT_IMAGE="${ALT_IMAGE:-registry.altlinux.org/p11/alt:latest}"
 CONTAINER_NAME="webassistant-alt-p11-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 TEST_IMAGE="webassistant-alt-p11-systemd:${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
@@ -10,12 +11,16 @@ LOG_DIR="/var/log/webassist"
 DATA_DIR="/var/lib/webassist"
 
 if [[ -z "$PACKAGE_DIRECTORY" ]]; then
-    echo "Использование: $0 <каталог product package>" >&2
+    echo "Использование: $0 <каталог product package> [product root]" >&2
     exit 2
 fi
 
-repository_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-package_script="$repository_root/webassist/build/linux/package.sh"
+if [[ -z "$PRODUCT_ROOT" ]]; then
+    repository_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+    PRODUCT_ROOT="$repository_root/webassist"
+fi
+PRODUCT_ROOT="$(cd -- "$PRODUCT_ROOT" && pwd)"
+package_script="$PRODUCT_ROOT/build/linux/package.sh"
 
 cleanup() {
     set +e
