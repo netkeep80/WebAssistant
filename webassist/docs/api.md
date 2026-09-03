@@ -4,6 +4,8 @@
 
 Default listener: `http://127.0.0.1:17654`. Listener привязан к loopback.
 
+Все перечисленные machine endpoints относятся к текущему `/v1` baseline.
+
 ## Health
 
 `GET /v1/health`

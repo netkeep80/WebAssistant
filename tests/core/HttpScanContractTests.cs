@@ -12,6 +12,7 @@ public sealed class HttpScanContractTests
 {
     private static readonly byte[] PdfBytes = "%PDF-1.7\n%%EOF"u8.ToArray();
 
+    // Проверка governance co-change для bounded API source.
     [Fact]
     public async Task VersionedHealth_WorksAndUnversionedRoutesDoNotExist()
     {
