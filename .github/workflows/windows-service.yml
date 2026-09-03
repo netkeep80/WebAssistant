@@ -7,6 +7,7 @@ on:
     paths:
       - 'tests/windows-service/**'
       - 'tests/core/SystemServiceProductTests.cs'
+      - 'tests/core/IsolatedExportRootAcceptanceTests.cs'
       - 'webassist/build/windows/**'
       - 'webassist/install/windows/**'
       - 'webassist/src/WebAssistant/**'
@@ -29,13 +30,41 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Exercise source-tree install and real Windows Service lifecycle
+      - name: Create isolated product export root
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $env:GITHUB_WORKSPACE 'webassist'
+          $exportRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-export-root'
+
+          if (Test-Path $exportRoot) {
+              Remove-Item $exportRoot -Recurse -Force
+          }
+          New-Item $exportRoot -ItemType Directory -Force | Out-Null
+          Get-ChildItem -LiteralPath $source -Force | Copy-Item -Destination $exportRoot -Recurse -Force
+
+          $required = @(
+              'WebAssistant.sln',
+              '.gitlab-ci.yml',
+              'README.md',
+              'build/windows/package.bat'
+          )
+          foreach ($relativePath in $required) {
+              if (-not (Test-Path (Join-Path $exportRoot $relativePath))) {
+                  throw "Isolated export root is missing $relativePath"
+              }
+          }
+
+          "WEBASSISTANT_EXPORT_ROOT=$exportRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Exercise isolated-root install and real Windows Service lifecycle
         shell: pwsh
         run: |
           $installDirectory = Join-Path $env:RUNNER_TEMP 'webassistant-installed'
           .\tests\windows-service\run-service-acceptance.ps1 `
               -InstallDirectory $installDirectory `
-              -Port 17654
+              -Port 17654 `
+              -ProductRoot $env:WEBASSISTANT_EXPORT_ROOT
 
       - name: Emergency cleanup
         if: always()
@@ -50,7 +79,12 @@ jobs:
           if (Test-Path $installDirectory) {
               Remove-Item $installDirectory -Recurse -Force -ErrorAction SilentlyContinue
           }
-          $packageDirectory = Join-Path $env:GITHUB_WORKSPACE 'webassist\artifacts\windows-x64'
-          if (Test-Path $packageDirectory) {
-              Remove-Item $packageDirectory -Recurse -Force -ErrorAction SilentlyContinue
+          if ($env:WEBASSISTANT_EXPORT_ROOT) {
+              $packageDirectory = Join-Path $env:WEBASSISTANT_EXPORT_ROOT 'artifacts\windows-x64'
+              if (Test-Path $packageDirectory) {
+                  Remove-Item $packageDirectory -Recurse -Force -ErrorAction SilentlyContinue
+              }
+              if (Test-Path $env:WEBASSISTANT_EXPORT_ROOT) {
+                  Remove-Item $env:WEBASSISTANT_EXPORT_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+              }
           }
