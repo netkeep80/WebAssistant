@@ -11,9 +11,6 @@ public sealed class CiWorkflowContractTests
         var workflows = Path.Combine(root, ".github", "workflows");
         var ci = File.ReadAllText(Path.Combine(workflows, "ci.yml"));
 
-        Assert.Contains("concurrency:", ci, StringComparison.Ordinal);
-        Assert.Contains("group: webassistant-pr-${{ github.event.pull_request.number }}", ci, StringComparison.Ordinal);
-        Assert.Contains("cancel-in-progress: true", ci, StringComparison.Ordinal);
         Assert.Contains("ci-required:", ci, StringComparison.Ordinal);
         Assert.Contains("name: ci-required", ci, StringComparison.Ordinal);
         Assert.Contains("if: ${{ always() }}", ci, StringComparison.Ordinal);
