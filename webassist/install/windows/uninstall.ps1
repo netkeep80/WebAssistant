@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$InstallDirectory = "$env:ProgramFiles\WebAssistant",
     [switch]$PurgeData
