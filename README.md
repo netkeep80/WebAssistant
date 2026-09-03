@@ -18,6 +18,8 @@ Runtime configuration загружается из JSON. CORS по умолчан
 
 Repository policy задаётся в [`repo-policy.json`](repo-policy.json) и исполняется `repo-guard` в blocking mode. Accepted contract/conformance pair, обязательные repository paths и автономность `webassist/` являются частью этой исполняемой границы.
 
+Permanent merge-readiness check находится в [`.github/workflows/repo-guard.yml`](.github/workflows/repo-guard.yml). Workflow запускает exact-pinned `netkeep80/repo-guard@063169d658b2915392f42544fed260d07380a4cd` в `mode: check-pr` и `enforcement: blocking`; governance failure или cancelled run не являются допустимым merge-ready состоянием.
+
 Каждый обычный PR объявляет `ChangeIntent`. Канонический блок находится в [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md); Issue form — в [`.github/ISSUE_TEMPLATE/change-intent.yml`](.github/ISSUE_TEMPLATE/change-intent.yml). Минимальные обязательные поля intent: `change_type`, `scope` и `anchors.affects`; budgets, `must_touch`, `must_not_touch` и `expected_effects` уточняют исполняемую форму изменения.
 
 Изменение governance paths требует отдельного `GovernanceGrant` в связанной Issue. Grant в PR не считается доверенным источником. Broad root policy relaxation не является штатным способом разработки.
