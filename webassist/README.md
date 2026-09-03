@@ -104,3 +104,5 @@ install.bat
 ## Зависимость NAPS2 SDK
 
 Исправленный SDK хранится под отдельной identity `WebAssistant.NAPS2.Sdk` в `vendor/nuget`. Сборка продукта не маскирует его под официальный `NAPS2.Sdk` той же версии. Provenance и способ воспроизводимой пересборки описаны в `vendor/naps2/README.md`.
+
+Temporary policy probe: repo-policy.json
