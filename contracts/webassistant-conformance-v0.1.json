@@ -1,7 +1,7 @@
 {
   "schema": "webassistant-conformance/v0.1",
   "status": "accepted",
-  "accepted": true,
+  "accepted": false,
   "contract": "webassistant-contract/v0.1",
   "evidenceModel": "repository-tests-and-ci",
   "requiredRepositoryPaths": [
