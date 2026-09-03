@@ -9,6 +9,7 @@ on:
       - 'webassist/.gitattributes'
       - 'tests/linux-systemd/**'
       - 'tests/core/SystemServiceProductTests.cs'
+      - 'tests/core/IsolatedExportRootAcceptanceTests.cs'
       - 'webassist/build/linux/**'
       - 'webassist/install/linux/**'
       - 'webassist/src/WebAssistant/**'
@@ -33,14 +34,31 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Exercise real systemd lifecycle in ALT p11
+      - name: Create isolated product export root
+        shell: bash
+        run: |
+          set -euo pipefail
+          export_root="$RUNNER_TEMP/webassistant-linux-export-root"
+          rm -rf -- "$export_root"
+          mkdir -p -- "$export_root"
+          cp -a "$GITHUB_WORKSPACE/webassist/." "$export_root/"
+
+          test -f "$export_root/WebAssistant.sln"
+          test -f "$export_root/.gitlab-ci.yml"
+          test -f "$export_root/README.md"
+          test -x "$export_root/build/linux/package.sh"
+
+          echo "WEBASSISTANT_EXPORT_ROOT=$export_root" >> "$GITHUB_ENV"
+
+      - name: Exercise isolated-root systemd lifecycle in ALT p11
         shell: bash
         env:
           ALT_IMAGE: registry.altlinux.org/p11/alt:latest
         run: |
           set -euo pipefail
           bash tests/linux-systemd/run-systemd-acceptance.sh \
-            "$RUNNER_TEMP/webassistant-linux-package"
+            "$RUNNER_TEMP/webassistant-linux-package" \
+            "$WEBASSISTANT_EXPORT_ROOT"
 
       - name: Emergency cleanup
         if: always()
@@ -51,3 +69,5 @@ jobs:
           [[ -z "$containers" ]] || docker rm -f $containers >/dev/null 2>&1 || true
           images="$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep '^webassistant-alt-p11-systemd:' || true)"
           [[ -z "$images" ]] || docker image rm -f $images >/dev/null 2>&1 || true
+          [[ -z "${WEBASSISTANT_EXPORT_ROOT:-}" ]] || rm -rf -- "$WEBASSISTANT_EXPORT_ROOT"
+          rm -rf -- "$RUNNER_TEMP/webassistant-linux-package"
