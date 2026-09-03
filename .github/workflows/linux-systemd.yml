@@ -1,19 +1,7 @@
 name: ALT Linux systemd acceptance
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - '.gitattributes'
-      - 'webassist/.gitattributes'
-      - 'tests/linux-systemd/**'
-      - 'tests/core/SystemServiceProductTests.cs'
-      - 'webassist/build/linux/**'
-      - 'webassist/install/linux/**'
-      - 'webassist/src/WebAssistant/**'
-      - 'webassist/vendor/**'
-      - 'webassist/NuGet.Config'
-      - '.github/workflows/linux-systemd.yml'
+  workflow_call:
   push:
     branches: [main]
     paths:
