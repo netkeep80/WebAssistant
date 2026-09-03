@@ -67,6 +67,7 @@ if (runtimeOptions.CorsEnabled)
 
 var api = app.MapGroup(ApiVersion.CurrentPrefix);
 
+// Проверка co-change policy; observable HTTP behavior не меняется.
 api.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 api.MapGet("/scanners", async (
     IServiceProvider services,
