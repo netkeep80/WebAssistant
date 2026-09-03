@@ -29,6 +29,11 @@ public sealed class DependencyOwnershipTests
         using var package = File.OpenRead(packagePath);
         var actualSha256 = Convert.ToHexString(SHA256.HashData(package)).ToLowerInvariant();
 
+        if (ExpectedPackageSha256 == "capture-from-first-ci")
+        {
+            Assert.Fail($"Captured fixed SDK SHA-256: {actualSha256}");
+        }
+
         Assert.Equal(ExpectedPackageSha256, actualSha256);
     }
 
@@ -43,8 +48,8 @@ public sealed class DependencyOwnershipTests
             .Where(element => element.Name.LocalName == "PackageReference")
             .ToList();
 
-        var fixedSdkReference = Assert.Single(packageReferences.Where(reference =>
-            string.Equals(reference.Attribute("Include")?.Value, PackageId, StringComparison.Ordinal)));
+        var fixedSdkReference = Assert.Single(packageReferences, reference =>
+            string.Equals(reference.Attribute("Include")?.Value, PackageId, StringComparison.Ordinal));
 
         Assert.Equal(PackageVersion, fixedSdkReference.Attribute("Version")?.Value);
         Assert.DoesNotContain(packageReferences, reference =>
@@ -56,14 +61,16 @@ public sealed class DependencyOwnershipTests
     public void FixedSdkPackageNuspec_MatchesPinnedPackageIdentity()
     {
         using var archive = ZipFile.OpenRead(GetPackagePath());
-        var nuspecEntry = Assert.Single(archive.Entries.Where(entry =>
-            entry.FullName.EndsWith(".nuspec", StringComparison.OrdinalIgnoreCase)));
+        var nuspecEntry = Assert.Single(archive.Entries, entry =>
+            entry.FullName.EndsWith(".nuspec", StringComparison.OrdinalIgnoreCase));
 
         using var nuspecStream = nuspecEntry.Open();
         var nuspec = XDocument.Load(nuspecStream);
-        var metadata = Assert.Single(nuspec.Descendants().Where(element => element.Name.LocalName == "metadata"));
-        var id = Assert.Single(metadata.Elements().Where(element => element.Name.LocalName == "id"));
-        var version = Assert.Single(metadata.Elements().Where(element => element.Name.LocalName == "version"));
+        var metadata = Assert.Single(
+            nuspec.Descendants(),
+            element => element.Name.LocalName == "metadata");
+        var id = Assert.Single(metadata.Elements(), element => element.Name.LocalName == "id");
+        var version = Assert.Single(metadata.Elements(), element => element.Name.LocalName == "version");
 
         Assert.Equal(PackageId, id.Value);
         Assert.Equal(PackageVersion, version.Value);
