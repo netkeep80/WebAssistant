@@ -11,7 +11,7 @@ public sealed class DependencyOwnershipTests
     private const string PackageVersion = "1.3.0-webassistant.1.450cba65";
     private const string PackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.1.450cba65.nupkg";
     private const string UpstreamCommit = "450cba65aaffe6387041050a573051a64cd80fe9";
-    private const string ExpectedPackageSha256 = "capture-from-first-ci";
+    private const string ExpectedPackageSha256 = "de8e718254bc12ee9235e63f9987f657018a6c13529631bd87bed8f318eecd4a";
     private const long MaxPackageBytes = 1024L * 1024L;
 
     [Fact]
@@ -28,11 +28,6 @@ public sealed class DependencyOwnershipTests
 
         using var package = File.OpenRead(packagePath);
         var actualSha256 = Convert.ToHexString(SHA256.HashData(package)).ToLowerInvariant();
-
-        if (ExpectedPackageSha256 == "capture-from-first-ci")
-        {
-            Assert.Fail($"Captured fixed SDK SHA-256: {actualSha256}");
-        }
 
         Assert.Equal(ExpectedPackageSha256, actualSha256);
     }
