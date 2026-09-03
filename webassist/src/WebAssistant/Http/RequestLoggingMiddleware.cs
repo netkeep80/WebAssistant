@@ -2,6 +2,7 @@ using System.Diagnostics;
 
 namespace WebAssistant.Http;
 
+// Проверка exclusion: logging-only change не требует API docs co-change.
 internal sealed class RequestLoggingMiddleware(
     RequestDelegate next,
     ILogger<RequestLoggingMiddleware> logger)
