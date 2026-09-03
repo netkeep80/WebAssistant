@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Xunit;
 
 namespace WebAssistant.CoreTests;
@@ -35,6 +36,82 @@ public sealed class CiWorkflowContractTests
         var repoGuard = File.ReadAllText(Path.Combine(workflows, "repo-guard.yml"));
         Assert.Contains("name: repo-guard", repoGuard, StringComparison.Ordinal);
         Assert.Contains("pull_request:", repoGuard, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CiRequiredEvaluator_IsFailClosedAndAllowsOnlyExplicitOptionalSkip()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var root = FindRepositoryRoot();
+        var evaluatorPath = Path.Combine(root, ".github", "scripts", "ci-required.sh");
+        Assert.True(File.Exists(evaluatorPath), "Отсутствует repository-owned ci-required evaluator.");
+
+        Assert.Equal(0, RunEvaluator(evaluatorPath));
+        Assert.NotEqual(0, RunEvaluator(evaluatorPath, ("CORE_RESULT", "skipped")));
+        Assert.NotEqual(0, RunEvaluator(evaluatorPath, ("CORE_RESULT", "failure")));
+        Assert.NotEqual(0, RunEvaluator(evaluatorPath, ("CORE_RESULT", "cancelled")));
+        Assert.Equal(
+            0,
+            RunEvaluator(
+                evaluatorPath,
+                ("CORE_REQUIRED", "false"),
+                ("CORE_RESULT", "skipped")));
+        Assert.NotEqual(
+            0,
+            RunEvaluator(
+                evaluatorPath,
+                ("CORE_REQUIRED", "false"),
+                ("CORE_RESULT", "failure")));
+        Assert.NotEqual(
+            0,
+            RunEvaluator(
+                evaluatorPath,
+                ("CORE_REQUIRED", "invalid"),
+                ("CORE_RESULT", "success")));
+    }
+
+    private static int RunEvaluator(
+        string evaluatorPath,
+        params (string Name, string Value)[] overrides)
+    {
+        var startInfo = new ProcessStartInfo("bash")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add(evaluatorPath);
+
+        var defaults = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["CORE_REQUIRED"] = "true",
+            ["CORE_RESULT"] = "success",
+            ["LINUX_SYSTEMD_REQUIRED"] = "true",
+            ["LINUX_SYSTEMD_RESULT"] = "success",
+            ["WINDOWS_SERVICE_REQUIRED"] = "true",
+            ["WINDOWS_SERVICE_RESULT"] = "success",
+            ["VIRTUAL_SCANNER_REQUIRED"] = "true",
+            ["VIRTUAL_SCANNER_RESULT"] = "success"
+        };
+
+        foreach (var (name, value) in overrides)
+        {
+            defaults[name] = value;
+        }
+
+        foreach (var (name, value) in defaults)
+        {
+            startInfo.Environment[name] = value;
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Не удалось запустить ci-required evaluator.");
+        process.WaitForExit();
+        return process.ExitCode;
     }
 
     private static void AssertReusableComponent(string workflows, string fileName)
