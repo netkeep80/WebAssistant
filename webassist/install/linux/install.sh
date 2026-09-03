@@ -24,19 +24,37 @@ config_file="$install_dir/appsettings.json"
     exit 1
 }
 
+for command_name in apt-get systemctl groupadd groupdel useradd userdel usermod getent install; do
+    command -v "$command_name" >/dev/null 2>&1 || {
+        echo "Не найдена обязательная системная команда: $command_name" >&2
+        exit 1
+    }
+done
+
+apt-get update
+apt-get install -y libicu74 libgtk+3 libsane sane
+
 if ! getent group webassist >/dev/null 2>&1; then
     groupadd --system webassist
 fi
 if ! id webassist >/dev/null 2>&1; then
-    useradd --system --gid webassist --home-dir "$data_dir" --no-create-home --shell /usr/sbin/nologin webassist
+    nologin_shell="$(command -v nologin || true)"
+    [[ -n "$nologin_shell" ]] || nologin_shell="/sbin/nologin"
+    useradd --system --gid webassist --home-dir "$data_dir" --no-create-home --shell "$nologin_shell" webassist
 fi
+
+for scanner_group in scanner scaner lp; do
+    if getent group "$scanner_group" >/dev/null 2>&1; then
+        usermod -a -G "$scanner_group" webassist
+    fi
+done
 
 systemctl stop webassist.service >/dev/null 2>&1 || true
 
 mkdir -p -- "$install_dir" "$log_dir" "$data_dir"
 rm -rf -- "$install_dir"/*
 cp -a -- "$source_app"/. "$install_dir"/
-chmod +x -- "$install_dir/WebAssistant"
+chmod 0755 -- "$install_dir/WebAssistant"
 
 cat > "$config_file" <<'JSON'
 {
@@ -62,6 +80,12 @@ install -m 0644 -- "$source_service" "$service_unit"
 systemctl daemon-reload
 systemctl enable webassist.service
 systemctl restart webassist.service
+
+if ! systemctl is-active --quiet webassist.service; then
+    systemctl status webassist.service --no-pager >&2 || true
+    journalctl -u webassist.service -n 100 --no-pager >&2 || true
+    exit 1
+fi
 
 echo "WebAssistant установлен в $install_dir"
 echo "Настройки: $config_file"

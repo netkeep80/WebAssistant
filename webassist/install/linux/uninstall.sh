@@ -17,12 +17,14 @@ fi
 systemctl disable --now webassist.service >/dev/null 2>&1 || true
 rm -f -- /etc/systemd/system/webassist.service
 systemctl daemon-reload
+systemctl reset-failed webassist.service >/dev/null 2>&1 || true
 rm -rf -- /opt/webassist
+
+userdel webassist >/dev/null 2>&1 || true
+groupdel webassist >/dev/null 2>&1 || true
 
 if [[ "$purge_data" == true ]]; then
     rm -rf -- /var/log/webassist /var/lib/webassist
-    userdel webassist >/dev/null 2>&1 || true
-    groupdel webassist >/dev/null 2>&1 || true
     echo "WebAssistant удалён вместе с журналами и данными."
 else
     echo "WebAssistant удалён. /var/log/webassist и /var/lib/webassist сохранены."

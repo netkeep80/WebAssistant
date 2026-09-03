@@ -3,13 +3,15 @@ Description=WebAssistant local service
 After=network.target
 
 [Service]
-Type=simple
+Type=notify
 User=webassist
 Group=webassist
 WorkingDirectory=/opt/webassist
 ExecStart=/opt/webassist/WebAssistant
 Restart=on-failure
 RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

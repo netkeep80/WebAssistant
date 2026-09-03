@@ -1,0 +1,62 @@
+name: Windows Service acceptance
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'tests/windows-service/**'
+      - 'tests/core/SystemServiceProductTests.cs'
+      - 'webassist/build/windows/**'
+      - 'webassist/install/windows/**'
+      - 'webassist/src/WebAssistant/**'
+      - '.github/workflows/windows-service.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tests/windows-service/**'
+      - 'tests/core/SystemServiceProductTests.cs'
+      - 'webassist/build/windows/**'
+      - 'webassist/install/windows/**'
+      - 'webassist/src/WebAssistant/**'
+      - '.github/workflows/windows-service.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-service-acceptance:
+    name: Windows Service lifecycle
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Exercise real Windows Service lifecycle
+        shell: pwsh
+        run: |
+          $packageDirectory = Join-Path $env:RUNNER_TEMP 'webassistant-package'
+          $installDirectory = Join-Path $env:RUNNER_TEMP 'webassistant-installed'
+          .\tests\windows-service\run-service-acceptance.ps1 `
+              -PackageDirectory $packageDirectory `
+              -InstallDirectory $installDirectory `
+              -Port 17654
+
+      - name: Emergency cleanup
+        if: always()
+        shell: pwsh
+        run: |
+          $service = Get-Service -Name 'WebAssistant' -ErrorAction SilentlyContinue
+          if ($service) {
+              sc.exe stop WebAssistant 2>$null | Out-Null
+              sc.exe delete WebAssistant 2>$null | Out-Null
+          }
+          $installDirectory = Join-Path $env:RUNNER_TEMP 'webassistant-installed'
+          if (Test-Path $installDirectory) {
+              Remove-Item $installDirectory -Recurse -Force -ErrorAction SilentlyContinue
+          }
