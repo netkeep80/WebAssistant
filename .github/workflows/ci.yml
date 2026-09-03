@@ -1,0 +1,95 @@
+name: ci
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  requirements:
+    name: CI requirements
+    runs-on: ubuntu-24.04
+    outputs:
+      core: ${{ steps.required.outputs.core }}
+      linux_systemd: ${{ steps.required.outputs.linux_systemd }}
+      windows_service: ${{ steps.required.outputs.windows_service }}
+      virtual_scanner: ${{ steps.required.outputs.virtual_scanner }}
+    steps:
+      - name: Declare conservative baseline requirements
+        id: required
+        shell: bash
+        run: |
+          {
+            echo 'core=true'
+            echo 'linux_systemd=true'
+            echo 'windows_service=true'
+            echo 'virtual_scanner=true'
+          } >> "$GITHUB_OUTPUT"
+
+  core:
+    name: core
+    needs: requirements
+    if: ${{ needs.requirements.outputs.core == 'true' }}
+    uses: ./.github/workflows/core.yml
+
+  linux-systemd:
+    name: ALT Linux systemd acceptance
+    needs: requirements
+    if: ${{ needs.requirements.outputs.linux_systemd == 'true' }}
+    uses: ./.github/workflows/linux-systemd.yml
+
+  windows-service:
+    name: Windows Service acceptance
+    needs: requirements
+    if: ${{ needs.requirements.outputs.windows_service == 'true' }}
+    uses: ./.github/workflows/windows-service.yml
+
+  virtual-scanner:
+    name: virtual scanner
+    needs: requirements
+    if: ${{ needs.requirements.outputs.virtual_scanner == 'true' }}
+    uses: ./.github/workflows/virtual-scanner.yml
+
+  ci-required:
+    name: ci-required
+    if: ${{ always() }}
+    needs:
+      - requirements
+      - core
+      - linux-systemd
+      - windows-service
+      - virtual-scanner
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require requirements policy
+        shell: bash
+        env:
+          REQUIREMENTS_RESULT: ${{ needs.requirements.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$REQUIREMENTS_RESULT" != 'success' ]]; then
+            echo "ci-required: requirements job result=$REQUIREMENTS_RESULT" >&2
+            exit 1
+          fi
+
+      - name: Checkout gate evaluator
+        uses: actions/checkout@v6
+
+      - name: Self-test gate evaluator
+        shell: bash
+        run: bash .github/scripts/ci-required.sh --self-test
+
+      - name: Evaluate required product CI
+        shell: bash
+        env:
+          CORE_REQUIRED: ${{ needs.requirements.outputs.core }}
+          CORE_RESULT: ${{ needs.core.result }}
+          LINUX_SYSTEMD_REQUIRED: ${{ needs.requirements.outputs.linux_systemd }}
+          LINUX_SYSTEMD_RESULT: ${{ needs.linux-systemd.result }}
+          WINDOWS_SERVICE_REQUIRED: ${{ needs.requirements.outputs.windows_service }}
+          WINDOWS_SERVICE_RESULT: ${{ needs.windows-service.result }}
+          VIRTUAL_SCANNER_REQUIRED: ${{ needs.requirements.outputs.virtual_scanner }}
+          VIRTUAL_SCANNER_RESULT: ${{ needs.virtual-scanner.result }}
+        run: bash .github/scripts/ci-required.sh
