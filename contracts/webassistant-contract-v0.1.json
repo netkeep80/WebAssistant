@@ -1,7 +1,7 @@
 {
   "schema": "webassistant-contract/v0.1",
   "status": "accepted",
-  "accepted": true,
+  "accepted": false,
   "conformanceCorpus": "contracts/webassistant-conformance-v0.1.json",
   "observableBoundary": "браузер -> локальная machine-wide служба WebAssistant -> capability рабочей станции",
   "languagePolicy": {
