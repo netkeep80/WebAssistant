@@ -3,16 +3,20 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$InstallDirectory,
     [ValidateRange(1024, 65535)]
-    [int]$Port = 17654
+    [int]$Port = 17654,
+    [string]$ProductRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
 $serviceName = "WebAssistant"
-$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
-$productRoot = Join-Path $repositoryRoot "webassist"
-$packageBatch = Join-Path $productRoot "build/windows/package.bat"
-$sourceInstallBatch = Join-Path $productRoot "install/windows/install.bat"
-$packageDirectory = Join-Path $productRoot "artifacts/windows-x64"
+if ([string]::IsNullOrWhiteSpace($ProductRoot)) {
+    $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
+    $ProductRoot = Join-Path $repositoryRoot "webassist"
+}
+$ProductRoot = [IO.Path]::GetFullPath($ProductRoot)
+$packageBatch = Join-Path $ProductRoot "build/windows/package.bat"
+$sourceInstallBatch = Join-Path $ProductRoot "install/windows/install.bat"
+$packageDirectory = Join-Path $ProductRoot "artifacts/windows-x64"
 $installScript = Join-Path $packageDirectory "install.ps1"
 $uninstallScript = Join-Path $packageDirectory "uninstall.ps1"
 $logDirectory = Join-Path $env:ProgramData "WebAssistant\logs"
