@@ -1,0 +1,120 @@
+name: virtual scanner
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'tests/virtual-scanner/**'
+      - 'tests/core/LinuxVirtualScanAdapterTests.cs'
+      - 'tests/core/WindowsScanAdapterTests.cs'
+      - 'tests/core/PlatformEndToEndTests.cs'
+      - 'tests/core/VirtualScannerWorkflowTests.cs'
+      - 'webassist/vendor/**'
+      - 'webassist/NuGet.Config'
+      - 'webassist/src/WebAssistant/Scanning/**'
+      - 'webassist/src/WebAssistant/WebAssistant.csproj'
+      - '.github/workflows/virtual-scanner.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tests/virtual-scanner/**'
+      - 'tests/core/LinuxVirtualScanAdapterTests.cs'
+      - 'tests/core/WindowsScanAdapterTests.cs'
+      - 'tests/core/PlatformEndToEndTests.cs'
+      - 'tests/core/VirtualScannerWorkflowTests.cs'
+      - 'webassist/vendor/**'
+      - 'webassist/NuGet.Config'
+      - 'webassist/src/WebAssistant/Scanning/**'
+      - 'webassist/src/WebAssistant/WebAssistant.csproj'
+      - '.github/workflows/virtual-scanner.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  linux-sane-test:
+    name: Linux SANE direct SDK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install SANE and GTK runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y sane-utils libgtk-3-0t64
+
+      - name: Verify SANE test backend
+        shell: bash
+        run: tests/virtual-scanner/linux/run-sane-test.sh
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Prepare isolated SANE configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          SANE_CONFIG="$RUNNER_TEMP/sane-config"
+          rm -rf -- "$SANE_CONFIG"
+          mkdir -p -- "$SANE_CONFIG"
+          printf 'test\n' > "$SANE_CONFIG/dll.conf"
+          SANE_CONFIG_DIR="$SANE_CONFIG" scanimage -L
+
+      - name: Test LinuxScanAdapter acquisition
+        shell: bash
+        env:
+          WEBASSISTANT_LINUX_VIRTUAL: '1'
+          SANE_CONFIG_DIR: ${{ runner.temp }}/sane-config
+        run: dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter "Category=LinuxVirtualScanner"
+
+      - name: Test Linux HTTP end-to-end
+        shell: bash
+        env:
+          WEBASSISTANT_PLATFORM_E2E: '1'
+          SANE_CONFIG_DIR: ${{ runner.temp }}/sane-config
+        run: dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter "Category=PlatformVirtualEndToEnd"
+
+      - name: Assert repository-owned SDK feed exists
+        shell: bash
+        run: test -n "$(find webassist/vendor/nuget -maxdepth 1 -type f -name 'WebAssistant.NAPS2.Sdk.*.nupkg' -print -quit)"
+
+  windows-twain-test:
+    name: Windows TWAIN direct SDK
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install official TWAIN sample source
+        shell: pwsh
+        run: tests/virtual-scanner/windows/install-twain-sample.ps1
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test WindowsScanAdapter acquisition
+        shell: pwsh
+        env:
+          WEBASSISTANT_WINDOWS_VIRTUAL: '1'
+        run: dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter "Category=WindowsVirtualScanner"
+
+      - name: Test Windows HTTP end-to-end
+        shell: pwsh
+        env:
+          WEBASSISTANT_PLATFORM_E2E: '1'
+        run: dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter "Category=PlatformVirtualEndToEnd"
+
+      - name: Assert repository-owned SDK feed exists
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem webassist/vendor/nuget -Filter 'WebAssistant.NAPS2.Sdk.*.nupkg' | Select-Object -First 1
+          if (-not $package) { throw 'Repository-owned WebAssistant NAPS2 SDK package is missing.' }

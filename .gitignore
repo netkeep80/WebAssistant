@@ -1,0 +1,10 @@
+.vs/
+.idea/
+**/bin/
+**/obj/
+TestResults/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+artifacts/

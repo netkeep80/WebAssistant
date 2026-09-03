@@ -1,0 +1,77 @@
+{
+  "schema": "webassistant-conformance/v0.1",
+  "status": "accepted",
+  "accepted": true,
+  "contract": "webassistant-contract/v0.1",
+  "evidenceModel": "repository-tests-and-ci",
+  "requiredRepositoryPaths": [
+    "README.md",
+    "webassist/README.md",
+    "webassist/docs/api.md",
+    "webassist/docs/linux-service.md",
+    "webassist/docs/windows-service.md",
+    "webassist/src/WebAssistant/appsettings.json",
+    "webassist/src/WebAssistant/WebAssistant.csproj",
+    "webassist/build/linux/package.sh",
+    "webassist/build/windows/package.bat",
+    "webassist/install/linux/install.sh",
+    "webassist/install/windows/install.bat",
+    "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.1.450cba65.nupkg",
+    "tests/core/HttpScanContractTests.cs",
+    "tests/core/DiagnosticsContractTests.cs",
+    "tests/core/RequestLoggingMiddlewareTests.cs",
+    "tests/core/RootedPathResolverTests.cs",
+    "tests/core/SystemServiceProductTests.cs",
+    ".github/workflows/core.yml",
+    ".github/workflows/virtual-scanner.yml",
+    ".github/workflows/linux-systemd.yml",
+    ".github/workflows/windows-service.yml"
+  ],
+  "vectors": [
+    {
+      "id": "WA-C-AUTONOMOUS-ROOT-001",
+      "requirements": ["WA-REPO-001", "WA-REPO-002"],
+      "evidence": ["tests/core/PackagingLayoutTests.cs"]
+    },
+    {
+      "id": "WA-C-SERVICE-LIFECYCLE-001",
+      "requirements": ["WA-SERVICE-001", "WA-SERVICE-002"],
+      "evidence": ["tests/core/SystemServiceProductTests.cs", ".github/workflows/linux-systemd.yml", ".github/workflows/windows-service.yml"]
+    },
+    {
+      "id": "WA-C-LOOPBACK-001",
+      "requirements": ["WA-NET-001"],
+      "evidence": ["tests/core/RuntimeOptionsTests.cs", "tests/windows-service/run-service-acceptance.ps1", "tests/linux-systemd/run-systemd-acceptance.sh"]
+    },
+    {
+      "id": "WA-C-SCANNER-HTTP-001",
+      "requirements": ["WA-API-001", "WA-SCAN-001", "WA-SCAN-002", "WA-SCAN-003"],
+      "evidence": ["tests/core/HttpScanContractTests.cs", ".github/workflows/virtual-scanner.yml"]
+    },
+    {
+      "id": "WA-C-DIAGNOSTICS-001",
+      "requirements": ["WA-DIAG-001", "WA-LOG-001"],
+      "evidence": ["tests/core/DiagnosticsContractTests.cs", "tests/core/RequestLoggingMiddlewareTests.cs"]
+    },
+    {
+      "id": "WA-C-CORS-001",
+      "requirements": ["WA-CORS-001"],
+      "evidence": ["tests/core/CorsConfigurationTests.cs"]
+    },
+    {
+      "id": "WA-C-ROOTED-FILESYSTEM-001",
+      "requirements": ["WA-FS-001", "WA-FS-002"],
+      "evidence": ["tests/core/RootedPathResolverTests.cs", "tests/core/HttpScanContractTests.cs"]
+    },
+    {
+      "id": "WA-C-DEPENDENCY-OWNERSHIP-001",
+      "requirements": ["WA-DEPS-001"],
+      "evidence": ["tests/core/DependencyOwnershipTests.cs", "webassist/vendor/naps2/README.md"]
+    },
+    {
+      "id": "WA-C-PRODUCT-DOCS-001",
+      "requirements": ["WA-DOC-001"],
+      "evidence": ["webassist/README.md", "webassist/docs/api.md", "webassist/docs/linux-service.md", "webassist/docs/windows-service.md"]
+    }
+  ]
+}

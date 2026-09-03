@@ -1,0 +1,100 @@
+{
+  "schema": "webassistant-contract/v0.1",
+  "status": "accepted",
+  "accepted": true,
+  "conformanceCorpus": "contracts/webassistant-conformance-v0.1.json",
+  "observableBoundary": "браузер -> локальная machine-wide служба WebAssistant -> capability рабочей станции",
+  "languagePolicy": {
+    "documentation": "ru",
+    "sourceComments": "ru",
+    "technicalIdentifiersMayBeNonRussian": true
+  },
+  "repositoryModel": {
+    "developmentRepository": "netkeep80/WebAssistant",
+    "exportRoot": "webassist",
+    "exportSemantics": "copy-export-root-contents-to-downstream-repository-root",
+    "autonomousAfterExport": true
+  },
+  "requirements": [
+    {
+      "id": "WA-REPO-001",
+      "kind": "required",
+      "statement": "Каталог webassist является автономным переносимым корнем продукта: его содержимое должно собираться, упаковываться и устанавливаться без файлов уровнем выше."
+    },
+    {
+      "id": "WA-REPO-002",
+      "kind": "required",
+      "statement": "Исходники, build/package/install scripts, runtime configuration, vendored обязательные зависимости и продуктовая документация находятся внутри webassist."
+    },
+    {
+      "id": "WA-SERVICE-001",
+      "kind": "required",
+      "statement": "WebAssistant устанавливается администратором один раз на рабочую станцию и работает как machine-wide системная служба."
+    },
+    {
+      "id": "WA-SERVICE-002",
+      "kind": "required",
+      "statement": "На Windows WebAssistant работает как Windows Service; на ALT Linux — как systemd system service."
+    },
+    {
+      "id": "WA-NET-001",
+      "kind": "required",
+      "statement": "Browser-facing listener привязывается только к loopback. Текущий default endpoint — http://127.0.0.1:17654; публикация на LAN или 0.0.0.0 запрещена."
+    },
+    {
+      "id": "WA-API-001",
+      "kind": "required",
+      "statement": "Текущие machine REST operations имеют major-version prefix /v1; production service panel доступна по /."
+    },
+    {
+      "id": "WA-SCAN-001",
+      "kind": "required",
+      "statement": "Scanner capability перечисляет устройства, использует детерминированный scannerId selection и при успешном acquisition возвращает один raw application/pdf response."
+    },
+    {
+      "id": "WA-SCAN-002",
+      "kind": "required",
+      "statement": "POST /v1/scan, /v1/scan/feeder и /v1/scan/duplex передают соответственно glass, feeder и duplex source без скрытого fallback на другой source."
+    },
+    {
+      "id": "WA-SCAN-003",
+      "kind": "required",
+      "statement": "На рабочей станции одновременно выполняется не более одного physical scanner acquisition; конкурирующий запрос получает conflict и не запускает второй acquisition."
+    },
+    {
+      "id": "WA-DIAG-001",
+      "kind": "required",
+      "statement": "Versioned diagnostic API возвращает только безопасную runtime-информацию и собственные суточные журналы WebAssistant; произвольный путь к файлу не принимается."
+    },
+    {
+      "id": "WA-LOG-001",
+      "kind": "required",
+      "statement": "Технические журналы не содержат PDF bytes, Base64 или содержимое страниц/документов."
+    },
+    {
+      "id": "WA-CORS-001",
+      "kind": "required",
+      "statement": "CORS по умолчанию выключен. При включении разрешены только явно заданные exact HTTP/HTTPS origins; wildcard запрещён."
+    },
+    {
+      "id": "WA-FS-001",
+      "kind": "required",
+      "statement": "Filesystem capability имеет configured RootDirectory и path resolver, который принимает только относительные пути внутри root и отвергает navigation segments, absolute paths и существующие symlink/reparse-point components."
+    },
+    {
+      "id": "WA-FS-002",
+      "kind": "boundary",
+      "statement": "В baseline v0.1 browser-facing filesystem routes ещё не опубликованы; добавление таких routes требует отдельного контрактного изменения и сохранения root boundary."
+    },
+    {
+      "id": "WA-DEPS-001",
+      "kind": "required",
+      "statement": "Исправленный NAPS2 SDK используется под отдельной repository-owned identity WebAssistant.NAPS2.Sdk и хранится в webassist/vendor/nuget."
+    },
+    {
+      "id": "WA-DOC-001",
+      "kind": "required",
+      "statement": "Документация о сборке, установке, runtime configuration и current API находится внутри webassist и описывает только фактически существующее поведение."
+    }
+  ]
+}
