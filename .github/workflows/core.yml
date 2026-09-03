@@ -1,7 +1,7 @@
 name: core
 
 on:
-  pull_request:
+  workflow_call:
   push:
     branches: [ main ]
 
