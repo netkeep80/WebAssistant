@@ -1,0 +1,44 @@
+stages:
+  - package
+
+windows-package:
+  stage: package
+  tags:
+    - $WEBASSISTANT_WINDOWS_RUNNER_TAG
+  script:
+    - 'cmd.exe /d /c "build\windows\package.bat artifacts\windows-x64"'
+  artifacts:
+    paths:
+      - artifacts/windows-x64/
+    expire_in: 7 days
+  only:
+    changes:
+      - ".gitlab-ci.yml"
+      - "README.md"
+      - "WebAssistant.sln"
+      - "NuGet.Config"
+      - "src/**/*"
+      - "build/**/*"
+      - "install/**/*"
+      - "docs/**/*"
+      - "vendor/**/*"
+
+linux-package:
+  stage: package
+  script:
+    - './build/linux/package.sh artifacts/linux-x64'
+  artifacts:
+    paths:
+      - artifacts/linux-x64/
+    expire_in: 7 days
+  only:
+    changes:
+      - ".gitlab-ci.yml"
+      - "README.md"
+      - "WebAssistant.sln"
+      - "NuGet.Config"
+      - "src/**/*"
+      - "build/**/*"
+      - "install/**/*"
+      - "docs/**/*"
+      - "vendor/**/*"
