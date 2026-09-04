@@ -16,7 +16,7 @@ internal sealed class AgentRuntimeInfo
 
     private static string ResolveVersion()
     {
-        var assembly = Assembly.GetEntryAssembly() ?? typeof(AgentRuntimeInfo).Assembly;
+        var assembly = typeof(AgentRuntimeInfo).Assembly;
         return assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
             .InformationalVersion
