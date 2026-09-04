@@ -10,9 +10,11 @@ Runtime configuration загружается из JSON. CORS по умолчан
 
 Продуктовая документация: [`webassist/README.md`](webassist/README.md) и [`webassist/docs/api.md`](webassist/docs/api.md).
 
-Текущая accepted baseline pair:
+Versioned contract/conformance artifacts сохраняются монотонно; какая pair является current, определяет только `contract_conformance.current` в [`repo-policy.json`](repo-policy.json):
 - [`contracts/webassistant-contract-v0.1.json`](contracts/webassistant-contract-v0.1.json)
 - [`contracts/webassistant-conformance-v0.1.json`](contracts/webassistant-conformance-v0.1.json)
+- [`contracts/webassistant-contract-v0.2.json`](contracts/webassistant-contract-v0.2.json)
+- [`contracts/webassistant-conformance-v0.2.json`](contracts/webassistant-conformance-v0.2.json)
 
 ## Repository governance
 
