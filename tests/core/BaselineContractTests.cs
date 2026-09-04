@@ -6,6 +6,26 @@ namespace WebAssistant.CoreTests;
 public sealed class BaselineContractTests
 {
     [Fact]
+    public void CurrentPairPaths_AreResolvedFromPolicyContent()
+    {
+        using var policy = JsonDocument.Parse("""
+            {
+              "contract_conformance": {
+                "current": {
+                  "contract": { "path": "contracts/future-contract.json" },
+                  "conformance": { "path": "contracts/future-conformance.json" }
+                }
+              }
+            }
+            """);
+
+        var paths = ResolveCurrentPairPaths(policy.RootElement);
+
+        Assert.Equal("contracts/future-contract.json", paths.ContractPath);
+        Assert.Equal("contracts/future-conformance.json", paths.ConformancePath);
+    }
+
+    [Fact]
     public void CurrentContractPair_IsAcceptedAndReferencesExistingEvidence()
     {
         var root = FindRepositoryRoot();
