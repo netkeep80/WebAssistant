@@ -63,6 +63,8 @@
           ".github/ISSUE_TEMPLATE/change-intent.yml",
           "contracts/webassistant-contract-v0.1.json",
           "contracts/webassistant-conformance-v0.1.json",
+          "contracts/webassistant-contract-v0.2.json",
+          "contracts/webassistant-conformance-v0.2.json",
           "webassist/README.md"
         ],
         "must_mention_change_intent_fields": ["change_type", "scope", "anchors.affects"]
@@ -72,11 +74,11 @@
   "contract_conformance": {
     "current": {
       "contract": {
-        "path": "contracts/webassistant-contract-v0.1.json",
+        "path": "contracts/webassistant-contract-v0.2.json",
         "format": "json"
       },
       "conformance": {
-        "path": "contracts/webassistant-conformance-v0.1.json",
+        "path": "contracts/webassistant-conformance-v0.2.json",
         "format": "json"
       }
     },
