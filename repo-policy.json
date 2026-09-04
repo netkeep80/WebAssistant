@@ -106,6 +106,37 @@
       "contracts/webassistant-conformance-v*.json"
     ]
   },
+  "document_relations": {
+    "documents": {
+      "base-product-version": {
+        "path": "webassist/VERSION",
+        "format": "plain_text",
+        "snapshot": "base"
+      },
+      "head-product-version": {
+        "path": "webassist/VERSION",
+        "format": "plain_text",
+        "snapshot": "head"
+      }
+    },
+    "rules": [
+      {
+        "id": "product-version-monotonic",
+        "kind": "scalar_strictly_greater",
+        "comparator": "semver",
+        "left": {
+          "document": "head-product-version",
+          "pointer": "",
+          "type": "string"
+        },
+        "right": {
+          "document": "base-product-version",
+          "pointer": "",
+          "type": "string"
+        }
+      }
+    ]
+  },
   "paths": {
     "forbidden": ["*.bak", "*.tmp", "*.orig"],
     "canonical_docs": ["README.md", "webassist/README.md"],
