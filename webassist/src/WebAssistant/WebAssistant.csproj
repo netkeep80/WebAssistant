@@ -3,6 +3,13 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <ProductVersionFile>$(MSBuildProjectDirectory)/../../VERSION</ProductVersionFile>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">$([System.IO.File]::ReadAllText('$(ProductVersionFile)').Trim())</ProductVersion>
+    <Version>$(ProductVersion)</Version>
+    <AssemblyVersion>$(ProductVersion).0</AssemblyVersion>
+    <FileVersion>$(ProductVersion).0</FileVersion>
+    <InformationalVersion>$(ProductVersion)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>

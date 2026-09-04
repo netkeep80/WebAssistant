@@ -16,7 +16,7 @@
           "event_types": ["opened", "synchronize", "reopened", "ready_for_review"],
           "action": {
             "uses": "netkeep80/repo-guard",
-            "ref": "063169d658b2915392f42544fed260d07380a4cd",
+            "ref": "8226c2fae7db07679ffe73d1b6a6837d9a1b424d",
             "ref_pinning": "sha"
           },
           "mode": "check-pr",

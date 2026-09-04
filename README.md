@@ -6,6 +6,8 @@ WebAssistant — локальная machine-wide служба для browser-fac
 
 Поддерживаемые платформы: Windows 10+ и ALT Linux. Runtime: .NET 10 / ASP.NET Core.
 
+Canonical product version хранится в [`webassist/VERSION`](webassist/VERSION) и переносится вместе с product root без `.git`. Build, assembly metadata, package metadata и runtime diagnostics используют это persisted значение как единственный product-version authority; Git history и CI run numbers не заменяют его.
+
 Runtime configuration загружается из JSON. CORS по умолчанию выключен и включается только явным allowlist. Для будущих filesystem operations предусмотрен configured root directory и отдельная path-security boundary; browser-facing filesystem routes в текущем baseline отсутствуют.
 
 Продуктовая документация: [`webassist/README.md`](webassist/README.md) и [`webassist/docs/api.md`](webassist/docs/api.md).
@@ -20,7 +22,7 @@ Versioned contract/conformance artifacts сохраняются монотонн
 
 Repository policy задаётся в [`repo-policy.json`](repo-policy.json) и исполняется `repo-guard` в blocking mode. Accepted contract/conformance pair, обязательные repository paths и автономность `webassist/` являются частью этой исполняемой границы.
 
-Permanent governance check находится в [`.github/workflows/repo-guard.yml`](.github/workflows/repo-guard.yml). Workflow запускает exact-pinned `netkeep80/repo-guard@063169d658b2915392f42544fed260d07380a4cd` в `mode: check-pr` и `enforcement: blocking`; governance failure или cancelled run не являются допустимым merge-ready состоянием.
+Permanent governance check находится в [`.github/workflows/repo-guard.yml`](.github/workflows/repo-guard.yml). Workflow запускает exact-pinned `netkeep80/repo-guard@8226c2fae7db07679ffe73d1b6a6837d9a1b424d` в `mode: check-pr` и `enforcement: blocking`; governance failure или cancelled run не являются допустимым merge-ready состоянием.
 
 Product CI PR orchestration находится в [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Его стабильный внешний job/check называется `ci-required`. Текущий baseline консервативно требует core, ALT Linux systemd, Windows Service и virtual-scanner suites; позже classifier может сделать отдельные suites необязательными, не меняя имя внешнего gate.
 

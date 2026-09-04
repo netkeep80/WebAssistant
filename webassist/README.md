@@ -2,6 +2,14 @@
 
 `webassist` — автономный корень продукта WebAssistant. Его содержимое можно копировать в корень отдельного репозитория и собирать, упаковывать и устанавливать без файлов уровнем выше.
 
+## Версия продукта
+
+Файл `VERSION` в корне продукта — единственный persisted source of truth для product version. Он содержит numeric SemVer `major.minor.patch` и переносится вместе с каталогом продукта без зависимости от `.git`, tags или CI metadata.
+
+Сборка использует это значение для assembly/product metadata. Диагностический `/v1/diag/info` возвращает ту же версию через assembly metadata. Linux и Windows packaging scripts читают `VERSION`, передают значение в build и копируют `VERSION` в корень готового package.
+
+Повторная сборка одного и того же product snapshot поэтому сохраняет ту же product version.
+
 ## Что работает сейчас
 
 WebAssistant устанавливается как общая системная служба рабочей станции:
