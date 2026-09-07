@@ -14,6 +14,15 @@ log_dir="/var/log/webassist"
 data_dir="/var/lib/webassist"
 service_unit="/etc/systemd/system/webassist.service"
 config_file="$install_dir/appsettings.json"
+runtime_packages=(libicu74 libgtk+3 libsane sane)
+
+runtime_dependencies_installed() {
+    local package
+    for package in "${runtime_packages[@]}"; do
+        rpm -q "$package" >/dev/null 2>&1 || return 1
+    done
+    return 0
+}
 
 [[ -d "$source_app" ]] || {
     echo "Не найден каталог package app: $source_app" >&2
@@ -24,15 +33,31 @@ config_file="$install_dir/appsettings.json"
     exit 1
 }
 
-for command_name in apt-get systemctl groupadd groupdel useradd userdel usermod getent install; do
+for command_name in rpm systemctl groupadd groupdel useradd userdel usermod getent install; do
     command -v "$command_name" >/dev/null 2>&1 || {
         echo "Не найдена обязательная системная команда: $command_name" >&2
         exit 1
     }
 done
 
-apt-get update
-apt-get install -y libicu74 libgtk+3 libsane sane
+if runtime_dependencies_installed; then
+    echo "Системные runtime-зависимости WebAssistant уже установлены; apt-rpm не изменяется."
+else
+    command -v apt-get >/dev/null 2>&1 || {
+        echo "Не найдена обязательная системная команда apt-get для установки отсутствующих runtime-зависимостей." >&2
+        exit 1
+    }
+
+    if ! apt-get update; then
+        echo "Не удалось обновить метаданные пакетных репозиториев ALT Linux через apt-rpm. Исправьте конфигурацию или состояние apt-rpm и повторите установку WebAssistant." >&2
+        exit 1
+    fi
+
+    if ! apt-get install -y "${runtime_packages[@]}"; then
+        echo "Не удалось установить runtime-зависимости WebAssistant через apt-rpm: ${runtime_packages[*]}. Исправьте состояние пакетной системы ALT Linux и повторите установку." >&2
+        exit 1
+    fi
+fi
 
 if ! getent group webassist >/dev/null 2>&1; then
     groupadd --system webassist

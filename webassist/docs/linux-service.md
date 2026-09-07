@@ -4,7 +4,9 @@ Linux package собирается командой `webassist/build/linux/packa
 
 Пакет содержит self-contained `linux-x64` приложение, `install.sh`, `uninstall.sh` и `webassist.service`.
 
-`install.sh` запускается от root. Он устанавливает системные runtime-зависимости .NET/NAPS2 integration (`libicu74`, GTK3 и SANE), создаёт системного пользователя `webassist`, добавляет его в доступные scanner groups, размещает приложение в `/opt/webassist`, журналы в `/var/log/webassist`, data root в `/var/lib/webassist`, записывает JSON-конфигурацию и включает `webassist.service`.
+`install.sh` запускается от root. Перед обращением к apt-rpm он через RPM database проверяет системные runtime-зависимости .NET/NAPS2 integration (`libicu74`, `libgtk+3`, `libsane`, `sane`). Если все они уже установлены, installer не выполняет `apt-get update` и `apt-get install`; поэтому неисправное состояние package repositories само по себе не блокирует установку готового WebAssistant package. Если хотя бы одной runtime-зависимости нет, installer обновляет metadata и устанавливает зависимости через ALT `apt-get`; ошибка этого шага означает проблему package manager/repositories ALT Linux и завершается с явной диагностикой.
+
+После dependency preflight installer создаёт системного пользователя `webassist`, добавляет его в доступные scanner groups, размещает приложение в `/opt/webassist`, журналы в `/var/log/webassist`, data root в `/var/lib/webassist`, записывает JSON-конфигурацию и включает `webassist.service`.
 
 Служба слушает только `127.0.0.1`; порт по умолчанию `17654`. Проверка: `curl http://127.0.0.1:17654/v1/health`.
 

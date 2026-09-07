@@ -76,7 +76,23 @@ if ! docker exec "$CONTAINER_NAME" /webassistant-package/install.sh; then
 fi
 
 docker exec "$CONTAINER_NAME" rpm -q libicu74
+docker exec "$CONTAINER_NAME" rpm -q libgtk+3
 docker exec "$CONTAINER_NAME" rpm -q libsane
+docker exec "$CONTAINER_NAME" rpm -q sane
+
+# Регрессия #135: когда обязательные RPM уже установлены, неисправная поверхность
+# apt-rpm не должна блокировать повторную установку. Подменный apt-get падает при вызове.
+docker exec "$CONTAINER_NAME" sh -lc \
+    'mkdir -p /tmp/webassistant-fail-apt && printf "%s\n" "#!/bin/sh" "echo apt-get-called >&2" "exit 97" > /tmp/webassistant-fail-apt/apt-get && chmod +x /tmp/webassistant-fail-apt/apt-get'
+if ! docker exec \
+    --env PATH="/tmp/webassistant-fail-apt:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    "$CONTAINER_NAME" /webassistant-package/install.sh; then
+    echo "Повторная установка при уже установленных runtime-зависимостях ошибочно зависит от apt-rpm." >&2
+    docker exec "$CONTAINER_NAME" systemctl status webassist.service --no-pager >&2 || true
+    exit 1
+fi
+docker exec "$CONTAINER_NAME" rm -rf /tmp/webassistant-fail-apt
+
 docker exec "$CONTAINER_NAME" systemctl is-enabled --quiet webassist.service
 docker exec "$CONTAINER_NAME" systemctl is-active --quiet webassist.service
 
