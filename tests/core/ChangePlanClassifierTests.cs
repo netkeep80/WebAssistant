@@ -15,6 +15,8 @@ public sealed class ChangePlanClassifierTests
             windowsService: false,
             virtualLinux: false,
             virtualWindows: false,
+            smokeLinux: false,
+            smokeWindows: false,
             fullCrossPlatform: false);
     }
 
@@ -28,6 +30,8 @@ public sealed class ChangePlanClassifierTests
             windowsService: true,
             virtualLinux: false,
             virtualWindows: true,
+            smokeLinux: false,
+            smokeWindows: true,
             fullCrossPlatform: false);
     }
 
@@ -41,6 +45,8 @@ public sealed class ChangePlanClassifierTests
             windowsService: false,
             virtualLinux: true,
             virtualWindows: false,
+            smokeLinux: true,
+            smokeWindows: false,
             fullCrossPlatform: false);
     }
 
@@ -54,6 +60,8 @@ public sealed class ChangePlanClassifierTests
             windowsService: true,
             virtualLinux: true,
             virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
             fullCrossPlatform: true);
     }
 
@@ -71,6 +79,8 @@ public sealed class ChangePlanClassifierTests
             windowsService: true,
             virtualLinux: true,
             virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
             fullCrossPlatform: true);
     }
 
@@ -84,6 +94,8 @@ public sealed class ChangePlanClassifierTests
             windowsService: true,
             virtualLinux: true,
             virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
             fullCrossPlatform: true);
     }
 
@@ -97,6 +109,8 @@ public sealed class ChangePlanClassifierTests
             windowsService: true,
             virtualLinux: true,
             virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
             fullCrossPlatform: true);
     }
 
@@ -110,6 +124,8 @@ public sealed class ChangePlanClassifierTests
             windowsService: true,
             virtualLinux: true,
             virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
             fullCrossPlatform: true);
     }
 
@@ -120,6 +136,8 @@ public sealed class ChangePlanClassifierTests
         bool windowsService,
         bool virtualLinux,
         bool virtualWindows,
+        bool smokeLinux,
+        bool smokeWindows,
         bool fullCrossPlatform)
     {
         var plan = RunPlan(paths);
@@ -129,6 +147,8 @@ public sealed class ChangePlanClassifierTests
         Assert.Equal(windowsService, Flag(plan, "windows_service"));
         Assert.Equal(virtualLinux, Flag(plan, "virtual_linux"));
         Assert.Equal(virtualWindows, Flag(plan, "virtual_windows"));
+        Assert.Equal(smokeLinux, Flag(plan, "smoke_linux"));
+        Assert.Equal(smokeWindows, Flag(plan, "smoke_windows"));
         Assert.Equal(virtualLinux || virtualWindows, Flag(plan, "virtual_scanner"));
         Assert.Equal(fullCrossPlatform, Flag(plan, "full_cross_platform"));
     }
