@@ -16,21 +16,29 @@ jobs:
     name: CI requirements
     runs-on: ubuntu-24.04
     outputs:
-      core: ${{ steps.required.outputs.core }}
-      linux_systemd: ${{ steps.required.outputs.linux_systemd }}
-      windows_service: ${{ steps.required.outputs.windows_service }}
-      virtual_scanner: ${{ steps.required.outputs.virtual_scanner }}
+      core: ${{ steps.plan.outputs.core }}
+      linux_systemd: ${{ steps.plan.outputs.linux_systemd }}
+      windows_service: ${{ steps.plan.outputs.windows_service }}
+      virtual_linux: ${{ steps.plan.outputs.virtual_linux }}
+      virtual_windows: ${{ steps.plan.outputs.virtual_windows }}
+      virtual_scanner: ${{ steps.plan.outputs.virtual_scanner }}
+      full_cross_platform: ${{ steps.plan.outputs.full_cross_platform }}
     steps:
-      - name: Declare conservative baseline requirements
-        id: required
+      - name: Checkout exact PR head with history
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Classify exact PR change
+        id: plan
         shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          {
-            echo 'core=true'
-            echo 'linux_systemd=true'
-            echo 'windows_service=true'
-            echo 'virtual_scanner=true'
-          } >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          ci/change-plan.sh --base "$BASE_SHA" --head "$HEAD_SHA" | tee -a "$GITHUB_OUTPUT"
 
   core:
     name: core
@@ -55,6 +63,9 @@ jobs:
     needs: requirements
     if: ${{ needs.requirements.outputs.virtual_scanner == 'true' }}
     uses: ./.github/workflows/virtual-scanner.yml
+    with:
+      run_linux: ${{ needs.requirements.outputs.virtual_linux == 'true' }}
+      run_windows: ${{ needs.requirements.outputs.virtual_windows == 'true' }}
 
   ci-required:
     name: ci-required

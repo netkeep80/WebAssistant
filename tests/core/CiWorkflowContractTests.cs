@@ -23,6 +23,15 @@ public sealed class CiWorkflowContractTests
         Assert.Contains("assert_case false cancelled fail", ci, StringComparison.Ordinal);
         Assert.DoesNotContain("repo-guard.yml", ci, StringComparison.Ordinal);
 
+        Assert.DoesNotContain("Declare conservative baseline requirements", ci, StringComparison.Ordinal);
+        Assert.Contains("ci/change-plan.sh", ci, StringComparison.Ordinal);
+        Assert.Contains("github.event.pull_request.base.sha", ci, StringComparison.Ordinal);
+        Assert.Contains("github.event.pull_request.head.sha", ci, StringComparison.Ordinal);
+        Assert.Contains("virtual_linux:", ci, StringComparison.Ordinal);
+        Assert.Contains("virtual_windows:", ci, StringComparison.Ordinal);
+        Assert.Contains("run_linux:", ci, StringComparison.Ordinal);
+        Assert.Contains("run_windows:", ci, StringComparison.Ordinal);
+
         AssertReusableComponent(workflows, "core.yml");
         AssertReusableComponent(workflows, "linux-systemd.yml");
         AssertReusableComponent(workflows, "windows-service.yml");

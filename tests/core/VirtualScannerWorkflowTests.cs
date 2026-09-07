@@ -24,6 +24,10 @@ public sealed class VirtualScannerWorkflowTests
         Assert.Contains("Category=WindowsVirtualScanner", workflow);
         Assert.Contains("Category=PlatformVirtualEndToEnd", workflow);
         Assert.Contains("webassist/vendor/nuget", workflow);
+        Assert.Contains("run_linux", workflow, StringComparison.Ordinal);
+        Assert.Contains("run_windows", workflow, StringComparison.Ordinal);
+        Assert.Contains("github.event_name == 'push' || inputs.run_linux", workflow, StringComparison.Ordinal);
+        Assert.Contains("github.event_name == 'push' || inputs.run_windows", workflow, StringComparison.Ordinal);
         Assert.False(workflow.Contains("run-naps2-cli-test", StringComparison.OrdinalIgnoreCase));
     }
 
