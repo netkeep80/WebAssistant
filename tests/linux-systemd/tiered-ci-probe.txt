@@ -1,2 +1,3 @@
 Tiered CI Linux-only behavioral probe.
 This file is intentionally harmless and must never be merged.
+Second head proves synchronize invalidation of obsolete final evidence.
