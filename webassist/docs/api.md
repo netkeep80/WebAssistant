@@ -1,8 +1,8 @@
 # WebAssistant REST API
 
-Текущая major version — `v1`. Machine endpoints доступны только с prefix `/v1`. Service panel доступна по `/`.
+Текущая major version — `v1`. Machine endpoints доступны только с prefix `/v1`; unversioned aliases, включая `/health` и `/scan`, отсутствуют. Service panel доступна по `/`.
 
-Default listener: `http://127.0.0.1:17654`. Listener привязан к loopback.
+Default listener: `http://127.0.0.1:17654`. Listener привязан только к loopback.
 
 ## Health
 
@@ -24,6 +24,10 @@ Default listener: `http://127.0.0.1:17654`. Listener привязан к loopbac
 - `503` — scanner module недоступен;
 - `502` — ошибка обнаружения устройств.
 
+Backend semantics:
+- Windows — WIA-first; TWAIN используется только если WIA не вернул ни одного устройства;
+- Linux — direct SANE SDK path через NAPS2, без CLI orchestration.
+
 ## Сканирование
 
 Operations:
@@ -42,9 +46,13 @@ Selection semantics:
 
 На рабочей станции действует единый acquisition lock. Если сканирование уже выполняется, конкурирующий request получает `409` и второй physical acquisition не запускается.
 
-Успех: `200 OK`, `Content-Type: application/pdf`, PDF передаётся непосредственно в HTTP body. Если acquisition вернул несколько страниц, они формируют один многостраничный PDF.
+Успех: `200 OK`, `Content-Type: application/pdf`, PDF передаётся непосредственно в HTTP body. Все страницы одного acquisition формируют один многостраничный PDF.
+
+Base64, JSON document envelope и ZIP/raster envelope не используются как scanner document transport. После handoff PDF вызывающей стороне scanner operation заканчивается и не хранит завершённый документ как long-term scanner storage.
 
 Явно запрошенный source не заменяется скрытым fallback на другой source. Ошибка backend или пустой/нечитаемый результат возвращаются как `502`.
+
+Scanner operation сама не выполняет edit/merge/split PDF, OCR/annotation/watermark/deskew или другую semantic document transformation, signing/encryption, business/backend upload и не требует business authentication или per-user business profile. Это граница scanner capability; независимые capabilities WebAssistant имеют отдельную семантику.
 
 ## Диагностика
 
@@ -60,12 +68,12 @@ Selection semantics:
 - `400` — дата отсутствует или имеет неверный формат;
 - `404` — журнал за дату отсутствует.
 
-Endpoint принимает только дату, а не filename/path. PDF bytes, Base64, содержимое страниц и document body в технический журнал не записываются.
+Endpoint принимает только дату, а не filename/path. PDF bytes, Base64, содержимое страниц и document body в технический журнал не записываются. Current service сам не выполняет automatic retention/delete старых daily logs.
 
 ## CORS
 
-CORS выключен по умолчанию. Для browser origin, отличающегося от origin service panel, его нужно явно добавить в JSON allowlist и установить `WebAssistant:Cors:Enabled=true`. Wildcard `*` запрещён.
+CORS выключен по умолчанию. Для browser origin, отличающегося от origin service panel, его нужно явно добавить в JSON allowlist и установить `WebAssistant:Cors:Enabled=true`. Разрешены только exact HTTP/HTTPS origins; wildcard `*` запрещён.
 
 ## Filesystem capability
 
-`WebAssistant:FileSystem:RootDirectory` уже является runtime boundary, но browser-facing filesystem routes в текущем API не опубликованы.
+`WebAssistant:FileSystem:RootDirectory` является runtime boundary. Внутренний path resolver принимает только относительные пути внутри configured root и отвергает navigation segments, absolute paths и существующие symlink/reparse-point components. Browser-facing filesystem routes в текущем API не опубликованы.

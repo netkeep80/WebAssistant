@@ -16,14 +16,20 @@ WebAssistant устанавливается как общая системная
 - Windows — Windows Service `WebAssistant`;
 - ALT Linux — systemd service `webassist.service`.
 
-Служба слушает только loopback. Default endpoint: `http://127.0.0.1:17654`.
+Служба слушает только loopback. Default endpoint: `http://127.0.0.1:17654`. Публикация listener на LAN или `0.0.0.0` не является допустимой runtime configuration.
 
 Текущий scanner module:
 - перечисляет доступные сканеры;
 - позволяет явно выбрать `scannerId`;
-- поддерживает glass, feeder и duplex operations;
+- поддерживает glass, feeder и duplex operations без скрытого fallback на другой source;
 - выполняет не более одного physical acquisition одновременно;
-- возвращает успешный результат как raw `application/pdf`.
+- возвращает один raw `application/pdf`, содержащий все страницы acquisition;
+- не использует Base64, JSON document envelope или ZIP/raster envelope как scanner document transport;
+- после передачи PDF вызывающей стороне не хранит завершённый scan document как long-term scanner storage.
+
+Scanner backend зависит только от платформы рабочей станции. На Windows сначала используется WIA; переход на TWAIN происходит только если WIA не вернул ни одного устройства. На Linux используется direct SANE SDK path через NAPS2, без CLI orchestration.
+
+Scanner operation ограничена acquisition → PDF. Она сама не выполняет edit/merge/split PDF, OCR/annotation/watermark/deskew или другую semantic document transformation, signing/encryption, business/backend upload и не требует business authentication или per-user business profile. Это граница scanner capability, а не глобальный запрет на независимые capabilities WebAssistant.
 
 Описание REST API: [`docs/api.md`](docs/api.md).
 
@@ -46,13 +52,15 @@ WebAssistant устанавливается как общая системная
 }
 ```
 
-`Cors.Enabled` по умолчанию `false`. При включении разрешены только явно заданные HTTP/HTTPS origins; `*` не допускается.
+`Cors.Enabled` по умолчанию `false`. При включении разрешены только явно заданные exact HTTP/HTTPS origins; `*` не допускается.
 
-`FileSystem.RootDirectory` задаёт границу для будущих filesystem capabilities. В текущей версии browser-facing filesystem endpoints отсутствуют. Внутренний path resolver принимает только относительные пути внутри root и отвергает navigation segments, absolute paths и существующие symlink/reparse-point components.
+`FileSystem.RootDirectory` задаёт rooted filesystem boundary. В текущей версии browser-facing filesystem endpoints отсутствуют. Внутренний path resolver принимает только относительные пути внутри root и отвергает navigation segments, absolute paths и существующие symlink/reparse-point components.
+
+WebAssistant пишет собственные технические события в суточные log files. В журналы не записываются PDF bytes, Base64 и содержимое страниц/документов. Current service сам не выполняет automatic retention/delete старых daily logs.
 
 ## Сборка пакета
 
-Требуется .NET SDK 10. Packaging scripts определяют собственное расположение и не зависят от текущего рабочего каталога.
+Требуется .NET SDK 10. Packaging scripts определяют собственное расположение и не зависят от текущего рабочего каталога. Оба canonical entrypoint запускаются без обязательных аргументов.
 
 Linux:
 
@@ -66,7 +74,7 @@ Windows:
 build\windows\package.bat
 ```
 
-По умолчанию пакеты создаются в `artifacts/` внутри product root.
+По умолчанию пакеты создаются в `artifacts/` внутри product root. При необходимости scripts принимают явный output path, но он не является обязательным для обычной сборки.
 
 ## GitLab CI
 
@@ -111,4 +119,4 @@ install.bat
 
 ## Зависимость NAPS2 SDK
 
-Исправленный SDK хранится под отдельной identity `WebAssistant.NAPS2.Sdk` в `vendor/nuget`. Сборка продукта не маскирует его под официальный `NAPS2.Sdk` той же версии. Provenance и способ воспроизводимой пересборки описаны в `vendor/naps2/README.md`.
+Исправленный SDK хранится под отдельной identity `WebAssistant.NAPS2.Sdk` в `vendor/nuget`. Сборка продукта не маскирует его под официальный `NAPS2.Sdk` той же версии. Provenance, фиксированная package identity и способ воспроизводимой пересборки описаны в `vendor/naps2/README.md`.

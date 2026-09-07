@@ -8,23 +8,25 @@ WebAssistant — локальная machine-wide служба для browser-fac
 
 Canonical product version хранится в [`webassist/VERSION`](webassist/VERSION) и переносится вместе с product root без `.git`. Build, assembly metadata, package metadata и runtime diagnostics используют это persisted значение как единственный product-version authority; Git history и CI run numbers не заменяют его.
 
-Runtime configuration загружается из JSON. CORS по умолчанию выключен и включается только явным allowlist. Для будущих filesystem operations предусмотрен configured root directory и отдельная path-security boundary; browser-facing filesystem routes в текущем baseline отсутствуют.
+Runtime configuration загружается из JSON. CORS по умолчанию выключен и включается только явным allowlist. Filesystem boundary уже включает configured root directory и fail-closed path resolver; browser-facing filesystem routes в текущем accepted baseline отсутствуют.
 
 Продуктовая документация: [`webassist/README.md`](webassist/README.md) и [`webassist/docs/api.md`](webassist/docs/api.md).
 
-Versioned contract/conformance artifacts сохраняются монотонно; какая pair является current, определяет только `contract_conformance.current` в [`repo-policy.json`](repo-policy.json):
+Versioned contract/conformance artifacts сохраняются монотонно; какая pair является current, определяет только `contract_conformance.current` в [`repo-policy.json`](repo-policy.json). Текущая accepted pair — v0.2:
 - [`contracts/webassistant-contract-v0.1.json`](contracts/webassistant-contract-v0.1.json)
 - [`contracts/webassistant-conformance-v0.1.json`](contracts/webassistant-conformance-v0.1.json)
 - [`contracts/webassistant-contract-v0.2.json`](contracts/webassistant-contract-v0.2.json)
 - [`contracts/webassistant-conformance-v0.2.json`](contracts/webassistant-conformance-v0.2.json)
 
+Requirement → conformance vector → evidence graph проверяется repository-owned validator в `tests/core`; automated evidence должно быть связано со stable CI surface, а physical/manual evidence не считается автоматически принятым без явного acceptance fact.
+
 ## Repository governance
 
 Repository policy задаётся в [`repo-policy.json`](repo-policy.json) и исполняется `repo-guard` в blocking mode. Accepted contract/conformance pair, обязательные repository paths и автономность `webassist/` являются частью этой исполняемой границы.
 
-Permanent governance check находится в [`.github/workflows/repo-guard.yml`](.github/workflows/repo-guard.yml). Workflow запускает exact-pinned `netkeep80/repo-guard@8226c2fae7db07679ffe73d1b6a6837d9a1b424d` в `mode: check-pr` и `enforcement: blocking`; governance failure или cancelled run не являются допустимым merge-ready состоянием.
+Permanent governance check находится в [`.github/workflows/repo-guard.yml`](.github/workflows/repo-guard.yml). Workflow запускает exact-pinned `netkeep80/repo-guard@92432809fcddc290080beb51ba151e13a5761869` в `mode: check-pr` и `enforcement: blocking`; governance failure или cancelled run не являются допустимым merge-ready состоянием.
 
-Product CI PR orchestration находится в [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Его стабильный внешний job/check называется `ci-required`. Текущий baseline консервативно требует core, ALT Linux systemd, Windows Service и virtual-scanner suites; позже classifier может сделать отдельные suites необязательными, не меняя имя внешнего gate.
+Product CI PR orchestration находится в [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Его стабильный внешний job/check называется `ci-required`. Текущий baseline консервативно требует core, ALT Linux systemd, Windows Service и virtual-scanner suites; classifier может в дальнейшем сделать отдельные suites необязательными, не меняя имя внешнего gate.
 
 `ci-required` работает fail-closed: обязательная suite принимается только с `success`; явно необязательная suite может иметь `success` или `skipped`; `failure`, `cancelled`, неизвестный result и некорректный requirement flag блокируют gate. Truth table self-test выполняется внутри governance-owned `ci.yml` перед оценкой фактических job results.
 
