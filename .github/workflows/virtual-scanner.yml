@@ -19,7 +19,7 @@ on:
         type: string
         default: ''
       mode:
-        description: Scanner evidence mode: smoke or full.
+        description: Scanner evidence mode (smoke or full).
         required: false
         type: string
         default: full
