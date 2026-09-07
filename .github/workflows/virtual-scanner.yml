@@ -13,6 +13,16 @@ on:
         required: false
         type: boolean
         default: true
+      source_ref:
+        description: Exact commit/ref to test when called by top-level CI.
+        required: false
+        type: string
+        default: ''
+      mode:
+        description: Scanner evidence mode: smoke or full.
+        required: false
+        type: string
+        default: full
   push:
     branches: [main]
     paths:
@@ -32,14 +42,78 @@ permissions:
   contents: read
 
 jobs:
+  resolve-inputs:
+    name: Resolve scanner evidence inputs
+    runs-on: ubuntu-24.04
+    outputs:
+      mode: ${{ steps.resolve.outputs.mode }}
+      source_ref: ${{ steps.resolve.outputs.source_ref }}
+      run_linux: ${{ steps.resolve.outputs.run_linux }}
+      run_windows: ${{ steps.resolve.outputs.run_windows }}
+    steps:
+      - name: Resolve fail-closed mode and exact source ref
+        id: resolve
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
+          INPUT_RUN_LINUX: ${{ inputs.run_linux }}
+          INPUT_RUN_WINDOWS: ${{ inputs.run_windows }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == 'push' ]]; then
+            mode=full
+            source_ref="$GITHUB_SHA"
+            run_linux=true
+            run_windows=true
+          else
+            mode="$INPUT_MODE"
+            source_ref="${INPUT_SOURCE_REF:-$GITHUB_SHA}"
+            run_linux="$INPUT_RUN_LINUX"
+            run_windows="$INPUT_RUN_WINDOWS"
+          fi
+
+          case "$mode" in
+            smoke|full) ;;
+            *)
+              echo "virtual-scanner: invalid mode: $mode" >&2
+              exit 1
+              ;;
+          esac
+
+          for flag in "$run_linux" "$run_windows"; do
+            case "$flag" in
+              true|false) ;;
+              *)
+                echo "virtual-scanner: invalid platform flag: $flag" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+          [[ -n "$source_ref" ]] || {
+            echo 'virtual-scanner: empty source_ref' >&2
+            exit 1
+          }
+
+          printf 'mode=%s\n' "$mode" >> "$GITHUB_OUTPUT"
+          printf 'source_ref=%s\n' "$source_ref" >> "$GITHUB_OUTPUT"
+          printf 'run_linux=%s\n' "$run_linux" >> "$GITHUB_OUTPUT"
+          printf 'run_windows=%s\n' "$run_windows" >> "$GITHUB_OUTPUT"
+
   linux-sane-test:
-    if: ${{ github.event_name == 'push' || inputs.run_linux }}
+    needs: resolve-inputs
+    if: ${{ (github.event_name == 'push' || inputs.run_linux) && needs.resolve-inputs.outputs.run_linux == 'true' }}
     name: Linux SANE direct SDK
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve-inputs.outputs.source_ref }}
 
       - name: Install SANE and GTK runtime
         shell: bash
@@ -75,6 +149,7 @@ jobs:
         run: dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter "Category=LinuxVirtualScanner"
 
       - name: Test Linux HTTP end-to-end
+        if: ${{ needs.resolve-inputs.outputs.mode == 'full' }}
         shell: bash
         env:
           WEBASSISTANT_PLATFORM_E2E: '1'
@@ -86,13 +161,16 @@ jobs:
         run: test -n "$(find webassist/vendor/nuget -maxdepth 1 -type f -name 'WebAssistant.NAPS2.Sdk.*.nupkg' -print -quit)"
 
   windows-twain-test:
-    if: ${{ github.event_name == 'push' || inputs.run_windows }}
+    needs: resolve-inputs
+    if: ${{ (github.event_name == 'push' || inputs.run_windows) && needs.resolve-inputs.outputs.run_windows == 'true' }}
     name: Windows TWAIN direct SDK
     runs-on: windows-2025
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve-inputs.outputs.source_ref }}
 
       - name: Install official TWAIN sample source
         shell: pwsh
@@ -110,6 +188,7 @@ jobs:
         run: dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter "Category=WindowsVirtualScanner"
 
       - name: Test Windows HTTP end-to-end
+        if: ${{ needs.resolve-inputs.outputs.mode == 'full' }}
         shell: pwsh
         env:
           WEBASSISTANT_PLATFORM_E2E: '1'

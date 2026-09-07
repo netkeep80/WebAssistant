@@ -2,6 +2,12 @@ name: core
 
 on:
   workflow_call:
+    inputs:
+      source_ref:
+        description: Exact commit/ref to test when called by top-level CI.
+        required: false
+        type: string
+        default: ''
   push:
     branches: [ main ]
 
@@ -10,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'

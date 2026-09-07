@@ -3,12 +3,19 @@ name: ci
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Open PR number whose current exact head must receive full acceptance.
+        required: true
+        type: string
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
-  group: webassistant-pr-${{ github.event.pull_request.number }}
+  group: webassistant-pr-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
 
 jobs:
@@ -16,26 +23,87 @@ jobs:
     name: CI requirements
     runs-on: ubuntu-24.04
     outputs:
+      base_sha: ${{ steps.context.outputs.base_sha }}
+      head_sha: ${{ steps.context.outputs.head_sha }}
+      final_required: ${{ steps.context.outputs.final_required }}
       core: ${{ steps.plan.outputs.core }}
       linux_systemd: ${{ steps.plan.outputs.linux_systemd }}
       windows_service: ${{ steps.plan.outputs.windows_service }}
       virtual_linux: ${{ steps.plan.outputs.virtual_linux }}
       virtual_windows: ${{ steps.plan.outputs.virtual_windows }}
       virtual_scanner: ${{ steps.plan.outputs.virtual_scanner }}
+      smoke_linux: ${{ steps.plan.outputs.smoke_linux }}
+      smoke_windows: ${{ steps.plan.outputs.smoke_windows }}
       full_cross_platform: ${{ steps.plan.outputs.full_cross_platform }}
     steps:
-      - name: Checkout exact PR head with history
+      - name: Resolve exact PR context
+        id: context
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == 'pull_request' ]]; then
+            base_sha="$PR_BASE_SHA"
+            head_sha="$PR_HEAD_SHA"
+            if [[ "$PR_DRAFT" == 'false' ]]; then
+              final_required=true
+            else
+              final_required=false
+            fi
+          elif [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
+            pr_number="$INPUT_PR_NUMBER"
+            [[ "$pr_number" =~ ^[0-9]+$ ]] || {
+              echo "ci: invalid pr_number: $pr_number" >&2
+              exit 1
+            }
+
+            pr_json="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number")"
+            state="$(jq -r '.state' <<<"$pr_json")"
+            base_sha="$(jq -r '.base.sha' <<<"$pr_json")"
+            head_sha="$(jq -r '.head.sha' <<<"$pr_json")"
+
+            [[ "$state" == 'open' ]] || {
+              echo "ci: manual full acceptance requires an open PR: state=$state" >&2
+              exit 1
+            }
+            [[ "$GITHUB_SHA" == "$head_sha" ]] || {
+              echo "ci: manual full acceptance ref mismatch: selected=$GITHUB_SHA current_pr_head=$head_sha" >&2
+              exit 1
+            }
+            final_required=true
+          else
+            echo "ci: unsupported event: $EVENT_NAME" >&2
+            exit 1
+          fi
+
+          [[ -n "$base_sha" && -n "$head_sha" ]] || {
+            echo 'ci: empty resolved base/head SHA' >&2
+            exit 1
+          }
+
+          printf 'base_sha=%s\n' "$base_sha" >> "$GITHUB_OUTPUT"
+          printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+          printf 'final_required=%s\n' "$final_required" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact resolved head with history
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ steps.context.outputs.head_sha }}
           fetch-depth: 0
 
       - name: Classify exact PR change
         id: plan
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ steps.context.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.context.outputs.head_sha }}
         run: |
           set -euo pipefail
           ci/change-plan.sh --base "$BASE_SHA" --head "$HEAD_SHA" | tee -a "$GITHUB_OUTPUT"
@@ -45,51 +113,165 @@ jobs:
     needs: requirements
     if: ${{ needs.requirements.outputs.core == 'true' }}
     uses: ./.github/workflows/core.yml
+    with:
+      source_ref: ${{ needs.requirements.outputs.head_sha }}
 
-  linux-systemd:
-    name: ALT Linux systemd acceptance
+  scanner-smoke:
+    name: scanner smoke
     needs: requirements
-    if: ${{ needs.requirements.outputs.linux_systemd == 'true' }}
-    uses: ./.github/workflows/linux-systemd.yml
-
-  windows-service:
-    name: Windows Service acceptance
-    needs: requirements
-    if: ${{ needs.requirements.outputs.windows_service == 'true' }}
-    uses: ./.github/workflows/windows-service.yml
-
-  virtual-scanner:
-    name: virtual scanner
-    needs: requirements
-    if: ${{ needs.requirements.outputs.virtual_scanner == 'true' }}
+    if: ${{ needs.requirements.outputs.smoke_linux == 'true' || needs.requirements.outputs.smoke_windows == 'true' }}
     uses: ./.github/workflows/virtual-scanner.yml
     with:
-      run_linux: ${{ needs.requirements.outputs.virtual_linux == 'true' }}
-      run_windows: ${{ needs.requirements.outputs.virtual_windows == 'true' }}
+      run_linux: ${{ needs.requirements.outputs.smoke_linux == 'true' }}
+      run_windows: ${{ needs.requirements.outputs.smoke_windows == 'true' }}
+      source_ref: ${{ needs.requirements.outputs.head_sha }}
+      mode: smoke
 
-  ci-required:
-    name: ci-required
+  ci-fast:
+    name: ci-fast
     if: ${{ always() }}
     needs:
       - requirements
       - core
-      - linux-systemd
-      - windows-service
-      - virtual-scanner
+      - scanner-smoke
     runs-on: ubuntu-24.04
     steps:
-      - name: Evaluate fail-closed product CI verdict
+      - name: Evaluate fail-closed fast feedback verdict
         shell: bash
         env:
           REQUIREMENTS_RESULT: ${{ needs.requirements.result }}
           CORE_REQUIRED: ${{ needs.requirements.outputs.core }}
           CORE_RESULT: ${{ needs.core.result }}
+          SMOKE_SCANNER_REQUIRED: ${{ needs.requirements.outputs.smoke_linux == 'true' || needs.requirements.outputs.smoke_windows == 'true' }}
+          SMOKE_SCANNER_RESULT: ${{ needs.scanner-smoke.result }}
+        run: |
+          set -euo pipefail
+
+          check_result() {
+            local name="$1"
+            local required="$2"
+            local result="$3"
+
+            case "$required" in
+              true|false) ;;
+              *)
+                echo "ci-fast: invalid requirement flag for $name: $required" >&2
+                return 1
+                ;;
+            esac
+
+            case "$result" in
+              success|skipped|failure|cancelled) ;;
+              *)
+                echo "ci-fast: unknown result for $name: $result" >&2
+                return 1
+                ;;
+            esac
+
+            case "$required:$result" in
+              true:success|false:success|false:skipped) return 0 ;;
+              *)
+                echo "ci-fast: $name required=$required result=$result" >&2
+                return 1
+                ;;
+            esac
+          }
+
+          assert_case() {
+            local required="$1"
+            local result="$2"
+            local expected="$3"
+            local actual
+
+            if check_result self-test "$required" "$result" >/dev/null 2>&1; then
+              actual=pass
+            else
+              actual=fail
+            fi
+
+            if [[ "$actual" != "$expected" ]]; then
+              echo "ci-fast self-test mismatch: required=$required result=$result expected=$expected actual=$actual" >&2
+              exit 1
+            fi
+          }
+
+          assert_case true success pass
+          assert_case true skipped fail
+          assert_case true failure fail
+          assert_case true cancelled fail
+          assert_case false success pass
+          assert_case false skipped pass
+          assert_case false failure fail
+          assert_case false cancelled fail
+          assert_case false unknown fail
+          assert_case invalid success fail
+
+          if [[ "$REQUIREMENTS_RESULT" != 'success' ]]; then
+            echo "ci-fast: requirements job result=$REQUIREMENTS_RESULT" >&2
+            exit 1
+          fi
+
+          failures=0
+          check_result core "$CORE_REQUIRED" "$CORE_RESULT" || failures=1
+          check_result scanner-smoke "$SMOKE_SCANNER_REQUIRED" "$SMOKE_SCANNER_RESULT" || failures=1
+
+          if [[ "$failures" -ne 0 ]]; then
+            echo 'ci-fast: FAIL' >&2
+            exit 1
+          fi
+
+          echo 'ci-fast: PASS'
+
+  linux-systemd:
+    name: ALT Linux systemd acceptance
+    needs: requirements
+    if: ${{ needs.requirements.outputs.final_required == 'true' && needs.requirements.outputs.linux_systemd == 'true' }}
+    uses: ./.github/workflows/linux-systemd.yml
+    with:
+      source_ref: ${{ needs.requirements.outputs.head_sha }}
+
+  windows-service:
+    name: Windows Service acceptance
+    needs: requirements
+    if: ${{ needs.requirements.outputs.final_required == 'true' && needs.requirements.outputs.windows_service == 'true' }}
+    uses: ./.github/workflows/windows-service.yml
+    with:
+      source_ref: ${{ needs.requirements.outputs.head_sha }}
+
+  scanner-final:
+    name: scanner final acceptance
+    needs: requirements
+    if: ${{ needs.requirements.outputs.final_required == 'true' && needs.requirements.outputs.virtual_scanner == 'true' }}
+    uses: ./.github/workflows/virtual-scanner.yml
+    with:
+      run_linux: ${{ needs.requirements.outputs.virtual_linux == 'true' }}
+      run_windows: ${{ needs.requirements.outputs.virtual_windows == 'true' }}
+      source_ref: ${{ needs.requirements.outputs.head_sha }}
+      mode: full
+
+  ci-required:
+    name: ci-required
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false) }}
+    needs:
+      - requirements
+      - ci-fast
+      - linux-systemd
+      - windows-service
+      - scanner-final
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Evaluate fail-closed final acceptance verdict
+        shell: bash
+        env:
+          REQUIREMENTS_RESULT: ${{ needs.requirements.result }}
+          FINAL_REQUIRED: ${{ needs.requirements.outputs.final_required }}
+          CI_FAST_RESULT: ${{ needs.ci-fast.result }}
           LINUX_SYSTEMD_REQUIRED: ${{ needs.requirements.outputs.linux_systemd }}
           LINUX_SYSTEMD_RESULT: ${{ needs.linux-systemd.result }}
           WINDOWS_SERVICE_REQUIRED: ${{ needs.requirements.outputs.windows_service }}
           WINDOWS_SERVICE_RESULT: ${{ needs.windows-service.result }}
           VIRTUAL_SCANNER_REQUIRED: ${{ needs.requirements.outputs.virtual_scanner }}
-          VIRTUAL_SCANNER_RESULT: ${{ needs.virtual-scanner.result }}
+          VIRTUAL_SCANNER_RESULT: ${{ needs.scanner-final.result }}
         run: |
           set -euo pipefail
 
@@ -123,45 +305,23 @@ jobs:
             esac
           }
 
-          assert_case() {
-            local required="$1"
-            local result="$2"
-            local expected="$3"
-            local actual
-
-            if check_result self-test "$required" "$result" >/dev/null 2>&1; then
-              actual=pass
-            else
-              actual=fail
-            fi
-
-            if [[ "$actual" != "$expected" ]]; then
-              echo "ci-required self-test mismatch: required=$required result=$result expected=$expected actual=$actual" >&2
-              exit 1
-            fi
-          }
-
-          assert_case true success pass
-          assert_case true skipped fail
-          assert_case true failure fail
-          assert_case true cancelled fail
-          assert_case false success pass
-          assert_case false skipped pass
-          assert_case false failure fail
-          assert_case false cancelled fail
-          assert_case false unknown fail
-          assert_case invalid success fail
-
           if [[ "$REQUIREMENTS_RESULT" != 'success' ]]; then
             echo "ci-required: requirements job result=$REQUIREMENTS_RESULT" >&2
             exit 1
           fi
+          if [[ "$FINAL_REQUIRED" != 'true' ]]; then
+            echo "ci-required: final_required=$FINAL_REQUIRED" >&2
+            exit 1
+          fi
+          if [[ "$CI_FAST_RESULT" != 'success' ]]; then
+            echo "ci-required: ci-fast result=$CI_FAST_RESULT" >&2
+            exit 1
+          fi
 
           failures=0
-          check_result core "$CORE_REQUIRED" "$CORE_RESULT" || failures=1
           check_result linux-systemd "$LINUX_SYSTEMD_REQUIRED" "$LINUX_SYSTEMD_RESULT" || failures=1
           check_result windows-service "$WINDOWS_SERVICE_REQUIRED" "$WINDOWS_SERVICE_RESULT" || failures=1
-          check_result virtual-scanner "$VIRTUAL_SCANNER_REQUIRED" "$VIRTUAL_SCANNER_RESULT" || failures=1
+          check_result scanner-final "$VIRTUAL_SCANNER_REQUIRED" "$VIRTUAL_SCANNER_RESULT" || failures=1
 
           if [[ "$failures" -ne 0 ]]; then
             echo 'ci-required: FAIL' >&2

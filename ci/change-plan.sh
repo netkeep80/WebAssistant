@@ -52,6 +52,8 @@ linux_systemd=false
 windows_service=false
 virtual_linux=false
 virtual_windows=false
+smoke_linux=false
+smoke_windows=false
 full_cross_platform=false
 saw_linux=false
 saw_windows=false
@@ -61,6 +63,8 @@ require_full() {
   windows_service=true
   virtual_linux=true
   virtual_windows=true
+  smoke_linux=true
+  smoke_windows=true
   full_cross_platform=true
 }
 
@@ -83,6 +87,7 @@ for path in "${paths[@]}"; do
       saw_windows=true
       windows_service=true
       virtual_windows=true
+      smoke_windows=true
       ;;
 
     webassist/src/WebAssistant/Scanning/LinuxScanAdapter.cs|\
@@ -95,6 +100,7 @@ for path in "${paths[@]}"; do
       saw_linux=true
       linux_systemd=true
       virtual_linux=true
+      smoke_linux=true
       ;;
 
     webassist/VERSION)
@@ -137,4 +143,6 @@ printf 'windows_service=%s\n' "$windows_service"
 printf 'virtual_linux=%s\n' "$virtual_linux"
 printf 'virtual_windows=%s\n' "$virtual_windows"
 printf 'virtual_scanner=%s\n' "$virtual_scanner"
+printf 'smoke_linux=%s\n' "$smoke_linux"
+printf 'smoke_windows=%s\n' "$smoke_windows"
 printf 'full_cross_platform=%s\n' "$full_cross_platform"
