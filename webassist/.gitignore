@@ -9,4 +9,3 @@ TestResults/
 *.sln.docstates
 /artifacts/
 /toolchain/
-/vendor/nuget/*.nupkg
