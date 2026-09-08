@@ -12,7 +12,7 @@ app_directory="$package_root/app"
 
 explicit_dotnet_root="${WEBASSISTANT_DOTNET_ROOT:-}"
 bundled_dotnet_root="$product_root/toolchain/dotnet/linux-x64"
-bootstrap_allowed="${WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP:-0}"
+bootstrap_allowed="${WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP:-1}"
 default_cache_root="${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}"
 bootstrap_dotnet_root="${WEBASSISTANT_DOTNET_INSTALL_DIR:-$default_cache_root/webassistant/dotnet}"
 dotnet_command=""
