@@ -41,6 +41,42 @@ public sealed class LinuxPackagingSdkResolutionTests
     }
 
     [Fact]
+    public void LinuxPackage_UsesInstalledSystemSdk10WithoutBootstrap()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        using var sandbox = new TemporaryDirectory();
+        var fakeBin = Path.Combine(sandbox.Path, "bin");
+        var systemMarker = Path.Combine(sandbox.Path, "system.marker");
+        var curlMarker = Path.Combine(sandbox.Path, "curl.marker");
+        var aptMarker = Path.Combine(sandbox.Path, "apt.marker");
+        var output = Path.Combine(sandbox.Path, "package");
+
+        Directory.CreateDirectory(fakeBin);
+        WriteFakeDotnet(Path.Combine(fakeBin, "dotnet"), systemMarker, "10.0.999");
+        WriteMarkerCommand(Path.Combine(fakeBin, "curl"), curlMarker, 88);
+        WriteMarkerCommand(Path.Combine(fakeBin, "apt-get"), aptMarker, 87);
+
+        var result = RunPackage(
+            output,
+            fakeBin,
+            new Dictionary<string, string>
+            {
+                ["WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP"] = "0",
+                ["WEBASSISTANT_DOTNET_ROOT"] = ""
+            });
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.True(File.Exists(systemMarker), $"Installed system SDK 10 was not used. stderr: {result.StandardError}");
+        Assert.Contains("publish", File.ReadAllText(systemMarker));
+        Assert.False(File.Exists(curlMarker), "System SDK resolution must not invoke online bootstrap.");
+        Assert.False(File.Exists(aptMarker), "System SDK resolution must not invoke apt.");
+    }
+
+    [Fact]
     public void LinuxPackage_WithoutSdkAndWithoutBootstrap_FailsWithoutPackageManagerOrNetwork()
     {
         if (!OperatingSystem.IsLinux())
