@@ -73,7 +73,15 @@ Linux packaging не предполагает наличие пакета `dotne
 1. явный локальный SDK из `WEBASSISTANT_DOTNET_ROOT`;
 2. локальный offline toolchain в `toolchain/dotnet/linux-x64/`, если он подготовлен рядом с product root;
 3. уже установленный system .NET SDK 10;
-4. официальный online bootstrap через `dotnet-install.sh`, только при явном `WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=1`.
+4. если SDK 10 всё ещё не найден — автоматический официальный online bootstrap через `dotnet-install.sh`.
+
+То есть обычный запуск:
+
+```bash
+./build/linux/package.sh
+```
+
+сам скачивает .NET SDK 10 в пользовательский cache, если подходящего SDK нет и доступна сеть. `apt-get`/`sudo` для получения .NET SDK не используются.
 
 Наличие подходящего system SDK можно проверить заранее:
 
@@ -81,26 +89,24 @@ Linux packaging не предполагает наличие пакета `dotne
 dotnet --list-sdks
 ```
 
-По умолчанию online bootstrap выключен. Если SDK 10 нигде не найден, сборка завершается с диагностикой и не обращается к `apt-get` или сети.
-
 Пример использования заранее подготовленного локального SDK:
 
 ```bash
 WEBASSISTANT_DOTNET_ROOT=/opt/dotnet ./build/linux/package.sh
 ```
 
-Явно разрешить online bootstrap:
+Если сборка должна быть строго без сетевого bootstrap, его можно явно отключить:
 
 ```bash
-WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=1 ./build/linux/package.sh
+WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0 ./build/linux/package.sh
 ```
 
-Каталог для скачиваемого SDK можно задать отдельно:
+В этом режиме отсутствие local/bundled/system SDK 10 приводит к fail-closed без обращения к сети или package manager.
+
+Каталог для автоматически скачиваемого SDK можно задать отдельно:
 
 ```bash
-WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=1 \
-WEBASSISTANT_DOTNET_INSTALL_DIR=/opt/dotnet \
-./build/linux/package.sh
+WEBASSISTANT_DOTNET_INSTALL_DIR=/opt/dotnet ./build/linux/package.sh
 ```
 
 Наличие локального SDK само по себе ещё не означает полноценную clean offline build: для сборки с пустыми machine caches без сети также нужен полный локальный NuGet dependency closure с проверяемой целостностью. Такой offline bundle является отдельным build-environment артефактом, а не содержимым Git-репозитория.
