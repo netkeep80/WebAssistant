@@ -9,6 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $serviceName = "WebAssistant"
+$consumerOrigin = "https://consumer.example.invalid"
 if ([string]::IsNullOrWhiteSpace($ProductRoot)) {
     $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
     $ProductRoot = Join-Path $repositoryRoot "webassist"
@@ -17,9 +18,12 @@ $ProductRoot = [IO.Path]::GetFullPath($ProductRoot)
 $packageBatch = Join-Path $ProductRoot "build/windows/package.bat"
 $sourceInstallBatch = Join-Path $ProductRoot "install/windows/install.bat"
 $packageDirectory = Join-Path $ProductRoot "artifacts/windows-x64"
+$packageConfigFile = Join-Path $packageDirectory "app/appsettings.json"
 $installScript = Join-Path $packageDirectory "install.ps1"
 $uninstallScript = Join-Path $packageDirectory "uninstall.ps1"
+$installedConfigFile = Join-Path $InstallDirectory "appsettings.json"
 $logDirectory = Join-Path $env:ProgramData "WebAssistant\logs"
+$dataDirectory = Join-Path $env:ProgramData "WebAssistant\data"
 $uninstalled = $false
 
 function Wait-Health {
@@ -34,6 +38,24 @@ function Wait-Health {
         Start-Sleep -Milliseconds 500
     }
     throw "WebAssistant health не стал доступен на $uri."
+}
+
+function Assert-CorsOrigin {
+    param(
+        [int]$ExpectedPort,
+        [string]$ExpectedOrigin
+    )
+
+    $uri = "http://127.0.0.1:$ExpectedPort/v1/health"
+    $response = Invoke-WebRequest `
+        -Uri $uri `
+        -Headers @{ Origin = $ExpectedOrigin } `
+        -TimeoutSec 5
+
+    $actualOrigin = [string]$response.Headers["Access-Control-Allow-Origin"]
+    if ($actualOrigin -ne $ExpectedOrigin) {
+        throw "Package-owned CORS config не применён: ожидался Access-Control-Allow-Origin '$ExpectedOrigin', получено '$actualOrigin'."
+    }
 }
 
 function Assert-DailyLog {
@@ -92,6 +114,23 @@ if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
     throw "На контрольной машине уже зарегистрирована служба WebAssistant."
 }
 
+$consumerConfiguration = @{
+    WebAssistant = @{
+        Port = $Port
+        Cors = @{
+            Enabled = $true
+            AllowedOrigins = @($consumerOrigin)
+        }
+        FileSystem = @{
+            RootDirectory = $dataDirectory
+        }
+    }
+}
+$consumerConfiguration |
+    ConvertTo-Json -Depth 6 |
+    Set-Content -LiteralPath $packageConfigFile -Encoding utf8
+$packageConfigHash = (Get-FileHash -LiteralPath $packageConfigFile -Algorithm SHA256).Hash
+
 try {
     & $sourceInstallBatch -InstallDirectory $InstallDirectory -Port $Port
     if ($LASTEXITCODE -ne 0) {
@@ -114,7 +153,16 @@ try {
         throw "SCM указывает не на установленный WebAssistant.exe: $($serviceInfo.PathName)"
     }
 
+    if (-not (Test-Path -LiteralPath $installedConfigFile -PathType Leaf)) {
+        throw "Installer не сохранил package appsettings.json: $installedConfigFile"
+    }
+    $installedConfigHash = (Get-FileHash -LiteralPath $installedConfigFile -Algorithm SHA256).Hash
+    if ($installedConfigHash -ne $packageConfigHash) {
+        throw "Installer изменил package-owned appsettings.json."
+    }
+
     Wait-Health -ExpectedPort $Port
+    Assert-CorsOrigin -ExpectedPort $Port -ExpectedOrigin $consumerOrigin
     Assert-DailyLog
     Assert-LoopbackOnly -ExpectedPort $Port
 
@@ -129,6 +177,7 @@ try {
         [System.ServiceProcess.ServiceControllerStatus]::Running,
         [TimeSpan]::FromSeconds(30))
     Wait-Health -ExpectedPort $Port
+    Assert-CorsOrigin -ExpectedPort $Port -ExpectedOrigin $consumerOrigin
     Assert-DailyLog
     Assert-LoopbackOnly -ExpectedPort $Port
 
@@ -137,6 +186,7 @@ try {
         [System.ServiceProcess.ServiceControllerStatus]::Running,
         [TimeSpan]::FromSeconds(30))
     Wait-Health -ExpectedPort $Port
+    Assert-CorsOrigin -ExpectedPort $Port -ExpectedOrigin $consumerOrigin
     Assert-DailyLog
     Assert-LoopbackOnly -ExpectedPort $Port
 

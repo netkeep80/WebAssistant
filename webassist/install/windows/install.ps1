@@ -36,20 +36,25 @@ New-Item $logDirectory -ItemType Directory -Force | Out-Null
 New-Item $FileSystemRootDirectory -ItemType Directory -Force | Out-Null
 Copy-Item (Join-Path $sourceDirectory "*") $InstallDirectory -Recurse -Force
 
-$configuration = @{
-    WebAssistant = @{
-        Port = $Port
-        LogDirectory = $logDirectory
-        Cors = @{
-            Enabled = ($AllowedOrigins.Count -gt 0)
-            AllowedOrigins = @($AllowedOrigins)
-        }
-        FileSystem = @{
-            RootDirectory = $FileSystemRootDirectory
+if (-not (Test-Path -LiteralPath $configFile)) {
+    $configuration = @{
+        WebAssistant = @{
+            Port = $Port
+            LogDirectory = $logDirectory
+            Cors = @{
+                Enabled = ($AllowedOrigins.Count -gt 0)
+                AllowedOrigins = @($AllowedOrigins)
+            }
+            FileSystem = @{
+                RootDirectory = $FileSystemRootDirectory
+            }
         }
     }
+    $configuration | ConvertTo-Json -Depth 6 | Set-Content -Path $configFile -Encoding utf8
 }
-$configuration | ConvertTo-Json -Depth 6 | Set-Content -Path $configFile -Encoding utf8
+else {
+    Write-Host "Сохраняю package appsettings.json без изменений: $configFile"
+}
 
 $executable = Join-Path $InstallDirectory "WebAssistant.exe"
 if (-not (Test-Path $executable)) {

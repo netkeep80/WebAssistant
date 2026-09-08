@@ -24,7 +24,7 @@
     {
       "id": "WA-REPO-002",
       "kind": "required",
-      "statement": "Исходники, build/package/install scripts, runtime configuration, vendored обязательные зависимости и продуктовая документация находятся внутри webassist."
+      "statement": "Исходники, build/package/install scripts, механизм runtime configuration, vendored обязательные зависимости и продуктовая документация находятся внутри webassist. Environment-specific appsettings.json может принадлежать downstream consumer/deployment и не обязан храниться в public development repository; если такой config уже входит в package, installer не заменяет его собственным default config."
     },
     {
       "id": "WA-CI-001",
@@ -104,7 +104,7 @@
     {
       "id": "WA-CORS-001",
       "kind": "required",
-      "statement": "CORS по умолчанию выключен. При включении разрешены только явно заданные exact HTTP/HTTPS origins; wildcard запрещён."
+      "statement": "CORS по умолчанию выключен. При включении разрешены только явно заданные exact HTTP/HTTPS origins; wildcard запрещён. Environment-specific exact origins могут поставляться downstream consumer/deployment через package appsettings.json, и installer обязан сохранять уже присутствующий package config без подмены default CORS configuration."
     },
     {
       "id": "WA-FS-001",

@@ -8,4 +8,4 @@ TestResults/
 *.userosscache
 *.sln.docstates
 artifacts/
-webassist/src/WebAssistant/appsettings.json 
+webassist/src/WebAssistant/appsettings.json
