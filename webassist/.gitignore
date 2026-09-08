@@ -8,4 +8,5 @@ TestResults/
 *.userosscache
 *.sln.docstates
 /artifacts/
+/toolchain/
 /vendor/nuget/*.nupkg

@@ -68,6 +68,45 @@ Linux:
 ./build/linux/package.sh
 ```
 
+Linux packaging не предполагает наличие пакета `dotnet-sdk-10.0` в системном package manager. SDK 10 разрешается в следующем порядке:
+
+1. явный локальный SDK из `WEBASSISTANT_DOTNET_ROOT`;
+2. локальный offline toolchain в `toolchain/dotnet/linux-x64/`, если он подготовлен рядом с product root;
+3. уже установленный system .NET SDK 10;
+4. официальный online bootstrap через `dotnet-install.sh`, только при явном `WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=1`.
+
+Наличие подходящего system SDK можно проверить заранее:
+
+```bash
+dotnet --list-sdks
+```
+
+По умолчанию online bootstrap выключен. Если SDK 10 нигде не найден, сборка завершается с диагностикой и не обращается к `apt-get` или сети.
+
+Пример использования заранее подготовленного локального SDK:
+
+```bash
+WEBASSISTANT_DOTNET_ROOT=/opt/dotnet ./build/linux/package.sh
+```
+
+Явно разрешить online bootstrap:
+
+```bash
+WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=1 ./build/linux/package.sh
+```
+
+Каталог для скачиваемого SDK можно задать отдельно:
+
+```bash
+WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=1 \
+WEBASSISTANT_DOTNET_INSTALL_DIR=/opt/dotnet \
+./build/linux/package.sh
+```
+
+Наличие локального SDK само по себе ещё не означает полноценную clean offline build: для сборки с пустыми machine caches без сети также нужен полный локальный NuGet dependency closure с проверяемой целостностью. Такой offline bundle является отдельным build-environment артефактом, а не содержимым Git-репозитория.
+
+Linux package публикуется как self-contained `linux-x64`, поэтому машине, на которой уже готовый package только устанавливается и запускается, .NET SDK не требуется.
+
 Windows:
 
 ```bat

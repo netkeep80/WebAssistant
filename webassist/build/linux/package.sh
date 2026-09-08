@@ -10,6 +10,14 @@ output_directory="${1:-$product_root/artifacts/linux-x64}"
 package_root="$(realpath -m -- "$output_directory")"
 app_directory="$package_root/app"
 
+explicit_dotnet_root="${WEBASSISTANT_DOTNET_ROOT:-}"
+bundled_dotnet_root="$product_root/toolchain/dotnet/linux-x64"
+bootstrap_allowed="${WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP:-0}"
+default_cache_root="${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}"
+bootstrap_dotnet_root="${WEBASSISTANT_DOTNET_INSTALL_DIR:-$default_cache_root/webassistant/dotnet}"
+dotnet_command=""
+dotnet_source=""
+
 [[ -f "$version_file" ]] || {
     echo "Отсутствует canonical VERSION: $version_file" >&2
     exit 1
@@ -21,43 +29,91 @@ version="$(<"$version_file")"
     exit 1
 }
 
-has_dotnet_10_sdk() {
-    command -v dotnet >/dev/null 2>&1 && dotnet --list-sdks 2>/dev/null | grep -Eq '^10\.'
+dotnet_has_sdk_10() {
+    local candidate="$1"
+    [[ -x "$candidate" ]] && "$candidate" --list-sdks 2>/dev/null | grep -Eq '^10\.'
 }
 
-ensure_dotnet_10_sdk() {
-    if has_dotnet_10_sdk; then
-        return
+select_dotnet_root() {
+    local root="$1"
+    local source="$2"
+    local candidate="$root/dotnet"
+
+    if dotnet_has_sdk_10 "$candidate"; then
+        dotnet_command="$candidate"
+        dotnet_source="$source"
+        export DOTNET_ROOT="$root"
+        return 0
     fi
 
-    command -v apt-get >/dev/null 2>&1 || {
-        echo "Не найден .NET SDK 10 и apt-get недоступен." >&2
+    return 1
+}
+
+if [[ -n "$explicit_dotnet_root" ]]; then
+    select_dotnet_root "$explicit_dotnet_root" "WEBASSISTANT_DOTNET_ROOT" || {
+        echo "WEBASSISTANT_DOTNET_ROOT не содержит работоспособный .NET SDK 10: $explicit_dotnet_root" >&2
+        exit 1
+    }
+elif [[ -e "$bundled_dotnet_root/dotnet" ]]; then
+    select_dotnet_root "$bundled_dotnet_root" "bundled offline SDK" || {
+        echo "Bundled toolchain существует, но не содержит работоспособный .NET SDK 10: $bundled_dotnet_root" >&2
+        exit 1
+    }
+fi
+
+if [[ -z "$dotnet_command" ]] && command -v dotnet >/dev/null 2>&1; then
+    system_dotnet="$(command -v dotnet)"
+    if dotnet_has_sdk_10 "$system_dotnet"; then
+        dotnet_command="$system_dotnet"
+        dotnet_source="system SDK"
+    fi
+fi
+
+if [[ -z "$dotnet_command" ]]; then
+    case "$bootstrap_allowed" in
+        1|true|TRUE|yes|YES)
+            ;;
+        0|false|FALSE|no|NO|"")
+            echo "Не найден .NET SDK 10." >&2
+            echo "Поместите SDK в $bundled_dotnet_root, задайте WEBASSISTANT_DOTNET_ROOT=/path/to/dotnet-root или разрешите online bootstrap: WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=1." >&2
+            exit 1
+            ;;
+        *)
+            echo "Некорректное значение WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP: $bootstrap_allowed (ожидается 0/1)." >&2
+            exit 1
+            ;;
+    esac
+
+    command -v curl >/dev/null 2>&1 || {
+        echo "Online bootstrap разрешён, но curl недоступен." >&2
         exit 1
     }
 
-    if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
-        apt-get update
-        apt-get install -y dotnet-sdk-10.0
-    elif command -v sudo >/dev/null 2>&1; then
-        sudo apt-get update
-        sudo apt-get install -y dotnet-sdk-10.0
-    else
-        echo "Для установки dotnet-sdk-10.0 требуются root-права или sudo." >&2
-        exit 1
-    fi
+    mkdir -p -- "$bootstrap_dotnet_root"
+    install_script="$(mktemp "${TMPDIR:-/tmp}/webassistant-dotnet-install.XXXXXX.sh")"
+    cleanup_install_script() {
+        rm -f -- "$install_script"
+    }
+    trap cleanup_install_script EXIT
 
-    has_dotnet_10_sdk || {
-        echo "После установки .NET SDK 10 по-прежнему недоступен." >&2
+    curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$install_script"
+    bash "$install_script" --channel 10.0 --install-dir "$bootstrap_dotnet_root" --no-path
+
+    select_dotnet_root "$bootstrap_dotnet_root" "online bootstrap" || {
+        echo "После online bootstrap .NET SDK 10 по-прежнему недоступен: $bootstrap_dotnet_root" >&2
         exit 1
     }
-}
 
-ensure_dotnet_10_sdk
+    cleanup_install_script
+    trap - EXIT
+fi
+
+echo "Используется .NET SDK 10: $dotnet_source ($dotnet_command)"
 
 rm -rf -- "$package_root"
 mkdir -p -- "$app_directory"
 
-dotnet publish "$project_path" \
+"$dotnet_command" publish "$project_path" \
     --configuration Release \
     --runtime linux-x64 \
     --self-contained true \
