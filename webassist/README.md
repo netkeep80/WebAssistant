@@ -75,6 +75,12 @@ Linux packaging не предполагает наличие пакета `dotne
 3. уже установленный system .NET SDK 10;
 4. официальный online bootstrap через `dotnet-install.sh`, только при явном `WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=1`.
 
+Наличие подходящего system SDK можно проверить заранее:
+
+```bash
+dotnet --list-sdks
+```
+
 По умолчанию online bootstrap выключен. Если SDK 10 нигде не найден, сборка завершается с диагностикой и не обращается к `apt-get` или сети.
 
 Пример использования заранее подготовленного локального SDK:
