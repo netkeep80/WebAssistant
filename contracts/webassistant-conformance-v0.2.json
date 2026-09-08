@@ -12,12 +12,12 @@
     "webassist/docs/windows-service.md",
     "webassist/.gitlab-ci.yml",
     "webassist/NuGet.Config",
-    "webassist/src/WebAssistant/appsettings.json",
     "webassist/src/WebAssistant/WebAssistant.csproj",
     "webassist/build/linux/package.sh",
     "webassist/build/windows/package.bat",
     "webassist/install/linux/install.sh",
     "webassist/install/windows/install.bat",
+    "webassist/install/windows/install.ps1",
     "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.1.450cba65.nupkg",
     "tests/core/BaselineContractTests.cs",
     "tests/core/PackagingLayoutTests.cs",
@@ -42,6 +42,7 @@
     "tests/core/RequestLoggingMiddlewareTests.cs",
     "webassist/src/WebAssistant/Logging/DailyFileLoggerProvider.cs",
     "tests/core/CorsConfigurationTests.cs",
+    "tests/core/ConfigurationOwnershipTests.cs",
     "tests/core/RootedPathResolverTests.cs",
     "tests/core/DependencyOwnershipTests.cs",
     "webassist/vendor/naps2/README.md"
@@ -225,7 +226,8 @@
         "WA-CORS-001"
       ],
       "evidence": [
-        "tests/core/CorsConfigurationTests.cs"
+        "tests/core/CorsConfigurationTests.cs",
+        "tests/core/ConfigurationOwnershipTests.cs"
       ]
     },
     {
