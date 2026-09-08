@@ -35,11 +35,44 @@ public sealed class PackagingLayoutTests
 
         Assert.Contains("BASH_SOURCE[0]", package);
         Assert.Contains("src/WebAssistant/WebAssistant.csproj", package);
-        Assert.Contains("dotnet-sdk-10.0", package);
+        Assert.Contains("WEBASSISTANT_DOTNET_ROOT", package);
+        Assert.Contains("WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP", package);
         Assert.Contains("--runtime linux-x64", package);
         Assert.Contains("--self-contained true", package);
         Assert.DoesNotContain("--naps2-rpm", package);
         Assert.DoesNotContain(".rpm", package);
+    }
+
+    [Fact]
+    public void LinuxPackage_DoesNotAssumeAptProvidesDotNet10()
+    {
+        var package = ReadRequired("webassist/build/linux/package.sh");
+
+        Assert.DoesNotContain("apt-get update", package);
+        Assert.DoesNotContain("apt-get install", package);
+        Assert.DoesNotContain("dotnet-sdk-10.0", package);
+    }
+
+    [Fact]
+    public void LinuxPackage_ResolvesLocalThenSystemThenExplicitOnlineBootstrap()
+    {
+        var package = ReadRequired("webassist/build/linux/package.sh");
+
+        var localRoot = package.IndexOf("WEBASSISTANT_DOTNET_ROOT", StringComparison.Ordinal);
+        var bundledRoot = package.IndexOf("toolchain/dotnet/linux-x64", StringComparison.Ordinal);
+        var systemSdk = package.IndexOf("command -v dotnet", StringComparison.Ordinal);
+        var bootstrapOptIn = package.IndexOf("WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP", StringComparison.Ordinal);
+        var installScript = package.IndexOf("dotnet-install.sh", StringComparison.Ordinal);
+
+        Assert.True(localRoot >= 0, "Linux package must support an explicit local SDK root.");
+        Assert.True(bundledRoot >= 0, "Linux package must probe the bundled offline SDK location.");
+        Assert.True(systemSdk >= 0, "Linux package must probe an already-installed system SDK.");
+        Assert.True(bootstrapOptIn >= 0, "Linux package must require explicit online bootstrap opt-in.");
+        Assert.True(installScript >= 0, "Linux package must use the official dotnet-install bootstrap path when opted in.");
+        Assert.True(localRoot < systemSdk, "Explicit local SDK resolution must precede the system SDK probe.");
+        Assert.True(bundledRoot < systemSdk, "Bundled offline SDK resolution must precede the system SDK probe.");
+        Assert.True(systemSdk < bootstrapOptIn, "System SDK resolution must precede online bootstrap.");
+        Assert.True(bootstrapOptIn < installScript, "Bootstrap must be gated before invoking dotnet-install.sh.");
     }
 
     [Fact]
