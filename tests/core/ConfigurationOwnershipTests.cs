@@ -21,6 +21,38 @@ public sealed class ConfigurationOwnershipTests
     }
 
     [Fact]
+    public void CanonicalProducers_SelectSourceAppsettingsOrSharedSafeDefaultAtPackageTime()
+    {
+        var windows = ReadRequired("webassist/build/windows/package.ps1");
+        var linux = ReadRequired("webassist/build/linux/package.sh");
+
+        Assert.Contains("src/WebAssistant/appsettings.json", windows, StringComparison.Ordinal);
+        Assert.Contains("build/common/default-appsettings.json", windows, StringComparison.Ordinal);
+        Assert.Contains("source-appsettings", windows, StringComparison.Ordinal);
+        Assert.Contains("generated-default", windows, StringComparison.Ordinal);
+
+        Assert.Contains("src/WebAssistant/appsettings.json", linux, StringComparison.Ordinal);
+        Assert.Contains("build/common/default-appsettings.json", linux, StringComparison.Ordinal);
+        Assert.Contains("source-appsettings", linux, StringComparison.Ordinal);
+        Assert.Contains("generated-default", linux, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LinuxInstaller_RequiresAndCopiesPackagedAppsettingsWithoutGeneratingDefaults()
+    {
+        var install = ReadRequired("webassist/install/linux/install.sh");
+
+        Assert.Contains("source_config=\"$script_dir/appsettings.json\"", install, StringComparison.Ordinal);
+        Assert.Contains("[[ -f \"$source_config\" ]]", install, StringComparison.Ordinal);
+        Assert.Contains("cp -- \"$source_config\" \"$config_file\"", install, StringComparison.Ordinal);
+
+        Assert.DoesNotContain("cat > \"$config_file\"", install, StringComparison.Ordinal);
+        Assert.DoesNotContain("cat >\"$config_file\"", install, StringComparison.Ordinal);
+        Assert.DoesNotContain("<<'JSON'", install, StringComparison.Ordinal);
+        Assert.DoesNotContain("<<\"JSON\"", install, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WindowsInstaller_PreservesPackageOwnedAppsettings()
     {
         var root = FindRepositoryRoot();
@@ -49,6 +81,15 @@ public sealed class ConfigurationOwnershipTests
         Assert.True(
             configWriteIndex > preserveGuardIndex,
             "Default appsettings.json may only be generated inside the missing-config guard.");
+    }
+
+    private static string ReadRequired(string relativePath)
+    {
+        var path = Path.Combine(
+            FindRepositoryRoot(),
+            relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(path), $"Required file is missing: {relativePath}");
+        return File.ReadAllText(path);
     }
 
     private static string FindRepositoryRoot()
