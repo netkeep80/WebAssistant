@@ -253,7 +253,7 @@
       "kind": "negative",
       "assertion": "Distribution candidate требует публиковать в GitHub Release те же exact installer bytes, которые прошли acceptance; повтор той же VERSION с другими hashes запрещён.",
       "requirements": ["WA-RELEASE-001"],
-      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "tests/core/ReleaseInfrastructureTests.cs", ".github/workflows/release-candidate.yml", "ci/release/resolve-accepted-main.sh", "ci/release/inspect-release-state.sh", "ci/release/verify-installer-assets.sh", "ci/release/stage-draft-release.sh", "ci/release/finalize-release.sh", "ci/change-plan.sh"]
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "tests/core/ReleaseInfrastructureTests.cs"]
     },
     {
       "id": "WA-C-INSTALL-GUIDE-001",
