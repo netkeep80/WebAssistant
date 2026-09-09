@@ -29,6 +29,23 @@ public sealed class PackagingLayoutTests
     }
 
     [Fact]
+    public void PackagingLayout_ContainsSharedInstallerArtifactSupportFiles()
+    {
+        var expectedFiles = new[]
+        {
+            "webassist/build/common/default-appsettings.json",
+            "webassist/build/common/write-provenance.ps1",
+            "webassist/build/common/write-provenance.sh"
+        };
+
+        foreach (var relativePath in expectedFiles)
+        {
+            var path = Path.Combine(FindRepositoryRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+            Assert.True(File.Exists(path), $"Installer artifact support file is missing: {relativePath}");
+        }
+    }
+
+    [Fact]
     public void LinuxPackage_IsCwdIndependentAndBuildsDirectSdkProduct()
     {
         var package = ReadRequired("webassist/build/linux/package.sh");

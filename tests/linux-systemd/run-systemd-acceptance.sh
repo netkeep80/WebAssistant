@@ -2,25 +2,18 @@
 set -euo pipefail
 
 PACKAGE_DIRECTORY="${1:-}"
-PRODUCT_ROOT="${2:-}"
 ALT_IMAGE="${ALT_IMAGE:-registry.altlinux.org/p11/alt:latest}"
 CONTAINER_NAME="webassistant-alt-p11-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 TEST_IMAGE="webassistant-alt-p11-systemd:${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 PORT=17654
-LOG_DIR="/var/log/webassist"
-DATA_DIR="/var/lib/webassist"
+LOG_DIR="/var/log/webassistant"
+DATA_DIR="/var/lib/webassistant"
 
 if [[ -z "$PACKAGE_DIRECTORY" ]]; then
-    echo "Использование: $0 <каталог product package> [product root]" >&2
+    echo "Использование: $0 <каталог распакованного product package>" >&2
     exit 2
 fi
-
-if [[ -z "$PRODUCT_ROOT" ]]; then
-    repository_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-    PRODUCT_ROOT="$repository_root/webassist"
-fi
-PRODUCT_ROOT="$(cd -- "$PRODUCT_ROOT" && pwd)"
-package_script="$PRODUCT_ROOT/build/linux/package.sh"
+PACKAGE_DIRECTORY="$(cd -- "$PACKAGE_DIRECTORY" && pwd)"
 
 cleanup() {
     set +e
@@ -29,12 +22,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-original_pwd="$PWD"
-cd "${RUNNER_TEMP:-/tmp}"
-"$package_script" "$PACKAGE_DIRECTORY"
-cd "$original_pwd"
-
 test -x "$PACKAGE_DIRECTORY/app/WebAssistant"
+test -f "$PACKAGE_DIRECTORY/app/appsettings.json"
+test -f "$PACKAGE_DIRECTORY/VERSION"
 test -x "$PACKAGE_DIRECTORY/install.sh"
 test -x "$PACKAGE_DIRECTORY/uninstall.sh"
 test -f "$PACKAGE_DIRECTORY/webassist.service"
@@ -93,8 +83,21 @@ if ! docker exec \
 fi
 docker exec "$CONTAINER_NAME" rm -rf /tmp/webassistant-fail-apt
 
-docker exec "$CONTAINER_NAME" systemctl is-enabled --quiet webassist.service
-docker exec "$CONTAINER_NAME" systemctl is-active --quiet webassist.service
+assert_service_enabled_active() {
+    if ! docker exec "$CONTAINER_NAME" systemctl is-enabled --quiet webassist.service; then
+        echo "WebAssistant service не enabled после installer lifecycle step." >&2
+        docker exec "$CONTAINER_NAME" systemctl status webassist.service --no-pager >&2 || true
+        return 1
+    fi
+    if ! docker exec "$CONTAINER_NAME" systemctl is-active --quiet webassist.service; then
+        echo "WebAssistant service не active после installer lifecycle step." >&2
+        docker exec "$CONTAINER_NAME" systemctl status webassist.service --no-pager >&2 || true
+        docker exec "$CONTAINER_NAME" journalctl -u webassist.service -n 100 --no-pager >&2 || true
+        return 1
+    fi
+}
+
+assert_service_enabled_active
 
 service_user="$(docker exec "$CONTAINER_NAME" systemctl show webassist.service --property=User --value)"
 [[ "$service_user" == "webassist" ]] || { echo "Неожиданный service user: $service_user" >&2; exit 1; }
@@ -105,27 +108,44 @@ wait_for_health() {
             "http://127.0.0.1:${PORT}/v1/health" >/dev/null 2>&1; then return 0; fi
         sleep 1
     done
+    echo "WebAssistant health endpoint не стал доступен на 127.0.0.1:${PORT}." >&2
     docker exec "$CONTAINER_NAME" systemctl status webassist.service --no-pager >&2 || true
     docker exec "$CONTAINER_NAME" journalctl -u webassist.service -n 100 --no-pager >&2 || true
     return 1
 }
 
 assert_daily_log() {
-    docker exec "$CONTAINER_NAME" test -d "$LOG_DIR"
-    docker exec "$CONTAINER_NAME" sh -lc \
-        "find '$LOG_DIR' -maxdepth 0 -user webassist -group webassist -print -quit | grep -q ."
+    if ! docker exec "$CONTAINER_NAME" test -d "$LOG_DIR"; then
+        echo "Не создан log directory $LOG_DIR." >&2
+        return 1
+    fi
+    if ! docker exec "$CONTAINER_NAME" sh -lc \
+        "find '$LOG_DIR' -maxdepth 0 -user webassist -group webassist -print -quit | grep -q ."; then
+        echo "Log directory $LOG_DIR имеет неверного owner/group." >&2
+        docker exec "$CONTAINER_NAME" ls -ld "$LOG_DIR" >&2 || true
+        return 1
+    fi
     for attempt in {1..30}; do
         if docker exec "$CONTAINER_NAME" sh -lc \
             "find '$LOG_DIR' -maxdepth 1 -type f -name 'webassistant-*.log' -print -quit | grep -q ."; then return 0; fi
         sleep 0.1
     done
+    echo "После успешного health request не появился webassistant-*.log в $LOG_DIR." >&2
+    docker exec "$CONTAINER_NAME" ls -la "$LOG_DIR" >&2 || true
+    docker exec "$CONTAINER_NAME" journalctl -u webassist.service -n 100 --no-pager >&2 || true
     return 1
 }
 
 assert_loopback_only() {
     listeners="$(docker exec "$CONTAINER_NAME" sh -lc "ss -H -ltn 'sport = :${PORT}' || true")"
-    grep -Eq "127\\.0\\.0\\.1:${PORT}([[:space:]]|$)" <<<"$listeners"
-    ! grep -Eq "(0\\.0\\.0\\.0|\\[::\\]|\\*:):?${PORT}([[:space:]]|$)" <<<"$listeners"
+    if ! grep -Eq "127\\.0\\.0\\.1:${PORT}([[:space:]]|$)" <<<"$listeners"; then
+        echo "Не найден loopback listener WebAssistant на 127.0.0.1:${PORT}: $listeners" >&2
+        return 1
+    fi
+    if grep -Eq "(0\\.0\\.0\\.0|\\[::\\]|\\*:):?${PORT}([[:space:]]|$)" <<<"$listeners"; then
+        echo "WebAssistant слушает не только loopback на порту ${PORT}: $listeners" >&2
+        return 1
+    fi
 }
 
 assert_no_listener() {
@@ -133,6 +153,7 @@ assert_no_listener() {
         if ! docker exec "$CONTAINER_NAME" sh -lc "ss -H -ltn 'sport = :${PORT}'" | grep -q .; then return 0; fi
         sleep 0.25
     done
+    echo "Listener WebAssistant на порту ${PORT} остался после остановки: $(docker exec "$CONTAINER_NAME" sh -lc "ss -H -ltn 'sport = :${PORT}' || true")" >&2
     return 1
 }
 
@@ -166,8 +187,7 @@ for attempt in {1..30}; do
     sleep 1
 done
 wait_for_health
-docker exec "$CONTAINER_NAME" systemctl is-enabled --quiet webassist.service
-docker exec "$CONTAINER_NAME" systemctl is-active --quiet webassist.service
+assert_service_enabled_active
 assert_loopback_only
 
 docker exec "$CONTAINER_NAME" /webassistant-package/uninstall.sh

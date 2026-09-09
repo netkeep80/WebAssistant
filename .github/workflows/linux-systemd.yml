@@ -16,23 +16,27 @@ on:
       - 'tests/linux-systemd/**'
       - 'tests/core/SystemServiceProductTests.cs'
       - 'tests/core/IsolatedExportRootAcceptanceTests.cs'
+      - 'tests/core/InstallerArtifactContractTests.cs'
+      - 'tests/core/ConfigurationOwnershipTests.cs'
+      - 'webassist/build/common/**'
       - 'webassist/build/linux/**'
       - 'webassist/install/linux/**'
       - 'webassist/src/WebAssistant/**'
       - 'webassist/vendor/**'
       - 'webassist/NuGet.Config'
+      - 'webassist/VERSION'
       - '.github/workflows/linux-systemd.yml'
 
 permissions:
   contents: read
 
 jobs:
-  alt-p11-systemd-acceptance:
-    name: ALT p11 systemd lifecycle
+  build-linux-installer:
+    name: Build Linux installer artifact once
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
-      - name: Checkout
+      - name: Checkout exact source
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.source_ref || github.sha }}
@@ -41,6 +45,15 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+
+      - name: Ensure ZIP builder dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v zip >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y zip
+          fi
 
       - name: Create isolated product export root
         shell: bash
@@ -55,18 +68,83 @@ jobs:
           test -f "$export_root/.gitlab-ci.yml"
           test -f "$export_root/README.md"
           test -x "$export_root/build/linux/package.sh"
+          test -f "$export_root/build/common/default-appsettings.json"
+          test -f "$export_root/build/common/write-provenance.sh"
 
           echo "WEBASSISTANT_EXPORT_ROOT=$export_root" >> "$GITHUB_ENV"
 
-      - name: Exercise isolated-root systemd lifecycle in ALT p11
+      - name: Build canonical versioned ZIP and evidence
+        shell: bash
+        env:
+          WEBASSISTANT_SOURCE_SHA: ${{ inputs.source_ref || github.sha }}
+        run: |
+          set -euo pipefail
+          output_root="$RUNNER_TEMP/webassistant-linux-artifacts"
+          rm -rf -- "$output_root"
+          mkdir -p -- "$output_root"
+          "$WEBASSISTANT_EXPORT_ROOT/build/linux/package.sh" "$output_root"
+
+          version="$(tr -d '\r\n' < "$WEBASSISTANT_EXPORT_ROOT/VERSION")"
+          artifact="$output_root/WebAssistant-linux-x64-${version}.zip"
+          test -f "$artifact"
+          test -f "${artifact}.sha256"
+          test -f "${artifact}.provenance.json"
+
+      - name: Upload immutable Linux installer bytes
+        uses: actions/upload-artifact@v4
+        with:
+          name: webassistant-linux-installer-${{ inputs.source_ref || github.sha }}
+          path: |
+            ${{ runner.temp }}/webassistant-linux-artifacts/WebAssistant-linux-x64-*.zip
+            ${{ runner.temp }}/webassistant-linux-artifacts/WebAssistant-linux-x64-*.zip.sha256
+            ${{ runner.temp }}/webassistant-linux-artifacts/WebAssistant-linux-x64-*.zip.provenance.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Cleanup producer workspace
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          [[ -z "${WEBASSISTANT_EXPORT_ROOT:-}" ]] || rm -rf -- "$WEBASSISTANT_EXPORT_ROOT"
+          rm -rf -- "$RUNNER_TEMP/webassistant-linux-artifacts"
+
+  alt-p11-systemd-acceptance:
+    name: ALT p11 historical artifact lifecycle
+    needs: build-linux-installer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout acceptance harness
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+
+      - name: Assert accepted lifecycle evidence paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f tests/linux-systemd/run-systemd-acceptance.sh
+          test -f tests/linux-systemd/run-installer-acceptance.sh
+
+      - name: Download exact producer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: webassistant-linux-installer-${{ inputs.source_ref || github.sha }}
+          path: ${{ runner.temp }}/webassistant-linux-artifacts
+
+      - name: Verify and exercise exact artifact in historical ALT p11
         shell: bash
         env:
           ALT_IMAGE: registry.altlinux.org/p11/alt:latest
         run: |
           set -euo pipefail
-          bash tests/linux-systemd/run-systemd-acceptance.sh \
-            "$RUNNER_TEMP/webassistant-linux-package" \
-            "$WEBASSISTANT_EXPORT_ROOT"
+          artifact="$(find "$RUNNER_TEMP/webassistant-linux-artifacts" -maxdepth 1 -type f -name 'WebAssistant-linux-x64-*.zip' -print -quit)"
+          [[ -n "$artifact" ]] || { echo "Linux ZIP artifact not found" >&2; exit 1; }
+          bash tests/linux-systemd/run-installer-acceptance.sh \
+            "$artifact" \
+            "${artifact}.sha256" \
+            "${artifact}.provenance.json"
 
       - name: Emergency cleanup
         if: always()
@@ -77,5 +155,4 @@ jobs:
           [[ -z "$containers" ]] || docker rm -f $containers >/dev/null 2>&1 || true
           images="$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep '^webassistant-alt-p11-systemd:' || true)"
           [[ -z "$images" ]] || docker image rm -f $images >/dev/null 2>&1 || true
-          [[ -z "${WEBASSISTANT_EXPORT_ROOT:-}" ]] || rm -rf -- "$WEBASSISTANT_EXPORT_ROOT"
-          rm -rf -- "$RUNNER_TEMP/webassistant-linux-package"
+          rm -rf -- "$RUNNER_TEMP/webassistant-linux-artifacts"

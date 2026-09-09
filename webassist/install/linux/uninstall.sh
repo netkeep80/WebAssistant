@@ -24,8 +24,8 @@ userdel webassist >/dev/null 2>&1 || true
 groupdel webassist >/dev/null 2>&1 || true
 
 if [[ "$purge_data" == true ]]; then
-    rm -rf -- /var/log/webassist /var/lib/webassist
+    rm -rf -- /var/log/webassistant /var/lib/webassistant
     echo "WebAssistant удалён вместе с журналами и данными."
 else
-    echo "WebAssistant удалён. /var/log/webassist и /var/lib/webassist сохранены."
+    echo "WebAssistant удалён. /var/log/webassistant и /var/lib/webassistant сохранены."
 fi

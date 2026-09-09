@@ -1,0 +1,64 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Id="netkeep80.WebAssistant"
+      Name="WebAssistant"
+      Manufacturer="WebAssistant"
+      Version="$(var.ProductVersion)"
+      Scope="perMachine">
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="WebAssistant" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="WEBAssistantStateRoot" Name="WebAssistant">
+        <Directory Id="WEBAssistantLogsDirectory" Name="logs" />
+        <Directory Id="WEBAssistantDataDirectory" Name="data" />
+      </Directory>
+    </StandardDirectory>
+
+    <Files Include="$(var.PayloadRoot)\**" Directory="INSTALLFOLDER">
+      <Exclude Files="$(var.PayloadRoot)\WebAssistant.exe" />
+    </Files>
+
+    <Component Id="WebAssistantServiceComponent" Directory="INSTALLFOLDER" Guid="*">
+      <File
+          Id="WebAssistantServiceExecutable"
+          Source="$(var.PayloadRoot)\WebAssistant.exe"
+          KeyPath="yes" />
+      <ServiceInstall
+          Id="WebAssistantServiceInstall"
+          Name="WebAssistant"
+          DisplayName="WebAssistant"
+          Description="WebAssistant local service"
+          Type="ownProcess"
+          Start="auto"
+          ErrorControl="normal" />
+      <ServiceControl
+          Id="WebAssistantServiceControl"
+          Name="WebAssistant"
+          Start="install"
+          Stop="both"
+          Remove="uninstall"
+          Wait="yes" />
+    </Component>
+
+    <Component
+        Id="WebAssistantLogsDirectoryComponent"
+        Directory="WEBAssistantLogsDirectory"
+        Guid="171E6FDA-45BE-4B87-BCFD-EF83C9CA03E5"
+        KeyPath="yes"
+        Permanent="yes">
+      <CreateFolder />
+    </Component>
+
+    <Component
+        Id="WebAssistantDataDirectoryComponent"
+        Directory="WEBAssistantDataDirectory"
+        Guid="C9868ED6-7AA4-406D-B9B2-4108B10FCE0D"
+        KeyPath="yes"
+        Permanent="yes">
+      <CreateFolder />
+    </Component>
+  </Package>
+</Wix>

@@ -8,10 +8,11 @@ fi
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source_app="$script_dir/app"
+source_config="$source_app/appsettings.json"
 source_service="$script_dir/webassist.service"
 install_dir="/opt/webassist"
-log_dir="/var/log/webassist"
-data_dir="/var/lib/webassist"
+log_dir="/var/log/webassistant"
+data_dir="/var/lib/webassistant"
 service_unit="/etc/systemd/system/webassist.service"
 config_file="$install_dir/appsettings.json"
 runtime_packages=(libicu74 libgtk+3 libsane sane)
@@ -26,6 +27,10 @@ runtime_dependencies_installed() {
 
 [[ -d "$source_app" ]] || {
     echo "Не найден каталог package app: $source_app" >&2
+    exit 1
+}
+[[ -f "$source_config" ]] || {
+    echo "Package повреждён: отсутствует appsettings.json" >&2
     exit 1
 }
 [[ -f "$source_service" ]] || {
@@ -80,22 +85,6 @@ mkdir -p -- "$install_dir" "$log_dir" "$data_dir"
 rm -rf -- "$install_dir"/*
 cp -a -- "$source_app"/. "$install_dir"/
 chmod 0755 -- "$install_dir/WebAssistant"
-
-cat > "$config_file" <<'JSON'
-{
-  "WebAssistant": {
-    "Port": 17654,
-    "LogDirectory": "/var/log/webassist",
-    "Cors": {
-      "Enabled": false,
-      "AllowedOrigins": []
-    },
-    "FileSystem": {
-      "RootDirectory": "/var/lib/webassist"
-    }
-  }
-}
-JSON
 
 chown -R root:root -- "$install_dir"
 chown -R webassist:webassist -- "$log_dir" "$data_dir"

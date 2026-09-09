@@ -1,0 +1,11 @@
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <OutputType>Bundle</OutputType>
+    <OutputName>WebAssistant.Bundle</OutputName>
+    <DefineConstants>$(DefineConstants);MsiPath=$(MsiPath);ProductVersion=$(ProductVersion)</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Package.wxs" />
+    <PackageReference Include="WixToolset.BootstrapperApplications.wixext" Version="7.0.0" />
+  </ItemGroup>
+</Project>
