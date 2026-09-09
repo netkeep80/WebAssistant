@@ -4,6 +4,8 @@
 
 Этот design фиксирует одобренную архитектуру текущей distribution/install/release работы.
 
+Implementation plan: `docs/superpowers/plans/2026-09-09-distribution-installers-implementation.md`.
+
 База:
 
 ```text
