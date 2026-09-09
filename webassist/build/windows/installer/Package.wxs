@@ -10,6 +10,13 @@
       <Directory Id="INSTALLFOLDER" Name="WebAssistant" />
     </StandardDirectory>
 
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="WEBAssistantStateRoot" Name="WebAssistant">
+        <Directory Id="WEBAssistantLogsDirectory" Name="logs" />
+        <Directory Id="WEBAssistantDataDirectory" Name="data" />
+      </Directory>
+    </StandardDirectory>
+
     <Files Include="$(var.PayloadRoot)\**" Directory="INSTALLFOLDER">
       <Exclude Files="$(var.PayloadRoot)\WebAssistant.exe" />
     </Files>
@@ -34,6 +41,24 @@
           Stop="both"
           Remove="uninstall"
           Wait="yes" />
+    </Component>
+
+    <Component
+        Id="WebAssistantLogsDirectoryComponent"
+        Directory="WEBAssistantLogsDirectory"
+        Guid="171E6FDA-45BE-4B87-BCFD-EF83C9CA03E5"
+        KeyPath="yes"
+        Permanent="yes">
+      <CreateFolder />
+    </Component>
+
+    <Component
+        Id="WebAssistantDataDirectoryComponent"
+        Directory="WEBAssistantDataDirectory"
+        Guid="C9868ED6-7AA4-406D-B9B2-4108B10FCE0D"
+        KeyPath="yes"
+        Permanent="yes">
+      <CreateFolder />
     </Component>
   </Package>
 </Wix>
