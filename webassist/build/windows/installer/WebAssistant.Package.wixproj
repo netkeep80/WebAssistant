@@ -4,4 +4,7 @@
     <OutputName>WebAssistant.Package</OutputName>
     <DefineConstants>$(DefineConstants);PayloadRoot=$(PayloadRoot);ProductVersion=$(ProductVersion)</DefineConstants>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Bundle.wxs" />
+  </ItemGroup>
 </Project>
