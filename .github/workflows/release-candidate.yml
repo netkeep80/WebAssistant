@@ -52,11 +52,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          state_json="$(bash ci/release/inspect-release-state.sh '${{ steps.resolve.outputs.version }}' '${{ steps.resolve.outputs.source_sha }}')"
+          version='${{ steps.resolve.outputs.version }}'
+          source_sha='${{ steps.resolve.outputs.source_sha }}'
+          state_json="$(bash ci/release/inspect-release-state.sh "$version" "$source_sha")"
           state="$(jq -r '.state' <<<"$state_json")"
           case "$state" in
-            absent|tag-only|draft|published) ;;
-            *) echo "release-candidate: unsupported preflight state: $state" >&2; exit 1 ;;
+            absent|tag-only)
+              ;;
+            draft|published)
+              # Existing same-version state is a no-build path only after its
+              # prior candidate run and remote bytes are proven complete.
+              bash ci/release/inspect-release-state.sh "$version" "$source_sha" --require-complete >/dev/null
+              ;;
+            *)
+              echo "release-candidate: unsupported preflight state: $state" >&2
+              exit 1
+              ;;
           esac
           printf 'release_state=%s\n' "$state" >> "$GITHUB_OUTPUT"
 
@@ -88,7 +99,7 @@ jobs:
       - resolve
       - build-installers
       - installer-acceptance
-    if: ${{ always() && needs.resolve.result == 'success' && needs.build-installers.result == 'success' && needs.installer-acceptance.result == 'success' }}
+    if: ${{ always() && needs.resolve.result == 'success' && (needs.resolve.outputs.release_state == 'absent' || needs.resolve.outputs.release_state == 'tag-only') && needs.build-installers.result == 'success' && needs.installer-acceptance.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -117,3 +128,47 @@ jobs:
             '${{ needs.resolve.outputs.version }}' \
             '${{ needs.resolve.outputs.source_sha }}' \
             '${{ github.run_id }}'
+
+  candidate-verdict:
+    name: Release candidate verdict
+    if: ${{ always() }}
+    needs:
+      - resolve
+      - build-installers
+      - installer-acceptance
+      - stage-draft
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Evaluate fail-closed candidate result
+        shell: bash
+        env:
+          RESOLVE_RESULT: ${{ needs.resolve.result }}
+          RELEASE_STATE: ${{ needs.resolve.outputs.release_state }}
+          BUILD_RESULT: ${{ needs.build-installers.result }}
+          ACCEPTANCE_RESULT: ${{ needs.installer-acceptance.result }}
+          STAGE_RESULT: ${{ needs.stage-draft.result }}
+        run: |
+          set -euo pipefail
+          [[ "$RESOLVE_RESULT" == 'success' ]] || {
+            echo "release-candidate: resolve=$RESOLVE_RESULT" >&2
+            exit 1
+          }
+          case "$RELEASE_STATE" in
+            absent|tag-only)
+              [[ "$BUILD_RESULT" == 'success' && "$ACCEPTANCE_RESULT" == 'success' && "$STAGE_RESULT" == 'success' ]] || {
+                echo "release-candidate: new candidate requires build=$BUILD_RESULT acceptance=$ACCEPTANCE_RESULT stage=$STAGE_RESULT" >&2
+                exit 1
+              }
+              ;;
+            draft|published)
+              [[ "$BUILD_RESULT" == 'skipped' && "$ACCEPTANCE_RESULT" == 'skipped' && "$STAGE_RESULT" == 'skipped' ]] || {
+                echo "release-candidate: existing exact state must be no-build/no-restage" >&2
+                exit 1
+              }
+              ;;
+            *)
+              echo "release-candidate: invalid release state: $RELEASE_STATE" >&2
+              exit 1
+              ;;
+          esac
+          echo 'release-candidate: PASS'
