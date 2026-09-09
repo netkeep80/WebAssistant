@@ -28,6 +28,10 @@ public sealed class ReleaseInfrastructureTests
         Assert.Contains("ci/release/resolve-accepted-main.sh", workflow, StringComparison.Ordinal);
         Assert.Contains("ci/release/stage-draft-release.sh", workflow, StringComparison.Ordinal);
         Assert.Contains("--require-complete", workflow, StringComparison.Ordinal);
+        Assert.Contains("--require-resumable", workflow, StringComparison.Ordinal);
+        Assert.Contains("draft-partial", workflow, StringComparison.Ordinal);
+        Assert.Contains("run-id: ${{ needs.resolve.outputs.candidate_run_id }}", workflow, StringComparison.Ordinal);
+        Assert.Contains("github-token: ${{ github.token }}", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("push:", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("dotnet publish", workflow, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("build/windows/package.bat", workflow, StringComparison.OrdinalIgnoreCase);
@@ -215,6 +219,30 @@ public sealed class ReleaseInfrastructureTests
         var result = RunReleaseScript("inspect-release-state.sh", [Version, SourceSha, "--require-complete"], github.Environment, github.BinDirectory);
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("asset", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ExistingPartialDraftPreflight_AcceptsExactSubsetFromSuccessfulPriorCandidateRun()
+    {
+        using var fixture = InstallerFixture.Create();
+        using var github = ReleaseGhFixture.Create("draft-partial", fixture);
+        var result = RunReleaseScript("inspect-release-state.sh", [Version, SourceSha, "--require-resumable"], github.Environment, github.BinDirectory);
+        Assert.Equal(0, result.ExitCode);
+        using var json = JsonDocument.Parse(result.Output);
+        Assert.Equal("draft-partial", json.RootElement.GetProperty("state").GetString());
+        Assert.Equal(555, json.RootElement.GetProperty("candidateRunId").GetInt32());
+        Assert.Equal(2, json.RootElement.GetProperty("presentAssetCount").GetInt32());
+        Assert.Equal(4, json.RootElement.GetProperty("missingAssets").GetArrayLength());
+    }
+
+    [Fact]
+    public void ExistingPartialDraftPreflight_RejectsConflictingPresentAssetDigest()
+    {
+        using var fixture = InstallerFixture.Create();
+        using var github = ReleaseGhFixture.Create("draft-partial-conflict", fixture);
+        var result = RunReleaseScript("inspect-release-state.sh", [Version, SourceSha, "--require-resumable"], github.Environment, github.BinDirectory);
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("digest", result.Error, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -536,7 +564,11 @@ esac
             var six = installers is null ? Array.Empty<object>() : AssetRecords(installers.SixAssetPaths);
             WriteJson(Path.Combine(data, "assets-six.json"), six);
             WriteJson(Path.Combine(data, "assets-incomplete.json"), six.Take(Math.Max(0, six.Length - 1)).ToArray());
-            var conflict = six.Length == 0 ? Array.Empty<object>() : six.Select((asset, index) => index == 0 ? new { name = ReadName(asset), digest = "sha256:" + new string('d', 64) } : asset).ToArray();
+            var partial = six.Take(Math.Min(2, six.Length)).ToArray();
+            WriteJson(Path.Combine(data, "assets-partial.json"), partial);
+            var partialConflict = partial.Select((asset, index) => index == 0 ? (object)new { name = ReadName(asset), digest = "sha256:" + new string('d', 64) } : asset).ToArray();
+            WriteJson(Path.Combine(data, "assets-partial-conflict.json"), partialConflict);
+            var conflict = six.Length == 0 ? Array.Empty<object>() : six.Select((asset, index) => index == 0 ? (object)new { name = ReadName(asset), digest = "sha256:" + new string('d', 64) } : asset).ToArray();
             WriteJson(Path.Combine(data, "assets-conflict.json"), conflict);
 
             var seven = six.ToList();
@@ -580,6 +612,8 @@ fi
 if [[ "${1:-}" == "api" && "${2:-}" == "repos/test/repo/releases/77/assets?per_page=100" ]]; then
   case "$FAKE_RELEASE_STATE" in
     draft-conflict) cat "$FAKE_GH_DATA/assets-conflict.json" ;;
+    draft-partial) cat "$FAKE_GH_DATA/assets-partial.json" ;;
+    draft-partial-conflict) cat "$FAKE_GH_DATA/assets-partial-conflict.json" ;;
     upload-remote-conflict)
       [[ -f "$FAKE_GH_ROOT/installers-uploaded" ]] && cat "$FAKE_GH_DATA/assets-conflict.json" || cat "$FAKE_GH_DATA/assets-empty.json" ;;
     published-incomplete) cat "$FAKE_GH_DATA/assets-incomplete.json" ;;
