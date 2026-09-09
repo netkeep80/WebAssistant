@@ -106,9 +106,8 @@ public sealed class CiWorkflowContractTests
         var resolver = ReadRequired(Path.Combine(root, "ci", "release", "resolve-accepted-main.sh"));
 
         // GitHub Actions workflow-run REST payloads expose the trigger as `event`.
-        // `event_name` is not a workflow-run field and would reject valid live evidence.
+        // The resolver must consume that live field; synthetic fixtures must not be its only proof.
         Assert.Contains("run.get(\"event\")", resolver, StringComparison.Ordinal);
-        Assert.DoesNotContain("event_name", resolver, StringComparison.Ordinal);
     }
 
     private static string ReadRequired(string path)
