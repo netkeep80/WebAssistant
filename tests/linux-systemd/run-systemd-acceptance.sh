@@ -6,8 +6,8 @@ ALT_IMAGE="${ALT_IMAGE:-registry.altlinux.org/p11/alt:latest}"
 CONTAINER_NAME="webassistant-alt-p11-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 TEST_IMAGE="webassistant-alt-p11-systemd:${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 PORT=17654
-LOG_DIR="/var/log/webassist"
-DATA_DIR="/var/lib/webassist"
+LOG_DIR="/var/log/webassistant"
+DATA_DIR="/var/lib/webassistant"
 
 if [[ -z "$PACKAGE_DIRECTORY" ]]; then
     echo "Использование: $0 <каталог распакованного product package>" >&2
