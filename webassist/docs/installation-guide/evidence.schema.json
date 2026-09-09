@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "webassistant-installation-evidence/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "kind", "sourceSha", "version", "artifacts", "altTarget", "captures"],
+  "properties": {
+    "schema": { "const": "webassistant-installation-evidence/v1" },
+    "kind": { "enum": ["fixture", "final"] },
+    "sourceSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["windows", "linux"],
+      "properties": {
+        "windows": { "$ref": "#/$defs/artifact" },
+        "linux": { "$ref": "#/$defs/artifact" }
+      }
+    },
+    "altTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["osName", "osVersion", "completed"],
+      "properties": {
+        "osName": { "type": "string", "minLength": 1 },
+        "osVersion": { "type": "string", "minLength": 1 },
+        "completed": { "type": "boolean" }
+      }
+    },
+    "captures": {
+      "type": "array",
+      "minItems": 10,
+      "items": { "$ref": "#/$defs/capture" }
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "sha256"],
+      "properties": {
+        "filename": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot", "platform", "path", "sha256", "kind"],
+      "properties": {
+        "slot": {
+          "enum": [
+            "WIN_ARTIFACT_IDENTITY",
+            "WIN_INSTALL_UAC",
+            "WIN_INSTALLED_APPS",
+            "WIN_SERVICE_HEALTH",
+            "WIN_UNINSTALL",
+            "ALT_ARTIFACT_IDENTITY",
+            "ALT_INSTALL",
+            "ALT_SYSTEMD_HEALTH",
+            "ALT_RESTART",
+            "ALT_UNINSTALL"
+          ]
+        },
+        "platform": { "enum": ["windows", "alt-linux"] },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "kind": { "enum": ["fixture", "final"] }
+      }
+    }
+  }
+}
