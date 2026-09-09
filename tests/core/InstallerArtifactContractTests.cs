@@ -79,6 +79,42 @@ public sealed class InstallerArtifactContractTests
     }
 
     [Fact]
+    public void WindowsInstaller_UsesPinnedWix7MachineWideServiceBundle()
+    {
+        var props = ReadRequired("webassist/build/windows/installer/Directory.Build.props");
+        var packageProject = ReadRequired("webassist/build/windows/installer/WebAssistant.Package.wixproj");
+        var packageSource = ReadRequired("webassist/build/windows/installer/Package.wxs");
+        var bundleProject = ReadRequired("webassist/build/windows/installer/WebAssistant.Bundle.wixproj");
+        var bundleSource = ReadRequired("webassist/build/windows/installer/Bundle.wxs");
+
+        Assert.Contains("WixToolset.Sdk/7.0.0", packageProject, StringComparison.Ordinal);
+        Assert.Contains("WixToolset.Sdk/7.0.0", bundleProject, StringComparison.Ordinal);
+        Assert.Contains("<AcceptEula>wix7</AcceptEula>", props, StringComparison.Ordinal);
+        Assert.Contains("<InstallerPlatform>x64</InstallerPlatform>", props, StringComparison.Ordinal);
+        Assert.Contains("WixToolset.BootstrapperApplications.wixext", bundleProject, StringComparison.Ordinal);
+        Assert.Contains("Version=\"7.0.0\"", bundleProject, StringComparison.Ordinal);
+
+        Assert.Contains("Scope=\"perMachine\"", packageSource, StringComparison.Ordinal);
+        Assert.Contains("ProgramFiles64Folder", packageSource, StringComparison.Ordinal);
+        Assert.Contains("ServiceInstall", packageSource, StringComparison.Ordinal);
+        Assert.Contains("Name=\"WebAssistant\"", packageSource, StringComparison.Ordinal);
+        Assert.Contains("Start=\"auto\"", packageSource, StringComparison.Ordinal);
+        Assert.Contains("Type=\"ownProcess\"", packageSource, StringComparison.Ordinal);
+        Assert.Contains("ServiceControl", packageSource, StringComparison.Ordinal);
+        Assert.Contains("Stop=\"both\"", packageSource, StringComparison.Ordinal);
+        Assert.Contains("Remove=\"uninstall\"", packageSource, StringComparison.Ordinal);
+        Assert.Contains("$(var.PayloadRoot)", packageSource, StringComparison.Ordinal);
+        Assert.Contains("$(var.ProductVersion)", packageSource, StringComparison.Ordinal);
+
+        Assert.Contains("<Bundle", bundleSource, StringComparison.Ordinal);
+        Assert.Contains("Version=\"$(var.ProductVersion)\"", bundleSource, StringComparison.Ordinal);
+        Assert.Contains("WixStandardBootstrapperApplication", bundleSource, StringComparison.Ordinal);
+        Assert.Contains("MsiPackage", bundleSource, StringComparison.Ordinal);
+        Assert.Contains("Visible=\"no\"", bundleSource, StringComparison.Ordinal);
+        Assert.Contains("ForcePerMachine=\"yes\"", bundleSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void InstallerAcceptanceConsumers_WhenPresent_NeverRebuildOrRewriteAcceptedPayload()
     {
         AssertImmutableConsumer(
