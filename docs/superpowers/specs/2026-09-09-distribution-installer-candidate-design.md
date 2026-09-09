@@ -344,9 +344,9 @@ Accepted v0.2 files не редактируются.
 - remain `candidate`/not accepted until implementation evidence is complete;
 - use bounded GovernanceGrant for governance-controlled paths without broad policy relaxation.
 
-Candidate schema/version identity выбирается только в момент создания actual pair; design не резервирует номер заранее.
+Candidate schema/version identity выбирается непосредственно перед governance write: сначала определяется exact candidate filename pair, затем в linked Issue фиксируется GovernanceGrant на эти exact paths, и только после этого создаются candidate contract/conformance files. Design не резервирует номер заранее.
 
-Promotion в `current` выполняется отдельным atomic governance step только после accepted evidence.
+Promotion в `current` выполняется отдельным atomic governance step только после accepted evidence и отдельного exact-path authorization.
 
 ## Failure semantics
 
@@ -376,13 +376,16 @@ Branch protection #3/#25 остаётся вне scope; до отдельног�
 
 ```text
 #165 design/spec
--> distribution-only candidate contract/conformance + GovernanceGrant
+-> choose exact distribution candidate pair identity
+-> GovernanceGrant for exact new candidate contract/conformance paths
+-> create distribution-only candidate contract/conformance
 -> #155 Windows versioned EXE
 -> #156 ALT Linux 10.1 versioned ZIP
 -> #7 exact immutable artifact transport/reuse
 -> #5 final installer acceptance
 -> #158 final documentation/PDF
 -> #157 accepted-main GitHub Release
+-> separate accepted/current promotion transaction
 -> #159 only after real GitLab cluster config
 
 LATER:
