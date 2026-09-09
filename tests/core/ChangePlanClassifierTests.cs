@@ -85,6 +85,62 @@ public sealed class ChangePlanClassifierTests
     }
 
     [Fact]
+    public void WindowsLifecycleWorkflowChange_RequiresOnlyWindowsPlatformEvidence()
+    {
+        AssertPlan(
+            [".github/workflows/windows-service.yml", "webassist/VERSION"],
+            core: true,
+            linuxSystemd: false,
+            windowsService: true,
+            virtualLinux: false,
+            virtualWindows: true,
+            smokeLinux: false,
+            smokeWindows: true,
+            fullCrossPlatform: false);
+    }
+
+    [Fact]
+    public void LinuxLifecycleWorkflowChange_RequiresOnlyLinuxPlatformEvidence()
+    {
+        AssertPlan(
+            [".github/workflows/linux-systemd.yml", "webassist/VERSION"],
+            core: true,
+            linuxSystemd: true,
+            windowsService: false,
+            virtualLinux: true,
+            virtualWindows: false,
+            smokeLinux: true,
+            smokeWindows: false,
+            fullCrossPlatform: false);
+    }
+
+    [Fact]
+    public void SharedDistributionWorkflowChange_RequiresFullCrossPlatformEvidence()
+    {
+        AssertPlan(
+            [".github/workflows/build-installers.yml", "webassist/VERSION"],
+            core: true,
+            linuxSystemd: true,
+            windowsService: true,
+            virtualLinux: true,
+            virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
+            fullCrossPlatform: true);
+
+        AssertPlan(
+            [".github/workflows/installer-acceptance.yml", "webassist/VERSION"],
+            core: true,
+            linuxSystemd: true,
+            windowsService: true,
+            virtualLinux: true,
+            virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
+            fullCrossPlatform: true);
+    }
+
+    [Fact]
     public void UnknownProductPath_FailsClosedToFullCrossPlatformEvidence()
     {
         AssertPlan(
