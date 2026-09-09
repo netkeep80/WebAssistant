@@ -176,10 +176,11 @@
       "forbid_regex": [
         "ScannerAgent",
         "tmk5scan",
+        "Tri\u0075mf",
+        "depfi\u006e\\.nnov\\.ru",
         "[Tt]ri(?:u)mf",
         "[Тт]ри(?:у)мф",
-        "[Дд]епартамент\\s+[Фф]инансов",
-        "dep(?:fin)\\.nnov\\.ru"
+        "[Дд]епартамент\\s+[Фф]инансов"
       ]
     }
   ],
