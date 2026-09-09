@@ -27,14 +27,30 @@ matches=[p for p in items if p.get("merged_at") and p.get("merge_commit_sha")==s
 if len(matches)!=1:
     raise SystemExit(3)
 p=matches[0]
-print(json.dumps({"number":p["number"],"head":p["head"]["sha"],"base":p["base"]["sha"]}, separators=(",",":")))
-' "$source_sha")" || fail "expected exactly one exact merged PR for current main"
+head=p.get("head") or {}
+base=p.get("base") or {}
+required=[p.get("number"), head.get("sha"), head.get("ref"), base.get("sha"), p.get("created_at"), p.get("merged_at")]
+if any(value is None or value=="" for value in required):
+    raise SystemExit(4)
+print(json.dumps({
+    "number":p["number"],
+    "head":head["sha"],
+    "headRef":head["ref"],
+    "base":base["sha"],
+    "createdAt":p["created_at"],
+    "mergedAt":p["merged_at"]
+}, separators=(",",":")))
+' "$source_sha")" || fail "expected exactly one complete exact merged PR for current main"
 
 pr_number="$(printf '%s' "$pr_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["number"])')"
 pr_head="$(printf '%s' "$pr_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["head"])')"
+pr_head_ref="$(printf '%s' "$pr_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["headRef"])')"
 base_sha="$(printf '%s' "$pr_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["base"])')"
+pr_created_at="$(printf '%s' "$pr_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["createdAt"])')"
+pr_merged_at="$(printf '%s' "$pr_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["mergedAt"])')"
 [[ "$pr_head" =~ ^[0-9a-fA-F]{40}$ ]] || fail "merged PR head SHA is malformed"
 [[ "$base_sha" =~ ^[0-9a-fA-F]{40}$ ]] || fail "merged PR base SHA is malformed"
+[[ -n "$pr_head_ref" ]] || fail "merged PR head ref is missing"
 
 runs_json="$(gh api "repos/${repo}/actions/runs?head_sha=${pr_head}&event=pull_request&per_page=100")" || fail "cannot read PR workflow evidence"
 
@@ -42,21 +58,38 @@ candidate_run_ids() {
   local workflow_path="$1"
   printf '%s' "$runs_json" | python3 -c '
 import json,sys
-path,head,pr=sys.argv[1],sys.argv[2],int(sys.argv[3])
+from datetime import datetime
+path,head,head_ref,pr_created_raw,pr_merged_raw=sys.argv[1:6]
+
+def timestamp(value):
+    if not isinstance(value,str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z","+00:00"))
+    except ValueError:
+        return None
+
+pr_created=timestamp(pr_created_raw)
+pr_merged=timestamp(pr_merged_raw)
+if pr_created is None or pr_merged is None or pr_created > pr_merged:
+    raise SystemExit(2)
+
 runs=json.load(sys.stdin).get("workflow_runs",[])
 ids=[]
 for run in runs:
-    prs=[item.get("number") for item in run.get("pull_requests",[]) if isinstance(item,dict)]
     trigger=run.get("event")
     if trigger is None:
         trigger=run.get("event_name")
+    run_created=timestamp(run.get("created_at"))
     if (run.get("path")==path and trigger=="pull_request" and
-        run.get("head_sha")==head and pr in prs and run.get("status")=="completed" and
-        run.get("conclusion")=="success" and isinstance(run.get("id"),int)):
+        run.get("head_sha")==head and run.get("head_branch")==head_ref and
+        run_created is not None and pr_created <= run_created <= pr_merged and
+        run.get("status")=="completed" and run.get("conclusion")=="success" and
+        isinstance(run.get("id"),int)):
         ids.append(run["id"])
 for run_id in sorted(set(ids), reverse=True):
     print(run_id)
-' "$workflow_path" "$pr_head" "$pr_number"
+' "$workflow_path" "$pr_head" "$pr_head_ref" "$pr_created_at" "$pr_merged_at"
 }
 
 job_is_green() {
@@ -119,16 +152,17 @@ if tuple(map(int,m1.groups())) <= tuple(map(int,m2.groups())):
     raise SystemExit(1)
 PY
 
-python3 - "$source_sha" "$pr_head" "$version" "$pr_number" "$base_sha" "$base_version" "$ci_run_id" "$repo_guard_run_id" <<'PY'
+python3 - "$source_sha" "$pr_head" "$pr_head_ref" "$version" "$pr_number" "$base_sha" "$base_version" "$ci_run_id" "$repo_guard_run_id" <<'PY'
 import json,sys
 print(json.dumps({
     "sourceSha": sys.argv[1],
     "prHeadSha": sys.argv[2],
-    "version": sys.argv[3],
-    "acceptedPr": int(sys.argv[4]),
-    "baseSha": sys.argv[5],
-    "baseVersion": sys.argv[6],
-    "ciRunId": int(sys.argv[7]),
-    "repoGuardRunId": int(sys.argv[8])
+    "prHeadRef": sys.argv[3],
+    "version": sys.argv[4],
+    "acceptedPr": int(sys.argv[5]),
+    "baseSha": sys.argv[6],
+    "baseVersion": sys.argv[7],
+    "ciRunId": int(sys.argv[8]),
+    "repoGuardRunId": int(sys.argv[9])
 }, separators=(",",":")))
 PY
