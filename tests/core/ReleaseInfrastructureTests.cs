@@ -370,11 +370,14 @@ public sealed class ReleaseInfrastructureTests
                   *) echo "unexpected fake gh endpoint: $endpoint" >&2; exit 92 ;;
                 esac
                 """);
-            File.SetUnixFileMode(
-                fakeGh,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
-                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
-                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(
+                    fakeGh,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            }
 
             return new ResolverFixture(
                 root,
