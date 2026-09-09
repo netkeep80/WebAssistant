@@ -94,34 +94,40 @@ public sealed class ReleaseResolverPostMergeTests
             var root = Directory.CreateTempSubdirectory("webassistant-resolver-post-merge-").FullName;
             var bin = Directory.CreateDirectory(Path.Combine(root, "bin")).FullName;
             var fakeGh = Path.Combine(bin, "gh");
-            var runs = $$"""{"workflow_runs":[{"id":101,"path":".github/workflows/ci.yml","event":"pull_request","status":"completed","conclusion":"success","head_sha":"{{PrHeadSha}}","head_branch":"{{runHeadBranch}}","created_at":"{{runCreatedAt}}","pull_requests":[]},{"id":102,"path":".github/workflows/repo-guard.yml","event":"pull_request","status":"completed","conclusion":"success","head_sha":"{{PrHeadSha}}","head_branch":"{{runHeadBranch}}","created_at":"{{runCreatedAt}}","pull_requests":[]}]}""";
+            var runs = "{\"workflow_runs\":[{\"id\":101,\"path\":\".github/workflows/ci.yml\",\"event\":\"pull_request\",\"status\":\"completed\",\"conclusion\":\"success\",\"head_sha\":\"" + PrHeadSha + "\",\"head_branch\":\"" + runHeadBranch + "\",\"created_at\":\"" + runCreatedAt + "\",\"pull_requests\":[]},{\"id\":102,\"path\":\".github/workflows/repo-guard.yml\",\"event\":\"pull_request\",\"status\":\"completed\",\"conclusion\":\"success\",\"head_sha\":\"" + PrHeadSha + "\",\"head_branch\":\"" + runHeadBranch + "\",\"created_at\":\"" + runCreatedAt + "\",\"pull_requests\":[]}]}";
 
-            File.WriteAllText(fakeGh, $$"""
+            var script = """
 #!/usr/bin/env bash
 set -euo pipefail
 [[ "${1:-}" == "api" ]] || exit 91
 endpoint="${2:-}"
 case "$endpoint" in
   "repos/test/repo/branches/main")
-    printf '%s\n' '{"commit":{"sha":"{{SourceSha}}"}}' ;;
-  "repos/test/repo/commits/{{SourceSha}}/pulls")
-    printf '%s\n' '{"number":17,"created_at":"2026-09-09T19:41:36Z","merged_at":"2026-09-09T22:02:37Z","merge_commit_sha":"{{SourceSha}}","head":{"sha":"{{PrHeadSha}}","ref":"{{PrHeadRef}}"},"base":{"ref":"main","sha":"{{BaseSha}}"}}' | python3 -c 'import json,sys; print(json.dumps([json.load(sys.stdin)]))' ;;
-  "repos/test/repo/actions/runs?head_sha={{PrHeadSha}}&event=pull_request&per_page=100")
-    printf '%s\n' '{{runs}}' ;;
+    printf '%s\n' '{"commit":{"sha":"__SOURCE__"}}' ;;
+  "repos/test/repo/commits/__SOURCE__/pulls")
+    printf '%s\n' '{"number":17,"created_at":"2026-09-09T19:41:36Z","merged_at":"2026-09-09T22:02:37Z","merge_commit_sha":"__SOURCE__","head":{"sha":"__HEAD__","ref":"__HEAD_REF__"},"base":{"ref":"main","sha":"__BASE__"}}' | python3 -c 'import json,sys; print(json.dumps([json.load(sys.stdin)]))' ;;
+  "repos/test/repo/actions/runs?head_sha=__HEAD__&event=pull_request&per_page=100")
+    printf '%s\n' '__RUNS__' ;;
   "repos/test/repo/actions/runs/101/jobs?per_page=100")
     printf '%s\n' '{"jobs":[{"name":"ci-required","status":"completed","conclusion":"success"}]}' ;;
   "repos/test/repo/actions/runs/102/jobs?per_page=100")
     printf '%s\n' '{"jobs":[{"name":"repo-guard","status":"completed","conclusion":"success"}]}' ;;
-  "repos/test/repo/contents/webassist/VERSION?ref={{SourceSha}}")
+  "repos/test/repo/contents/webassist/VERSION?ref=__SOURCE__")
     printf '%s\n' '{"content":"MC4zLjIwCg=="}' ;;
-  "repos/test/repo/contents/webassist/VERSION?ref={{BaseSha}}")
+  "repos/test/repo/contents/webassist/VERSION?ref=__BASE__")
     printf '%s\n' '{"content":"MC4zLjE5Cg=="}' ;;
   *)
     printf 'unexpected endpoint: %s\n' "$endpoint" >&2
     exit 92 ;;
 esac
-""");
+"""
+                .Replace("__SOURCE__", SourceSha, StringComparison.Ordinal)
+                .Replace("__BASE__", BaseSha, StringComparison.Ordinal)
+                .Replace("__HEAD__", PrHeadSha, StringComparison.Ordinal)
+                .Replace("__HEAD_REF__", PrHeadRef, StringComparison.Ordinal)
+                .Replace("__RUNS__", runs, StringComparison.Ordinal);
 
+            File.WriteAllText(fakeGh, script);
             if (!OperatingSystem.IsWindows())
             {
                 File.SetUnixFileMode(fakeGh,
