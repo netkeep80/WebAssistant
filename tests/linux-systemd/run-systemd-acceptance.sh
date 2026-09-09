@@ -83,8 +83,21 @@ if ! docker exec \
 fi
 docker exec "$CONTAINER_NAME" rm -rf /tmp/webassistant-fail-apt
 
-docker exec "$CONTAINER_NAME" systemctl is-enabled --quiet webassist.service
-docker exec "$CONTAINER_NAME" systemctl is-active --quiet webassist.service
+assert_service_enabled_active() {
+    if ! docker exec "$CONTAINER_NAME" systemctl is-enabled --quiet webassist.service; then
+        echo "WebAssistant service не enabled после installer lifecycle step." >&2
+        docker exec "$CONTAINER_NAME" systemctl status webassist.service --no-pager >&2 || true
+        return 1
+    fi
+    if ! docker exec "$CONTAINER_NAME" systemctl is-active --quiet webassist.service; then
+        echo "WebAssistant service не active после installer lifecycle step." >&2
+        docker exec "$CONTAINER_NAME" systemctl status webassist.service --no-pager >&2 || true
+        docker exec "$CONTAINER_NAME" journalctl -u webassist.service -n 100 --no-pager >&2 || true
+        return 1
+    fi
+}
+
+assert_service_enabled_active
 
 service_user="$(docker exec "$CONTAINER_NAME" systemctl show webassist.service --property=User --value)"
 [[ "$service_user" == "webassist" ]] || { echo "Неожиданный service user: $service_user" >&2; exit 1; }
@@ -95,27 +108,44 @@ wait_for_health() {
             "http://127.0.0.1:${PORT}/v1/health" >/dev/null 2>&1; then return 0; fi
         sleep 1
     done
+    echo "WebAssistant health endpoint не стал доступен на 127.0.0.1:${PORT}." >&2
     docker exec "$CONTAINER_NAME" systemctl status webassist.service --no-pager >&2 || true
     docker exec "$CONTAINER_NAME" journalctl -u webassist.service -n 100 --no-pager >&2 || true
     return 1
 }
 
 assert_daily_log() {
-    docker exec "$CONTAINER_NAME" test -d "$LOG_DIR"
-    docker exec "$CONTAINER_NAME" sh -lc \
-        "find '$LOG_DIR' -maxdepth 0 -user webassist -group webassist -print -quit | grep -q ."
+    if ! docker exec "$CONTAINER_NAME" test -d "$LOG_DIR"; then
+        echo "Не создан log directory $LOG_DIR." >&2
+        return 1
+    fi
+    if ! docker exec "$CONTAINER_NAME" sh -lc \
+        "find '$LOG_DIR' -maxdepth 0 -user webassist -group webassist -print -quit | grep -q ."; then
+        echo "Log directory $LOG_DIR имеет неверного owner/group." >&2
+        docker exec "$CONTAINER_NAME" ls -ld "$LOG_DIR" >&2 || true
+        return 1
+    fi
     for attempt in {1..30}; do
         if docker exec "$CONTAINER_NAME" sh -lc \
             "find '$LOG_DIR' -maxdepth 1 -type f -name 'webassistant-*.log' -print -quit | grep -q ."; then return 0; fi
         sleep 0.1
     done
+    echo "После успешного health request не появился webassistant-*.log в $LOG_DIR." >&2
+    docker exec "$CONTAINER_NAME" ls -la "$LOG_DIR" >&2 || true
+    docker exec "$CONTAINER_NAME" journalctl -u webassist.service -n 100 --no-pager >&2 || true
     return 1
 }
 
 assert_loopback_only() {
     listeners="$(docker exec "$CONTAINER_NAME" sh -lc "ss -H -ltn 'sport = :${PORT}' || true")"
-    grep -Eq "127\\.0\\.0\\.1:${PORT}([[:space:]]|$)" <<<"$listeners"
-    ! grep -Eq "(0\\.0\\.0\\.0|\\[::\\]|\\*:):?${PORT}([[:space:]]|$)" <<<"$listeners"
+    if ! grep -Eq "127\\.0\\.0\\.1:${PORT}([[:space:]]|$)" <<<"$listeners"; then
+        echo "Не найден loopback listener WebAssistant на 127.0.0.1:${PORT}: $listeners" >&2
+        return 1
+    fi
+    if grep -Eq "(0\\.0\\.0\\.0|\\[::\\]|\\*:):?${PORT}([[:space:]]|$)" <<<"$listeners"; then
+        echo "WebAssistant слушает не только loopback на порту ${PORT}: $listeners" >&2
+        return 1
+    fi
 }
 
 assert_no_listener() {
@@ -123,6 +153,7 @@ assert_no_listener() {
         if ! docker exec "$CONTAINER_NAME" sh -lc "ss -H -ltn 'sport = :${PORT}'" | grep -q .; then return 0; fi
         sleep 0.25
     done
+    echo "Listener WebAssistant на порту ${PORT} остался после остановки: $(docker exec "$CONTAINER_NAME" sh -lc "ss -H -ltn 'sport = :${PORT}' || true")" >&2
     return 1
 }
 
@@ -156,8 +187,7 @@ for attempt in {1..30}; do
     sleep 1
 done
 wait_for_health
-docker exec "$CONTAINER_NAME" systemctl is-enabled --quiet webassist.service
-docker exec "$CONTAINER_NAME" systemctl is-active --quiet webassist.service
+assert_service_enabled_active
 assert_loopback_only
 
 docker exec "$CONTAINER_NAME" /webassistant-package/uninstall.sh
