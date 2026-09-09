@@ -120,6 +120,13 @@ jobs:
         with:
           ref: ${{ inputs.source_ref || github.sha }}
 
+      - name: Assert accepted lifecycle evidence paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f tests/linux-systemd/run-systemd-acceptance.sh
+          test -f tests/linux-systemd/run-installer-acceptance.sh
+
       - name: Download exact producer artifact
         uses: actions/download-artifact@v4
         with:
