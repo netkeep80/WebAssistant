@@ -141,6 +141,36 @@ sudo ./install.sh
 
 Installer использует packaged configuration без замены. Отсутствующие distro-owned runtime dependencies могут устанавливаться штатно через apt-rpm. Подробности: [`docs/linux-service.md`](docs/linux-service.md).
 
+## Каноническая PDF-инструкция
+
+Редактируемый источник пользовательской инструкции находится внутри автономного product root:
+
+```text
+docs/installation-guide.md
+```
+
+Post-freeze machine evidence передаётся отдельно через строгий manifest `docs/installation-guide/evidence.schema.json`. Manifest связывает каждую процедуру и screenshot с exact `sourceSha`, `VERSION`, именами installer artifacts и их SHA-256. Fixture evidence предназначен только для проверки механики и не может использоваться как final evidence.
+
+Финальная инструкция строится только для exact frozen source SHA:
+
+```bash
+WEBASSISTANT_SOURCE_SHA=<exact-frozen-main-sha> \
+  docs/installation-guide/build.sh \
+  --mode final \
+  --evidence <final-evidence.json> \
+  --output artifacts/installation-guide
+```
+
+Результат:
+
+```text
+artifacts/installation-guide/WebAssistant-Installation-Guide.pdf
+```
+
+`final` mode fail-closed требует complete evidence именно для ALT Linux 10.1 и всех обязательных Windows/ALT capture slots. `verify.sh` повторно проверяет evidence identity, структуру и текст PDF и рендерит каждую страницу в raster image через pinned Poppler toolchain. Editable source и build/verify infrastructure являются repository authority; реальные post-freeze screenshots и generated PDF в repository не коммитятся.
+
+Pinned document toolchain описан в `docs/installation-guide/toolchain.env` и не использует mutable `latest` identity.
+
 ## GitLab CI
 
 В export root находится самостоятельный `.gitlab-ci.yml`. Текущая product-local GitLab surface содержит только Linux package orchestration и вызывает тот же canonical entrypoint:
