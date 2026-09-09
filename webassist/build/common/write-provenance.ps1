@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [string]$ArtifactPath,
@@ -25,13 +25,31 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Get-Sha256Hex {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        $algorithm = [Security.Cryptography.SHA256]::Create()
+        try {
+            return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+        }
+        finally {
+            $algorithm.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
 $resolvedArtifact = [IO.Path]::GetFullPath($ArtifactPath)
 if (-not (Test-Path -LiteralPath $resolvedArtifact -PathType Leaf)) {
     throw "Artifact does not exist: $resolvedArtifact"
 }
 
 $artifactInfo = Get-Item -LiteralPath $resolvedArtifact
-$sha256 = (Get-FileHash -LiteralPath $resolvedArtifact -Algorithm SHA256).Hash.ToLowerInvariant()
+$sha256 = Get-Sha256Hex -Path $resolvedArtifact
 $artifact = $artifactInfo.Name
 $size = $artifactInfo.Length
 

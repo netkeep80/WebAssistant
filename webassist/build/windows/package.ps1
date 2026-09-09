@@ -1,9 +1,27 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$OutputDirectory = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+function Get-Sha256Hex {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        $algorithm = [Security.Cryptography.SHA256]::Create()
+        try {
+            return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+        }
+        finally {
+            $algorithm.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
 
 $productRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 $projectPath = Join-Path $productRoot "src/WebAssistant/WebAssistant.csproj"
@@ -142,7 +160,7 @@ try {
     }
 
     $recordedSha = ((Get-Content -LiteralPath "$artifactPath.sha256" -Raw).Trim() -split '\s+')[0]
-    $finalSha = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $finalSha = Get-Sha256Hex -Path $artifactPath
     if ($recordedSha -ne $finalSha) {
         throw "Windows artifact bytes изменились после фиксации SHA-256."
     }
