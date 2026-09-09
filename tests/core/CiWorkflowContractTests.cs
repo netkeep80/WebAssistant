@@ -99,6 +99,18 @@ public sealed class CiWorkflowContractTests
         Assert.Contains("uses: ./.github/workflows/virtual-scanner.yml", ci, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ReleaseResolver_UsesGitHubWorkflowRunEventField()
+    {
+        var root = FindRepositoryRoot();
+        var resolver = ReadRequired(Path.Combine(root, "ci", "release", "resolve-accepted-main.sh"));
+
+        // GitHub Actions workflow-run REST payloads expose the trigger as `event`.
+        // `event_name` is not a workflow-run field and would reject valid live evidence.
+        Assert.Contains("run.get(\"event\")", resolver, StringComparison.Ordinal);
+        Assert.DoesNotContain("event_name", resolver, StringComparison.Ordinal);
+    }
+
     private static string ReadRequired(string path)
     {
         Assert.True(File.Exists(path), $"Required workflow is missing: {path}");
