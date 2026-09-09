@@ -62,6 +62,7 @@ public sealed class ReleaseInfrastructureTests
         Assert.Contains("repo-guard", resolver, StringComparison.Ordinal);
         Assert.Contains("merge_commit_sha", resolver, StringComparison.Ordinal);
         Assert.Contains("webassist/VERSION", resolver, StringComparison.Ordinal);
+        Assert.Contains("/jobs?per_page=100", resolver, StringComparison.Ordinal);
 
         var verifier = File.ReadAllText(Path.Combine(releaseRoot, "verify-installer-assets.sh"));
         Assert.Contains("provenance", verifier, StringComparison.OrdinalIgnoreCase);
@@ -119,6 +120,26 @@ public sealed class ReleaseInfrastructureTests
     public void AcceptedMainResolver_RejectsMissingGreenRepoGuardEvidence()
     {
         using var fixture = ResolverFixture.Create(repoGuardConclusion: "failure");
+        var result = RunReleaseScript("resolve-accepted-main.sh", [SourceSha], fixture.Environment, fixture.BinDirectory);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("repo-guard", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AcceptedMainResolver_RejectsMissingGreenCiRequiredJobEvidence()
+    {
+        using var fixture = ResolverFixture.Create(ciRequiredConclusion: "failure");
+        var result = RunReleaseScript("resolve-accepted-main.sh", [SourceSha], fixture.Environment, fixture.BinDirectory);
+
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Contains("ci-required", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AcceptedMainResolver_RejectsMissingGreenRepoGuardJobEvidence()
+    {
+        using var fixture = ResolverFixture.Create(repoGuardJobConclusion: "failure");
         var result = RunReleaseScript("resolve-accepted-main.sh", [SourceSha], fixture.Environment, fixture.BinDirectory);
 
         Assert.NotEqual(0, result.ExitCode);
@@ -302,6 +323,8 @@ public sealed class ReleaseInfrastructureTests
             string? mainSha = null,
             bool includePr = true,
             string repoGuardConclusion = "success",
+            string ciRequiredConclusion = "success",
+            string repoGuardJobConclusion = "success",
             string sourceVersion = Version)
         {
             var root = Directory.CreateTempSubdirectory("webassistant-release-resolver-").FullName;
@@ -332,6 +355,7 @@ public sealed class ReleaseInfrastructureTests
                     {
                         new
                         {
+                            id = 101,
                             path = ".github/workflows/ci.yml",
                             event_name = "pull_request",
                             status = "completed",
@@ -341,6 +365,7 @@ public sealed class ReleaseInfrastructureTests
                         },
                         new
                         {
+                            id = 102,
                             path = ".github/workflows/repo-guard.yml",
                             event_name = "pull_request",
                             status = "completed",
@@ -348,6 +373,24 @@ public sealed class ReleaseInfrastructureTests
                             head_sha = PrHeadSha,
                             pull_requests = new[] { new { number = 17 } }
                         }
+                    }
+                });
+            WriteJson(
+                Path.Combine(data, "ci-jobs.json"),
+                new
+                {
+                    jobs = new object[]
+                    {
+                        new { name = "ci-required", status = "completed", conclusion = ciRequiredConclusion }
+                    }
+                });
+            WriteJson(
+                Path.Combine(data, "repo-guard-jobs.json"),
+                new
+                {
+                    jobs = new object[]
+                    {
+                        new { name = "repo-guard", status = "completed", conclusion = repoGuardJobConclusion }
                     }
                 });
             WriteJson(Path.Combine(data, "source-version.json"), new { content = EncodeContent(sourceVersion + "\n") });
@@ -365,6 +408,8 @@ public sealed class ReleaseInfrastructureTests
                   "repos/test/repo/branches/main") cat "$FAKE_GH_DIR/main.json" ;;
                   "repos/test/repo/commits/$FAKE_SOURCE/pulls") cat "$FAKE_GH_DIR/pulls.json" ;;
                   "repos/test/repo/actions/runs?head_sha=$FAKE_HEAD&event=pull_request&per_page=100") cat "$FAKE_GH_DIR/runs.json" ;;
+                  "repos/test/repo/actions/runs/101/jobs?per_page=100") cat "$FAKE_GH_DIR/ci-jobs.json" ;;
+                  "repos/test/repo/actions/runs/102/jobs?per_page=100") cat "$FAKE_GH_DIR/repo-guard-jobs.json" ;;
                   "repos/test/repo/contents/webassist/VERSION?ref=$FAKE_SOURCE") cat "$FAKE_GH_DIR/source-version.json" ;;
                   "repos/test/repo/contents/webassist/VERSION?ref=$FAKE_BASE") cat "$FAKE_GH_DIR/base-version.json" ;;
                   *) echo "unexpected fake gh endpoint: $endpoint" >&2; exit 92 ;;
