@@ -2,7 +2,6 @@
 set -euo pipefail
 
 PACKAGE_DIRECTORY="${1:-}"
-PRODUCT_ROOT="${2:-}"
 ALT_IMAGE="${ALT_IMAGE:-registry.altlinux.org/p11/alt:latest}"
 CONTAINER_NAME="webassistant-alt-p11-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 TEST_IMAGE="webassistant-alt-p11-systemd:${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
@@ -11,16 +10,10 @@ LOG_DIR="/var/log/webassist"
 DATA_DIR="/var/lib/webassist"
 
 if [[ -z "$PACKAGE_DIRECTORY" ]]; then
-    echo "Использование: $0 <каталог product package> [product root]" >&2
+    echo "Использование: $0 <каталог распакованного product package>" >&2
     exit 2
 fi
-
-if [[ -z "$PRODUCT_ROOT" ]]; then
-    repository_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-    PRODUCT_ROOT="$repository_root/webassist"
-fi
-PRODUCT_ROOT="$(cd -- "$PRODUCT_ROOT" && pwd)"
-package_script="$PRODUCT_ROOT/build/linux/package.sh"
+PACKAGE_DIRECTORY="$(cd -- "$PACKAGE_DIRECTORY" && pwd)"
 
 cleanup() {
     set +e
@@ -29,12 +22,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-original_pwd="$PWD"
-cd "${RUNNER_TEMP:-/tmp}"
-"$package_script" "$PACKAGE_DIRECTORY"
-cd "$original_pwd"
-
 test -x "$PACKAGE_DIRECTORY/app/WebAssistant"
+test -f "$PACKAGE_DIRECTORY/app/appsettings.json"
+test -f "$PACKAGE_DIRECTORY/VERSION"
 test -x "$PACKAGE_DIRECTORY/install.sh"
 test -x "$PACKAGE_DIRECTORY/uninstall.sh"
 test -f "$PACKAGE_DIRECTORY/webassist.service"
