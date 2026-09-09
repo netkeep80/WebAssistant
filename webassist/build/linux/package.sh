@@ -185,7 +185,8 @@ rm -f -- "$artifact_path" "${artifact_path}.sha256" "${artifact_path}.provenance
     exit 1
 }
 
-sdk_version="$("$dotnet_command" --version)"
+sdk_version="$("$dotnet_command" --version 2>/dev/null || true)"
+[[ -n "$sdk_version" ]] || sdk_version="unknown"
 source_sha="${WEBASSISTANT_SOURCE_SHA:-unknown}"
 bash "$provenance_writer" \
     "$artifact_path" \
