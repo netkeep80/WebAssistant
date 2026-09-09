@@ -107,10 +107,10 @@ PY
 )" || fail "candidate release metadata is missing or inconsistent"
 
 run_json="$(gh api "repos/${repo}/actions/runs/${candidate_run_id}")" || fail "cannot inspect candidate run ${candidate_run_id}"
-printf '%s' "$run_json" | python3 - "$source_sha" <<'PY' || fail "candidate run is not a successful exact frozen-main Release candidate run"
+python3 - "$source_sha" "$run_json" <<'PY' || fail "candidate run is not a successful exact frozen-main Release candidate run"
 import json,sys
-source=sys.argv[1]
-run=json.load(sys.stdin)
+source,run_json=sys.argv[1:]
+run=json.loads(run_json)
 checks=(
     run.get("path")==".github/workflows/release-candidate.yml",
     run.get("event")=="workflow_dispatch",
@@ -122,10 +122,10 @@ if not all(checks):
     raise SystemExit(1)
 PY
 
-asset_contract="$(printf '%s' "$assets_json" | python3 - "$version" "$state" <<'PY'
+asset_contract="$(python3 - "$version" "$state" "$assets_json" <<'PY'
 import json,re,sys
-version,state=sys.argv[1:]
-assets=json.load(sys.stdin)
+version,state,assets_json=sys.argv[1:]
+assets=json.loads(assets_json)
 expected=[
  f"WebAssistant-win-x64-{version}.exe",
  f"WebAssistant-win-x64-{version}.exe.sha256",
@@ -164,11 +164,11 @@ windows_sha="$(printf '%s' "$verify_json" | python3 -c 'import json,sys; print(j
 linux_sha="$(printf '%s' "$verify_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["linuxSha256"])')"
 
 pdf_sha=""
-printf '%s' "$asset_contract" | python3 - "$tmp_dir" <<'PY' || fail "remote asset digest does not match downloaded exact bytes"
+python3 - "$tmp_dir" "$asset_contract" <<'PY' || fail "remote asset digest does not match downloaded exact bytes"
 import hashlib,json,sys
 from pathlib import Path
 root=Path(sys.argv[1])
-contract=json.load(sys.stdin)
+contract=json.loads(sys.argv[2])
 for name,remote in contract["assets"].items():
     path=root/name
     if not path.is_file():
