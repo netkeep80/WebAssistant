@@ -119,8 +119,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y sane-utils libgtk-3-0t64
+          ubuntu_sources=/etc/apt/sources.list.d/ubuntu.sources
+          [[ -f "$ubuntu_sources" ]] || {
+            echo "Ubuntu apt source definition is missing: $ubuntu_sources" >&2
+            exit 1
+          }
+
+          apt_options=(
+            -o "Dir::Etc::sourcelist=$ubuntu_sources"
+            -o "Dir::Etc::sourceparts=-"
+            -o "APT::Get::List-Cleanup=0"
+          )
+          sudo apt-get "${apt_options[@]}" update
+          sudo apt-get "${apt_options[@]}" install -y sane-utils libgtk-3-0t64
 
       - name: Verify SANE test backend
         shell: bash
