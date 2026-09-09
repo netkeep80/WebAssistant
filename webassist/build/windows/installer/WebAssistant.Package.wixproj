@@ -1,0 +1,7 @@
+<Project Sdk="WixToolset.Sdk/7.0.0">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <OutputName>WebAssistant.Package</OutputName>
+    <DefineConstants>$(DefineConstants);PayloadRoot=$(PayloadRoot);ProductVersion=$(ProductVersion)</DefineConstants>
+  </PropertyGroup>
+</Project>
