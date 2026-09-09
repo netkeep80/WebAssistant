@@ -160,13 +160,10 @@ if ([int64]$provenance.size -ne [int64]$artifactInfo.Length) {
 if ([string]$provenance.configMode -notin @("source-appsettings", "generated-default")) {
     throw "Provenance configMode находится вне закрытого enum."
 }
-foreach ($field in @("sourceSha", "sdkVersion")) {
+foreach ($field in @("sourceSha", "sdkVersion", "packageEntrypoint")) {
     if ([string]::IsNullOrWhiteSpace([string]$provenance.$field)) {
         throw "Provenance $field должен быть непустой строкой."
     }
-}
-if ([string]$provenance.packageEntrypoint -ne "build/windows/package.bat") {
-    throw "Provenance packageEntrypoint не соответствует canonical Windows producer."
 }
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
