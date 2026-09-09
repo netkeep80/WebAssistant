@@ -19,7 +19,7 @@ command -v gh >/dev/null 2>&1 || fail "gh CLI is required"
 command -v python3 >/dev/null 2>&1 || fail "python3 is required"
 command -v sha256sum >/dev/null 2>&1 || fail "sha256sum is required"
 
-"${script_dir}/verify-installer-assets.sh" "$artifact_root" "$version" "$source_sha" >/dev/null || fail "local installer identity verification failed"
+bash "${script_dir}/verify-installer-assets.sh" "$artifact_root" "$version" "$source_sha" >/dev/null || fail "local installer identity verification failed"
 
 tag="v${version}"
 assets=(
@@ -34,15 +34,13 @@ for asset in "${assets[@]}"; do
   [[ -f "$asset" ]] || fail "missing required staged asset: $(basename -- "$asset")"
 done
 
-state_json="$("${script_dir}/inspect-release-state.sh" "$version" "$source_sha")" || fail "cannot establish same-version release state"
+state_json="$(bash "${script_dir}/inspect-release-state.sh" "$version" "$source_sha")" || fail "cannot establish same-version release state"
 state="$(printf '%s' "$state_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')"
 
 if [[ "$state" == "published" ]]; then
   fail "same-version Release is already published; candidate staging must use the published no-build preflight path"
 fi
 
-# Any existing asset name is immutable. It may be safely reused only when the
-# remote GitHub SHA-256 digest equals the exact local accepted bytes.
 if [[ "$state" == "draft" ]]; then
   while IFS=$'\t' read -r remote_name remote_digest; do
     [[ -n "$remote_name" ]] || continue
@@ -59,7 +57,7 @@ if [[ "$state" == "draft" ]]; then
   done < <(printf '%s' "$state_json" | python3 -c '
 import json,sys
 for asset in json.load(sys.stdin).get("assets",[]):
-    print(f"{asset.get(chr(110)+chr(97)+chr(109)+chr(101),chr(9))}\t{asset.get(chr(100)+chr(105)+chr(103)+chr(101)+chr(115)+chr(116),chr(9))}")
+    print((asset.get("name") or "") + "\t" + (asset.get("digest") or ""))
 ')
 fi
 
@@ -84,7 +82,6 @@ if [[ "$state" == "absent" ]]; then
     -f "body=${metadata}" \
     -F draft=true \
     -F prerelease=false >/dev/null || fail "cannot create unpublished Draft Release"
-  state="created"
 elif [[ "$state" == "tag-only" ]]; then
   gh api --method POST "repos/${repo}/releases" \
     -f "tag_name=${tag}" \
@@ -93,10 +90,8 @@ elif [[ "$state" == "tag-only" ]]; then
     -f "body=${metadata}" \
     -F draft=true \
     -F prerelease=false >/dev/null || fail "cannot create Draft Release for existing exact tag"
-  state="created"
 fi
 
-# Upload only names that were not already present with an exact matching digest.
 existing_names="$(printf '%s' "$state_json" | python3 -c '
 import json,sys
 for asset in json.load(sys.stdin).get("assets",[]): print(asset.get("name", ""))
