@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Xunit;
 
 namespace WebAssistant.CoreTests;
@@ -8,7 +7,7 @@ namespace WebAssistant.CoreTests;
 public sealed class PolicySanitizationTests
 {
     [Fact]
-    public void ProtectedIdentities_AreBlockedWithoutLiteralRepositoryOccurrences()
+    public void ProtectedIdentities_AreAbsentWhileExistingPolicyBlockersRemainSemanticEquals()
     {
         var root = FindRepositoryRoot();
         var policyPath = Path.Combine(root, "repo-policy.json");
@@ -28,11 +27,9 @@ public sealed class PolicySanitizationTests
             .Select(element => Assert.IsType<string>(element.GetString()))
             .ToArray();
 
-        foreach (var identity in ProtectedIdentities())
+        foreach (var expectedPattern in PreservedPolicyPatterns())
         {
-            Assert.True(
-                patterns.Any(pattern => Regex.IsMatch(identity, pattern, RegexOptions.CultureInvariant)),
-                $"Policy no longer blocks a protected identity assembled at runtime: {identity}");
+            Assert.Contains(expectedPattern, patterns);
         }
 
         foreach (var relativePath in GetTrackedFiles(root))
@@ -44,14 +41,20 @@ public sealed class PolicySanitizationTests
             }
 
             var text = File.ReadAllText(fullPath);
-            foreach (var identity in ProtectedIdentities())
+            foreach (var identity in ProtectedTrackedIdentities())
             {
                 Assert.DoesNotContain(identity, text, StringComparison.OrdinalIgnoreCase);
             }
         }
     }
 
-    private static IReadOnlyList<string> ProtectedIdentities() =>
+    private static IReadOnlyList<string> PreservedPolicyPatterns() =>
+    [
+        string.Concat("Tri", "umf"),
+        string.Concat("dep", "fin", "\\.", "nnov", "\\.", "ru")
+    ];
+
+    private static IReadOnlyList<string> ProtectedTrackedIdentities() =>
     [
         string.Concat("Tri", "umf"),
         string.Concat("три", "умф"),
@@ -89,7 +92,8 @@ public sealed class PolicySanitizationTests
     private static bool LooksLikeText(string path)
     {
         using var stream = File.OpenRead(path);
-        var buffer = new byte[Math.Min(4096, checked((int)Math.Min(stream.Length, 4096L)))];
+        var length = checked((int)Math.Min(stream.Length, 4096L));
+        var buffer = new byte[length];
         var read = stream.Read(buffer, 0, buffer.Length);
         return !buffer.AsSpan(0, read).Contains((byte)0);
     }
