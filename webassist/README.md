@@ -1,24 +1,31 @@
 # WebAssistant
 
-`webassist` — автономный корень продукта WebAssistant. Его содержимое можно копировать в корень отдельного репозитория и собирать, упаковывать и устанавливать без файлов уровнем выше.
+`webassist` — автономный корень продукта WebAssistant. Его содержимое можно скопировать в корень отдельного репозитория и собирать, упаковывать и устанавливать без файлов уровнем выше.
 
 ## Версия продукта
 
-Файл `VERSION` в корне продукта — единственный persisted source of truth для product version. Он содержит numeric SemVer `major.minor.patch` и переносится вместе с каталогом продукта без зависимости от `.git`, tags или CI metadata.
+Файл `VERSION` в корне продукта — единственный persisted source of truth для product version. Он содержит numeric SemVer `major.minor.patch` и переносится вместе с продуктом без зависимости от `.git`, tags или CI metadata.
 
-Сборка использует это значение для assembly/product metadata. Диагностический `/v1/diag/info` возвращает ту же версию через assembly metadata. Linux и Windows packaging scripts читают `VERSION`, передают значение в build и копируют `VERSION` в корень готового package.
+Canonical package producers читают это значение и формируют versioned artifacts:
 
-Повторная сборка одного и того же product snapshot поэтому сохраняет ту же product version.
+```text
+Windows: WebAssistant-win-x64-<VERSION>.exe
+Linux:   WebAssistant-linux-x64-<VERSION>.zip
+```
+
+`<VERSION>` всегда означает exact content файла `VERSION`. То же значение передаётся в application/package metadata и записывается в provenance.
 
 ## Что работает сейчас
 
-WebAssistant устанавливается как общая системная служба рабочей станции:
+WebAssistant устанавливается как machine-wide системная служба рабочей станции:
+
 - Windows — Windows Service `WebAssistant`;
 - ALT Linux — systemd service `webassist.service`.
 
 Служба слушает только loopback. Default endpoint: `http://127.0.0.1:17654`. Публикация listener на LAN или `0.0.0.0` не является допустимой runtime configuration.
 
 Текущий scanner module:
+
 - перечисляет доступные сканеры;
 - позволяет явно выбрать `scannerId`;
 - поддерживает glass, feeder и duplex operations без скрытого fallback на другой source;
@@ -27,141 +34,125 @@ WebAssistant устанавливается как общая системная
 - не использует Base64, JSON document envelope или ZIP/raster envelope как scanner document transport;
 - после передачи PDF вызывающей стороне не хранит завершённый scan document как long-term scanner storage.
 
-Scanner backend зависит только от платформы рабочей станции. На Windows сначала используется WIA; переход на TWAIN происходит только если WIA не вернул ни одного устройства. На Linux используется direct SANE SDK path через NAPS2, без CLI orchestration.
+На Windows сначала используется WIA; переход на TWAIN происходит только если WIA не вернул ни одного устройства. На Linux используется direct SANE SDK path через NAPS2, без CLI orchestration.
 
-Scanner operation ограничена acquisition → PDF. Она сама не выполняет edit/merge/split PDF, OCR/annotation/watermark/deskew или другую semantic document transformation, signing/encryption, business/backend upload и не требует business authentication или per-user business profile. Это граница scanner capability, а не глобальный запрет на независимые capabilities WebAssistant.
+Scanner operation ограничена acquisition → PDF. Она сама не выполняет edit/merge/split PDF, OCR/annotation/watermark/deskew или другую semantic document transformation, signing/encryption, business/backend upload и не требует business authentication или per-user business profile.
 
 Описание REST API: [`docs/api.md`](docs/api.md).
 
-## Runtime configuration
+## Runtime configuration и package-time ownership
 
-Пример находится в `src/WebAssistant/appsettings.json`:
+Deployment configuration выбирается **package-time** одним из двух способов:
 
-```json
-{
-  "WebAssistant": {
-    "Port": 17654,
-    "Cors": {
-      "Enabled": false,
-      "AllowedOrigins": []
-    },
-    "FileSystem": {
-      "RootDirectory": ""
-    }
-  }
-}
+```text
+src/WebAssistant/appsettings.json существует
+  -> producer включает exact bytes этого файла
+
+src/WebAssistant/appsettings.json отсутствует
+  -> producer включает build/common/default-appsettings.json
 ```
 
-`Cors.Enabled` по умолчанию `false`. При включении разрешены только явно заданные exact HTTP/HTTPS origins; `*` не допускается.
+После формирования canonical artifact `appsettings.json` является package-owned payload. Installer не генерирует, не заменяет и не патчит packaged configuration.
+
+Repository default configuration выключает CORS и использует platform defaults для log/data roots. При включении CORS разрешены только явно заданные exact HTTP/HTTPS origins; wildcard `*` не допускается.
 
 `FileSystem.RootDirectory` задаёт rooted filesystem boundary. В текущей версии browser-facing filesystem endpoints отсутствуют. Внутренний path resolver принимает только относительные пути внутри root и отвергает navigation segments, absolute paths и существующие symlink/reparse-point components.
 
 WebAssistant пишет собственные технические события в суточные log files. В журналы не записываются PDF bytes, Base64 и содержимое страниц/документов. Current service сам не выполняет automatic retention/delete старых daily logs.
 
-## Сборка пакета
+## Сборка canonical artifacts
 
-Требуется .NET SDK 10. Packaging scripts определяют собственное расположение и не зависят от текущего рабочего каталога. Оба canonical entrypoint запускаются без обязательных аргументов.
+Packaging scripts определяют product root относительно собственного расположения и не зависят от текущего рабочего каталога.
 
-Linux:
-
-```bash
-./build/linux/package.sh
-```
-
-Linux packaging не предполагает наличие пакета `dotnet-sdk-10.0` в системном package manager. SDK 10 разрешается в следующем порядке:
-
-1. явный локальный SDK из `WEBASSISTANT_DOTNET_ROOT`;
-2. локальный offline toolchain в `toolchain/dotnet/linux-x64/`, если он подготовлен рядом с product root;
-3. уже установленный system .NET SDK 10;
-4. если SDK 10 всё ещё не найден — автоматический официальный online bootstrap через `dotnet-install.sh`.
-
-То есть обычный запуск:
-
-```bash
-./build/linux/package.sh
-```
-
-сам скачивает .NET SDK 10 в пользовательский cache, если подходящего SDK нет и доступна сеть. `apt-get`/`sudo` для получения .NET SDK не используются.
-
-Наличие подходящего system SDK можно проверить заранее:
-
-```bash
-dotnet --list-sdks
-```
-
-Пример использования заранее подготовленного локального SDK:
-
-```bash
-WEBASSISTANT_DOTNET_ROOT=/opt/dotnet ./build/linux/package.sh
-```
-
-Если сборка должна быть строго без сетевого bootstrap, его можно явно отключить:
-
-```bash
-WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0 ./build/linux/package.sh
-```
-
-В этом режиме отсутствие local/bundled/system SDK 10 приводит к fail-closed без обращения к сети или package manager.
-
-Каталог для автоматически скачиваемого SDK можно задать отдельно:
-
-```bash
-WEBASSISTANT_DOTNET_INSTALL_DIR=/opt/dotnet ./build/linux/package.sh
-```
-
-Наличие локального SDK само по себе ещё не означает полноценную clean offline build: для сборки с пустыми machine caches без сети также нужен полный локальный NuGet dependency closure с проверяемой целостностью. Такой offline bundle является отдельным build-environment артефактом, а не содержимым Git-репозитория.
-
-Linux package публикуется как self-contained `linux-x64`, поэтому машине, на которой уже готовый package только устанавливается и запускается, .NET SDK не требуется.
-
-Windows:
+### Windows
 
 ```bat
 build\windows\package.bat
 ```
 
-По умолчанию пакеты создаются в `artifacts/` внутри product root. При необходимости scripts принимают явный output path, но он не является обязательным для обычной сборки.
-
-## GitLab CI
-
-В корне продукта находится самостоятельный `.gitlab-ci.yml`. Он использует те же canonical package entrypoints, что и ручная сборка, и не требует внешних include-файлов.
-
-Windows job требует переменную проекта/группы:
+Результат по умолчанию находится в `artifacts/windows-x64/`:
 
 ```text
-WEBASSISTANT_WINDOWS_RUNNER_TAG
+WebAssistant-win-x64-<VERSION>.exe
+WebAssistant-win-x64-<VERSION>.exe.sha256
+WebAssistant-win-x64-<VERSION>.exe.provenance.json
 ```
 
-Её значение должно совпадать с tag доступного Windows runner. Сам tag в публичной конфигурации не фиксируется.
+Producer собирает self-contained `win-x64` payload, внутренний MSI и финальный WiX 7 Burn EXE. Внутренний MSI является build intermediate; пользовательским installation artifact является только versioned EXE.
 
-Package jobs выполняют:
+Для build machine требуется .NET SDK 10 и WiX toolchain, управляемый repository-owned installer projects. Target workstation заранее установленный .NET Runtime/SDK не требуется.
+
+### Linux
+
+```bash
+./build/linux/package.sh
+```
+
+Результат по умолчанию находится в `artifacts/linux-x64/`:
 
 ```text
-Windows: build\windows\package.bat artifacts\windows-x64
-Linux:   build/linux/package.sh artifacts/linux-x64
+WebAssistant-linux-x64-<VERSION>.zip
+WebAssistant-linux-x64-<VERSION>.zip.sha256
+WebAssistant-linux-x64-<VERSION>.zip.provenance.json
 ```
 
-Результаты публикуются как GitLab artifacts из `artifacts/windows-x64/` и `artifacts/linux-x64/`.
+Linux producer публикует self-contained `linux-x64` application и кладёт в ZIP `VERSION`, `install.sh`, `uninstall.sh`, `webassist.service` и package-owned `appsettings.json`.
+
+Для build machine требуется .NET SDK 10. `package.sh` ищет его в следующем порядке:
+
+1. `WEBASSISTANT_DOTNET_ROOT`;
+2. `toolchain/dotnet/linux-x64/`;
+3. system .NET SDK 10;
+4. при разрешённом network bootstrap — официальный `dotnet-install.sh`.
+
+Строго сетевой bootstrap можно запретить:
+
+```bash
+WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0 ./build/linux/package.sh
+```
+
+Это не является полной clean offline build guarantee: NuGet dependency closure для полностью offline build environment остаётся отдельной задачей.
 
 ## Установка
 
-После создания package запускайте installer из package directory с административными правами.
+### Windows
 
-Linux:
+Администратор запускает canonical artifact:
+
+```text
+WebAssistant-win-x64-<VERSION>.exe
+```
+
+Installer запрашивает elevation, выполняет machine-wide установку в Program Files, регистрирует и автоматически запускает Windows Service `WebAssistant`, а также регистрирует продукт в Installed Apps / Programs and Features. Подробности: [`docs/windows-service.md`](docs/windows-service.md).
+
+### ALT Linux 10.1
+
+Администратор распаковывает:
+
+```text
+WebAssistant-linux-x64-<VERSION>.zip
+```
+
+и из распакованного каталога запускает:
 
 ```bash
 sudo ./install.sh
 ```
 
-Windows:
+Installer использует packaged configuration без замены. Отсутствующие distro-owned runtime dependencies могут устанавливаться штатно через apt-rpm. Подробности: [`docs/linux-service.md`](docs/linux-service.md).
 
-```bat
-install.bat
+## GitLab CI
+
+В export root находится самостоятельный `.gitlab-ci.yml`. Текущая product-local GitLab surface содержит только Linux package orchestration и вызывает тот же canonical entrypoint:
+
+```bash
+./build/linux/package.sh artifacts/linux-x64
 ```
 
-Подробности lifecycle и расположения файлов:
-- [`docs/linux-service.md`](docs/linux-service.md)
-- [`docs/windows-service.md`](docs/windows-service.md)
+Файл не определяет отдельную product packaging implementation. Конкретные runner/container/registry/network параметры будущей ALT Linux 10.1 build infrastructure должны задаваться downstream infrastructure только после их фактического определения; наличие `.gitlab-ci.yml` само по себе не является доказательством ALT Linux 10.1 target acceptance.
+
+Windows distribution в GitLab не является частью текущей target architecture.
 
 ## Зависимость NAPS2 SDK
 
-Исправленный SDK хранится под отдельной identity `WebAssistant.NAPS2.Sdk` в `vendor/nuget`. Сборка продукта не маскирует его под официальный `NAPS2.Sdk` той же версии. Provenance, фиксированная package identity и способ воспроизводимой пересборки описаны в `vendor/naps2/README.md`.
+Исправленный SDK хранится под отдельной identity `WebAssistant.NAPS2.Sdk` в `vendor/nuget`. Сборка продукта не маскирует его под официальный `NAPS2.Sdk` той же версии. Provenance, fixed package identity и способ воспроизводимой пересборки описаны в `vendor/naps2/README.md`.
