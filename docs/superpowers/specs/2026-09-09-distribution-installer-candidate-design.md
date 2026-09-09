@@ -142,7 +142,7 @@ Canonical artifact:
 WebAssistant-win-x64-<VERSION>.exe
 ```
 
-Approved implementation direction: WiX-based Windows installer/bundle с использованием стандартных Windows Installer primitives для machine-wide lifecycle.
+Approved implementation direction: WiX-based Windows installer/bundle с использованием стандартных Windows Installer primitives для machine-wide lifecycle. Implementation plan pins WiX Toolset `7.0.0`, the latest non-prerelease upstream release verified during planning on 2026-09-09.
 
 Обязательное observable behavior:
 
