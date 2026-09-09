@@ -31,6 +31,23 @@ public sealed class VirtualScannerWorkflowTests
         Assert.False(workflow.Contains("run-naps2-cli-test", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public void LinuxSaneSetup_UsesOnlyRunnerUbuntuAptSourcesFailClosed()
+    {
+        var root = FindRepositoryRoot();
+        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "virtual-scanner.yml"));
+
+        Assert.Contains("/etc/apt/sources.list.d/ubuntu.sources", workflow, StringComparison.Ordinal);
+        Assert.Contains("Dir::Etc::sourcelist", workflow, StringComparison.Ordinal);
+        Assert.Contains("Dir::Etc::sourceparts", workflow, StringComparison.Ordinal);
+        Assert.Contains("sane-utils", workflow, StringComparison.Ordinal);
+        Assert.Contains("libgtk-3-0t64", workflow, StringComparison.Ordinal);
+
+        Assert.DoesNotContain("--allow-unauthenticated", workflow, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("apt-get update || true", workflow, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("apt-get install -y sane-utils libgtk-3-0t64 || true", workflow, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(Directory.GetCurrentDirectory());
