@@ -1,0 +1,26 @@
+<Wix
+    xmlns="http://wixtoolset.org/schemas/v4/wxs"
+    xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+  <Bundle
+      BundleId="netkeep80.WebAssistant.Bundle"
+      Name="WebAssistant"
+      Manufacturer="WebAssistant"
+      Version="$(var.ProductVersion)"
+      Compressed="yes">
+
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+          Theme="hyperlinkLicense"
+          LicenseUrl="" />
+    </BootstrapperApplication>
+
+    <Chain>
+      <MsiPackage
+          Id="WebAssistantMsi"
+          SourceFile="$(var.MsiPath)"
+          Visible="no"
+          ForcePerMachine="yes"
+          Vital="yes" />
+    </Chain>
+  </Bundle>
+</Wix>
