@@ -1,0 +1,180 @@
+{
+  "schema": "webassistant-contract/v0.3",
+  "status": "candidate",
+  "accepted": false,
+  "conformanceCorpus": "contracts/webassistant-conformance-v0.3.json",
+  "observableBoundary": "браузер -> локальная machine-wide служба WebAssistant -> capability рабочей станции",
+  "languagePolicy": {
+    "documentation": "ru",
+    "sourceComments": "ru",
+    "technicalIdentifiersMayBeNonRussian": true
+  },
+  "repositoryModel": {
+    "developmentRepository": "netkeep80/WebAssistant",
+    "exportRoot": "webassist",
+    "exportSemantics": "copy-export-root-contents-to-downstream-repository-root",
+    "autonomousAfterExport": true
+  },
+  "requirements": [
+    {
+      "id": "WA-REPO-001",
+      "kind": "required",
+      "statement": "Каталог webassist является автономным переносимым корнем продукта: его содержимое должно собираться, упаковываться и устанавливаться без файлов уровнем выше."
+    },
+    {
+      "id": "WA-REPO-002",
+      "kind": "required",
+      "statement": "Исходники, build/package/install scripts, механизм runtime configuration, vendored обязательные зависимости и продуктовая документация находятся внутри webassist. Environment-specific appsettings.json может принадлежать downstream consumer/deployment и не обязан храниться в public development repository; если такой config уже входит в package, installer не заменяет его собственным default config."
+    },
+    {
+      "id": "WA-CI-001",
+      "kind": "required",
+      "statement": "Автономный export root содержит собственный .gitlab-ci.yml, который после экспорта работает без файлов родительского development repository."
+    },
+    {
+      "id": "WA-SERVICE-001",
+      "kind": "required",
+      "statement": "WebAssistant устанавливается администратором один раз на рабочую станцию и работает как machine-wide системная служба."
+    },
+    {
+      "id": "WA-SERVICE-002",
+      "kind": "required",
+      "statement": "На Windows WebAssistant работает как Windows Service; на ALT Linux — как systemd system service."
+    },
+    {
+      "id": "WA-NET-001",
+      "kind": "required",
+      "statement": "Browser-facing listener привязывается только к loopback. Текущий default endpoint — http://127.0.0.1:17654; публикация на LAN или 0.0.0.0 запрещена."
+    },
+    {
+      "id": "WA-API-001",
+      "kind": "required",
+      "statement": "Текущие machine REST operations имеют major-version prefix /v1; production service panel доступна по /."
+    },
+    {
+      "id": "WA-API-002",
+      "kind": "required",
+      "statement": "Machine REST operations публикуются только под major-version prefix /v1; unversioned aliases, включая /health и /scan, отсутствуют."
+    },
+    {
+      "id": "WA-SCAN-001",
+      "kind": "required",
+      "statement": "Scanner capability перечисляет устройства, использует детерминированный scannerId selection и при успешном acquisition возвращает один raw application/pdf response."
+    },
+    {
+      "id": "WA-SCAN-002",
+      "kind": "required",
+      "statement": "POST /v1/scan, /v1/scan/feeder и /v1/scan/duplex передают соответственно glass, feeder и duplex source без скрытого fallback на другой source."
+    },
+    {
+      "id": "WA-SCAN-003",
+      "kind": "required",
+      "statement": "На рабочей станции одновременно выполняется не более одного physical scanner acquisition; конкурирующий запрос получает conflict и не запускает второй acquisition."
+    },
+    {
+      "id": "WA-TRANSPORT-001",
+      "kind": "required",
+      "statement": "Успешная scanner operation возвращает документ как binary application/pdf body. Base64, JSON document envelope и ZIP/raster envelope не являются допустимым scanner document transport."
+    },
+    {
+      "id": "WA-SCAN-004",
+      "kind": "required",
+      "statement": "Один physical acquisition возвращает один PDF, содержащий все страницы этого acquisition. После handoff PDF вызывающей стороне scanner operation заканчивается и не хранит завершённый scan document как long-term scanner storage."
+    },
+    {
+      "id": "WA-SCAN-005",
+      "kind": "boundary",
+      "statement": "Scanner operation сама не выполняет edit/merge/split PDF, OCR/annotation/watermark/deskew/semantic document transformation, signing/encryption, business/backend upload и не требует business authentication или per-user business profile. Это ограничения scanner capability, а не глобальные запреты WebAssistant; независимые capabilities такого типа требуют отдельного contract/conformance change."
+    },
+    {
+      "id": "WA-DIAG-001",
+      "kind": "required",
+      "statement": "Versioned diagnostic API возвращает только безопасную runtime-информацию и собственные суточные журналы WebAssistant; произвольный путь к файлу не принимается."
+    },
+    {
+      "id": "WA-LOG-001",
+      "kind": "required",
+      "statement": "Технические журналы не содержат PDF bytes, Base64 или содержимое страниц/документов."
+    },
+    {
+      "id": "WA-LOG-002",
+      "kind": "required",
+      "statement": "Технические события WebAssistant записываются в собственные суточные log files; current service сам не выполняет automatic retention/delete старых daily logs."
+    },
+    {
+      "id": "WA-CORS-001",
+      "kind": "required",
+      "statement": "CORS по умолчанию выключен. При включении разрешены только явно заданные exact HTTP/HTTPS origins; wildcard запрещён. Environment-specific exact origins могут поставляться downstream consumer/deployment через package appsettings.json, и installer обязан сохранять уже присутствующий package config без подмены default CORS configuration."
+    },
+    {
+      "id": "WA-FS-001",
+      "kind": "required",
+      "statement": "Filesystem capability имеет configured RootDirectory и path resolver, который принимает только относительные пути внутри root и отвергает navigation segments, absolute paths и существующие symlink/reparse-point components."
+    },
+    {
+      "id": "WA-FS-002",
+      "kind": "boundary",
+      "statement": "В текущем accepted baseline browser-facing filesystem routes не опубликованы; добавление таких routes требует отдельного contract/conformance change и сохранения rooted filesystem boundary."
+    },
+    {
+      "id": "WA-DEPS-001",
+      "kind": "required",
+      "statement": "Исправленный NAPS2 SDK используется под отдельной repository-owned identity WebAssistant.NAPS2.Sdk и хранится в webassist/vendor/nuget."
+    },
+    {
+      "id": "WA-DOC-001",
+      "kind": "required",
+      "statement": "Документация о сборке, установке, runtime configuration и current API находится внутри webassist и описывает только фактически существующее поведение."
+    },
+    {
+      "id": "WA-DOC-002",
+      "kind": "required",
+      "statement": "Новая и изменяемая product/development документация и source comments пишутся на русском языке; технические идентификаторы и термины могут оставаться нерусскими."
+    },
+    {
+      "id": "WA-DIST-001",
+      "kind": "required",
+      "statement": "Пять execution scenarios — manual Windows, GitHub Windows, manual ALT Linux 10.1, GitHub ALT Linux 10.1 и future GitLab ALT — используют только два repository-owned canonical producer entrypoints: webassist/build/windows/package.bat и webassist/build/linux/package.sh; CI-specific альтернативные product publish/package implementations запрещены."
+    },
+    {
+      "id": "WA-DIST-002",
+      "kind": "required",
+      "statement": "Canonical installer artifacts имеют имена WebAssistant-win-x64-<VERSION>.exe и WebAssistant-linux-x64-<VERSION>.zip, где <VERSION> равен exact content webassist/VERSION; filename VERSION, application metadata VERSION, installer/package metadata VERSION и release/tag VERSION обязаны совпадать, а mismatch блокирует install/release fail-closed."
+    },
+    {
+      "id": "WA-DIST-003",
+      "kind": "required",
+      "statement": "Оба canonical producers выбирают config только package-time: если src/WebAssistant/appsettings.json существует, в package включаются его exact bytes; иначе producer создаёт безопасный default config. После формирования final installer appsettings.json является immutable package payload, а installer не генерирует, не заменяет и не изменяет packaged config."
+    },
+    {
+      "id": "WA-DIST-004",
+      "kind": "required",
+      "statement": "Установка canonical installer artifact на target workstation не требует заранее установленного .NET Runtime, .NET SDK, NuGet, compiler или иных build tools. Это требование target self-containment не означает offline build environment."
+    },
+    {
+      "id": "WA-WIN-INSTALL-001",
+      "kind": "required",
+      "statement": "Windows canonical artifact WebAssistant-win-x64-<VERSION>.exe обеспечивает elevation/UAC, machine-wide установку в Program Files, self-contained payload, регистрацию и automatic start Windows Service, Installed Apps/Programs and Features registration с DisplayVersion == webassist/VERSION и standard uninstall, удаляющий service, registration и product files."
+    },
+    {
+      "id": "WA-ALT-INSTALL-001",
+      "kind": "required",
+      "statement": "ALT Linux 10.1 canonical artifact WebAssistant-linux-x64-<VERSION>.zip после распаковки содержит self-contained application, appsettings.json, VERSION, install.sh, uninstall.sh, systemd unit и необходимые product files; sudo ./install.sh устанавливает и запускает systemd system service. Distro-owned runtime dependencies могут устанавливаться штатным apt-rpm и не обязаны vendoring'иться в ZIP."
+    },
+    {
+      "id": "WA-ARTIFACT-001",
+      "kind": "required",
+      "statement": "Каждый canonical producer строит final installer ровно один раз и выдаёт SHA-256 и provenance, однозначно идентифицирующие artifact bytes. Lifecycle consumers сначала проверяют VERSION/hash/provenance, затем устанавливают exact artifact и не выполняют dotnet publish, package.bat, package.sh или payload mutation после checksum."
+    },
+    {
+      "id": "WA-RELEASE-001",
+      "kind": "required",
+      "statement": "Для accepted main одной VERSION GitHub Release публикует те же exact Windows EXE и ALT ZIP bytes, которые прошли lifecycle acceptance. Existing release с совпадающими hashes является idempotent success/no-op, а existing release той же VERSION с другими bytes приводит к hard fail; released VERSION не перезаписывается."
+    },
+    {
+      "id": "WA-INSTALL-DOC-001",
+      "kind": "required",
+      "statement": "Release surface содержит один canonical WebAssistant-Installation-Guide.pdf, воспроизводимо построенный из repository-owned editable source и описывающий фактические Windows EXE и ALT ZIP install/service/health/uninstall flows; финальные screenshots добавляются только после стабилизации real installer UX."
+    }
+  ]
+}
