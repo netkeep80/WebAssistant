@@ -27,6 +27,8 @@ public sealed class CiWorkflowContractTests
         Assert.Contains("ci/change-plan.sh", ci, StringComparison.Ordinal);
         Assert.Contains("github.event.pull_request.base.sha", ci, StringComparison.Ordinal);
         Assert.Contains("github.event.pull_request.head.sha", ci, StringComparison.Ordinal);
+        Assert.Contains("installer_linux:", ci, StringComparison.Ordinal);
+        Assert.Contains("installer_windows:", ci, StringComparison.Ordinal);
         Assert.Contains("virtual_linux:", ci, StringComparison.Ordinal);
         Assert.Contains("virtual_windows:", ci, StringComparison.Ordinal);
         Assert.Contains("run_linux:", ci, StringComparison.Ordinal);
@@ -81,10 +83,17 @@ public sealed class CiWorkflowContractTests
         Assert.Contains("installer-acceptance:", ci, StringComparison.Ordinal);
         Assert.Contains("- build-installers", ci, StringComparison.Ordinal);
         Assert.Contains("uses: ./.github/workflows/installer-acceptance.yml", ci, StringComparison.Ordinal);
+        Assert.Contains("needs.requirements.outputs.installer_linux", ci, StringComparison.Ordinal);
+        Assert.Contains("needs.requirements.outputs.installer_windows", ci, StringComparison.Ordinal);
         Assert.Contains("INSTALLER_ACCEPTANCE_RESULT: ${{ needs.installer-acceptance.result }}", ci, StringComparison.Ordinal);
         Assert.Contains("check_result installer-acceptance", ci, StringComparison.Ordinal);
-        Assert.DoesNotContain("uses: ./.github/workflows/linux-systemd.yml", ci, StringComparison.Ordinal);
-        Assert.DoesNotContain("uses: ./.github/workflows/windows-service.yml", ci, StringComparison.Ordinal);
+
+        Assert.Contains("linux-systemd:", ci, StringComparison.Ordinal);
+        Assert.Contains("uses: ./.github/workflows/linux-systemd.yml", ci, StringComparison.Ordinal);
+        Assert.Contains("needs.requirements.outputs.installer_linux != 'true'", ci, StringComparison.Ordinal);
+        Assert.Contains("windows-service:", ci, StringComparison.Ordinal);
+        Assert.Contains("uses: ./.github/workflows/windows-service.yml", ci, StringComparison.Ordinal);
+        Assert.Contains("needs.requirements.outputs.installer_windows != 'true'", ci, StringComparison.Ordinal);
 
         Assert.Contains("scanner-final:", ci, StringComparison.Ordinal);
         Assert.Contains("uses: ./.github/workflows/virtual-scanner.yml", ci, StringComparison.Ordinal);
