@@ -25,6 +25,7 @@ jobs:
       source_sha: ${{ steps.resolve.outputs.source_sha }}
       version: ${{ steps.resolve.outputs.version }}
       release_state: ${{ steps.state.outputs.release_state }}
+      candidate_run_id: ${{ steps.state.outputs.candidate_run_id }}
     steps:
       - name: Checkout exact requested source
         uses: actions/checkout@v6
@@ -56,13 +57,34 @@ jobs:
           source_sha='${{ steps.resolve.outputs.source_sha }}'
           state_json="$(bash ci/release/inspect-release-state.sh "$version" "$source_sha")"
           state="$(jq -r '.state' <<<"$state_json")"
+          candidate_run_id=''
           case "$state" in
             absent|tag-only)
               ;;
-            draft|published)
-              # Existing same-version state is a no-build path only after its
-              # prior candidate run and remote bytes are proven complete.
+            published)
+              # A published same-version state is a no-build path only after
+              # its prior candidate run and all seven public bytes are proven.
               bash ci/release/inspect-release-state.sh "$version" "$source_sha" --require-complete >/dev/null
+              ;;
+            draft)
+              # A complete Draft is a safe no-build resume. If the Draft is
+              # partial, prove the exact subset and prior successful candidate
+              # run; the resume job will consume artifacts from that prior run.
+              if bash ci/release/inspect-release-state.sh "$version" "$source_sha" --require-complete >/dev/null 2>&1; then
+                :
+              else
+                resumable_json="$(bash ci/release/inspect-release-state.sh "$version" "$source_sha" --require-resumable)"
+                state="$(jq -r '.state' <<<"$resumable_json")"
+                [[ "$state" == 'draft-partial' ]] || {
+                  echo "release-candidate: expected draft-partial resumable state, got $state" >&2
+                  exit 1
+                }
+                candidate_run_id="$(jq -r '.candidateRunId' <<<"$resumable_json")"
+                [[ "$candidate_run_id" =~ ^[1-9][0-9]*$ ]] || {
+                  echo "release-candidate: resumable Draft is missing a valid prior candidate run id" >&2
+                  exit 1
+                }
+              fi
               ;;
             *)
               echo "release-candidate: unsupported preflight state: $state" >&2
@@ -70,6 +92,7 @@ jobs:
               ;;
           esac
           printf 'release_state=%s\n' "$state" >> "$GITHUB_OUTPUT"
+          printf 'candidate_run_id=%s\n' "$candidate_run_id" >> "$GITHUB_OUTPUT"
 
   build-installers:
     name: Build canonical installers once
@@ -129,6 +152,45 @@ jobs:
             '${{ needs.resolve.outputs.source_sha }}' \
             '${{ github.run_id }}'
 
+  resume-draft:
+    name: Resume partial Draft from prior accepted bytes
+    needs:
+      - resolve
+      - build-installers
+      - installer-acceptance
+      - stage-draft
+    if: ${{ always() && needs.resolve.result == 'success' && needs.resolve.outputs.release_state == 'draft-partial' && needs.build-installers.result == 'skipped' && needs.installer-acceptance.result == 'skipped' && needs.stage-draft.result == 'skipped' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout exact frozen source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.source_sha }}
+
+      - name: Download exact artifacts from prior successful candidate run
+        uses: actions/download-artifact@v5
+        with:
+          pattern: webassistant-*-installer-${{ needs.resolve.outputs.source_sha }}
+          path: ${{ runner.temp }}/release-assets
+          merge-multiple: true
+          run-id: ${{ needs.resolve.outputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Stage only missing Draft assets from prior accepted bytes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash ci/release/stage-draft-release.sh \
+            "$RUNNER_TEMP/release-assets" \
+            '${{ needs.resolve.outputs.version }}' \
+            '${{ needs.resolve.outputs.source_sha }}' \
+            '${{ needs.resolve.outputs.candidate_run_id }}'
+
   candidate-verdict:
     name: Release candidate verdict
     if: ${{ always() }}
@@ -137,6 +199,7 @@ jobs:
       - build-installers
       - installer-acceptance
       - stage-draft
+      - resume-draft
     runs-on: ubuntu-24.04
     steps:
       - name: Evaluate fail-closed candidate result
@@ -147,6 +210,7 @@ jobs:
           BUILD_RESULT: ${{ needs.build-installers.result }}
           ACCEPTANCE_RESULT: ${{ needs.installer-acceptance.result }}
           STAGE_RESULT: ${{ needs.stage-draft.result }}
+          RESUME_RESULT: ${{ needs.resume-draft.result }}
         run: |
           set -euo pipefail
           [[ "$RESOLVE_RESULT" == 'success' ]] || {
@@ -155,13 +219,19 @@ jobs:
           }
           case "$RELEASE_STATE" in
             absent|tag-only)
-              [[ "$BUILD_RESULT" == 'success' && "$ACCEPTANCE_RESULT" == 'success' && "$STAGE_RESULT" == 'success' ]] || {
-                echo "release-candidate: new candidate requires build=$BUILD_RESULT acceptance=$ACCEPTANCE_RESULT stage=$STAGE_RESULT" >&2
+              [[ "$BUILD_RESULT" == 'success' && "$ACCEPTANCE_RESULT" == 'success' && "$STAGE_RESULT" == 'success' && "$RESUME_RESULT" == 'skipped' ]] || {
+                echo "release-candidate: new candidate requires build=$BUILD_RESULT acceptance=$ACCEPTANCE_RESULT stage=$STAGE_RESULT resume=$RESUME_RESULT" >&2
+                exit 1
+              }
+              ;;
+            draft-partial)
+              [[ "$BUILD_RESULT" == 'skipped' && "$ACCEPTANCE_RESULT" == 'skipped' && "$STAGE_RESULT" == 'skipped' && "$RESUME_RESULT" == 'success' ]] || {
+                echo "release-candidate: partial Draft must resume prior bytes without rebuild: build=$BUILD_RESULT acceptance=$ACCEPTANCE_RESULT stage=$STAGE_RESULT resume=$RESUME_RESULT" >&2
                 exit 1
               }
               ;;
             draft|published)
-              [[ "$BUILD_RESULT" == 'skipped' && "$ACCEPTANCE_RESULT" == 'skipped' && "$STAGE_RESULT" == 'skipped' ]] || {
+              [[ "$BUILD_RESULT" == 'skipped' && "$ACCEPTANCE_RESULT" == 'skipped' && "$STAGE_RESULT" == 'skipped' && "$RESUME_RESULT" == 'skipped' ]] || {
                 echo "release-candidate: existing exact state must be no-build/no-restage" >&2
                 exit 1
               }
