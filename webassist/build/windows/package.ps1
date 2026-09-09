@@ -7,6 +7,8 @@ $ErrorActionPreference = "Stop"
 
 $productRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 $projectPath = Join-Path $productRoot "src/WebAssistant/WebAssistant.csproj"
+$sourceConfigPath = Join-Path $productRoot "src/WebAssistant/appsettings.json"
+$defaultConfigPath = Join-Path $productRoot "build/common/default-appsettings.json"
 $versionPath = Join-Path $productRoot "VERSION"
 $installRoot = Join-Path $productRoot "install/windows"
 
@@ -41,6 +43,19 @@ if ($LASTEXITCODE -ne 0) {
     throw "Не удалось собрать Windows package WebAssistant."
 }
 
+$packageConfigPath = Join-Path $appDirectory "appsettings.json"
+if (Test-Path -LiteralPath $sourceConfigPath) {
+    Copy-Item -LiteralPath $sourceConfigPath -Destination $packageConfigPath -Force
+    $configMode = "source-appsettings"
+}
+else {
+    if (-not (Test-Path -LiteralPath $defaultConfigPath)) {
+        throw "Отсутствует repository-owned safe default config: $defaultConfigPath"
+    }
+    Copy-Item -LiteralPath $defaultConfigPath -Destination $packageConfigPath -Force
+    $configMode = "generated-default"
+}
+
 Copy-Item $versionPath (Join-Path $packageRoot "VERSION")
 Copy-Item (Join-Path $installRoot "install.ps1") $packageRoot
 Copy-Item (Join-Path $installRoot "install.bat") $packageRoot
@@ -52,4 +67,4 @@ if (-not (Test-Path $executable)) {
     throw "В package отсутствует WebAssistant.exe."
 }
 
-Write-Host "Windows package создан: $packageRoot (version $version)"
+Write-Host "Windows package создан: $packageRoot (version $version, config $configMode)"
