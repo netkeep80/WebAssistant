@@ -14,7 +14,7 @@ fail() {
 
 [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || fail "version must be canonical major.minor.revision"
 [[ "$source_sha" =~ ^[0-9a-fA-F]{40}$ ]] || fail "source SHA must be exact 40-hex"
-[[ -z "$verification_mode" || "$verification_mode" == "--require-complete" ]] || fail "unsupported verification mode: $verification_mode"
+[[ -z "$verification_mode" || "$verification_mode" == "--require-complete" || "$verification_mode" == "--require-resumable" ]] || fail "unsupported verification mode: $verification_mode"
 [[ $# -le 3 ]] || fail "too many arguments"
 [[ -n "$repo" ]] || fail "GH_REPO or GITHUB_REPOSITORY is required"
 command -v gh >/dev/null 2>&1 || fail "gh CLI is required"
@@ -35,7 +35,12 @@ print("null" if not matches else json.dumps(matches[0], separators=(",",":")))
 ' "$tag")" || fail "ambiguous same-version release state"
 
 if [[ "$release_json" == "null" ]]; then
-  [[ -z "$verification_mode" ]] || fail "complete same-version Release does not exist"
+  if [[ -n "$verification_mode" ]]; then
+    if [[ "$verification_mode" == "--require-resumable" ]]; then
+      fail "resumable same-version Draft Release does not exist"
+    fi
+    fail "complete same-version Release does not exist"
+  fi
   if tag_json="$(gh api "repos/${repo}/git/ref/tags/${tag}" 2>/dev/null)"; then
     tag_sha="$(printf '%s' "$tag_json" | python3 -c 'import json,sys; print((json.load(sys.stdin).get("object") or {}).get("sha", ""))')"
     [[ "$tag_sha" == "$source_sha" ]] || fail "existing tag points to a different source SHA"
@@ -84,6 +89,10 @@ PY
   exit 0
 fi
 
+if [[ "$verification_mode" == "--require-resumable" && "$state" != "draft" ]]; then
+  fail "resumable state requires an unpublished Draft Release"
+fi
+
 candidate_run_id="$(python3 - "$body" "$source_sha" "$version" <<'PY'
 import json,sys
 body,source,version=sys.argv[1:]
@@ -121,6 +130,78 @@ checks=(
 if not all(checks):
     raise SystemExit(1)
 PY
+
+if [[ "$verification_mode" == "--require-resumable" ]]; then
+  resumable_contract="$(python3 - "$version" "$assets_json" <<'PY'
+import json,re,sys
+version,assets_json=sys.argv[1:]
+assets=json.loads(assets_json)
+expected=[
+ f"WebAssistant-win-x64-{version}.exe",
+ f"WebAssistant-win-x64-{version}.exe.sha256",
+ f"WebAssistant-win-x64-{version}.exe.provenance.json",
+ f"WebAssistant-linux-x64-{version}.zip",
+ f"WebAssistant-linux-x64-{version}.zip.sha256",
+ f"WebAssistant-linux-x64-{version}.zip.provenance.json",
+]
+by_name={}
+for asset in assets:
+    name=asset.get("name")
+    digest=asset.get("digest")
+    if not isinstance(name,str) or name in by_name:
+        print("duplicate or malformed staged installer asset", file=sys.stderr); raise SystemExit(1)
+    if name not in expected:
+        print(f"unexpected public asset in resumable Draft: {name}", file=sys.stderr); raise SystemExit(1)
+    if not isinstance(digest,str) or not re.fullmatch(r"sha256:[0-9a-f]{64}",digest):
+        print(f"malformed remote asset digest: {name}", file=sys.stderr); raise SystemExit(1)
+    by_name[name]=digest
+missing=[name for name in expected if name not in by_name]
+if not missing:
+    print("Draft installer staging is already complete", file=sys.stderr); raise SystemExit(1)
+print(json.dumps({
+  "assets":by_name,
+  "presentAssetCount":len(by_name),
+  "missingAssets":missing,
+},separators=(",",":")))
+PY
+)" || fail "resumable Draft asset contract is inconsistent"
+
+  tmp_dir="$(mktemp -d)"
+  cleanup() { rm -rf "$tmp_dir"; }
+  trap cleanup EXIT
+  gh release download "$tag" --repo "$repo" --dir "$tmp_dir" >/dev/null || fail "cannot download partial Draft assets"
+  python3 - "$tmp_dir" "$resumable_contract" <<'PY' || fail "resumable Draft remote asset digest mismatch"
+import hashlib,json,sys
+from pathlib import Path
+root=Path(sys.argv[1])
+contract=json.loads(sys.argv[2])
+for name,remote in contract["assets"].items():
+    path=root/name
+    if not path.is_file():
+        print(f"downloaded partial Draft asset missing: {name}",file=sys.stderr); raise SystemExit(1)
+    actual="sha256:"+hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual!=remote:
+        print(f"remote asset digest mismatch: {name}",file=sys.stderr); raise SystemExit(1)
+PY
+
+  python3 - "$release_id" "$tag" "$source_sha" "$body" "$assets_json" "$candidate_run_id" "$resumable_contract" <<'PY'
+import json,sys
+release_id,tag,source,body,assets,run,contract_json=sys.argv[1:]
+contract=json.loads(contract_json)
+print(json.dumps({
+  "state":"draft-partial",
+  "releaseId":int(release_id),
+  "tag":tag,
+  "sourceSha":source,
+  "body":body,
+  "assets":json.loads(assets),
+  "candidateRunId":int(run),
+  "presentAssetCount":contract["presentAssetCount"],
+  "missingAssets":contract["missingAssets"],
+}, separators=(",",":")))
+PY
+  exit 0
+fi
 
 asset_contract="$(python3 - "$version" "$state" "$assets_json" <<'PY'
 import json,re,sys
