@@ -4,6 +4,8 @@ set -euo pipefail
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 product_root="$(cd -- "$script_dir/../.." && pwd)"
 project_path="$product_root/src/WebAssistant/WebAssistant.csproj"
+source_config_path="$product_root/src/WebAssistant/appsettings.json"
+default_config_path="$product_root/build/common/default-appsettings.json"
 version_file="$product_root/VERSION"
 install_root="$product_root/install/linux"
 output_directory="${1:-$product_root/artifacts/linux-x64}"
@@ -120,6 +122,19 @@ mkdir -p -- "$app_directory"
     -p:ProductVersion="$version" \
     --output "$app_directory"
 
+package_config_path="$app_directory/appsettings.json"
+if [[ -f "$source_config_path" ]]; then
+    cp -- "$source_config_path" "$package_config_path"
+    config_mode="source-appsettings"
+else
+    [[ -f "$default_config_path" ]] || {
+        echo "Отсутствует repository-owned safe default config: $default_config_path" >&2
+        exit 1
+    }
+    cp -- "$default_config_path" "$package_config_path"
+    config_mode="generated-default"
+fi
+
 cp -- "$version_file" "$package_root/VERSION"
 cp -- "$install_root/install.sh" "$package_root/install.sh"
 cp -- "$install_root/uninstall.sh" "$package_root/uninstall.sh"
@@ -131,4 +146,4 @@ chmod +x -- "$package_root/install.sh" "$package_root/uninstall.sh"
     exit 1
 }
 
-echo "Linux package создан: $package_root (version $version)"
+echo "Linux package создан: $package_root (version $version, config $config_mode)"
