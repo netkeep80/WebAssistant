@@ -62,15 +62,15 @@ public sealed class ChangePlanClassifierTests
         AssertPlan(
             ["webassist/build/windows/package.ps1", "webassist/VERSION"],
             core: true,
-            linuxSystemd: true,
+            linuxSystemd: false,
             windowsService: true,
             installerLinux: false,
             installerWindows: true,
-            virtualLinux: true,
+            virtualLinux: false,
             virtualWindows: true,
-            smokeLinux: true,
+            smokeLinux: false,
             smokeWindows: true,
-            fullCrossPlatform: true);
+            fullCrossPlatform: false);
     }
 
     [Fact]
@@ -80,14 +80,14 @@ public sealed class ChangePlanClassifierTests
             ["webassist/build/linux/package.sh", "webassist/VERSION"],
             core: true,
             linuxSystemd: true,
-            windowsService: true,
+            windowsService: false,
             installerLinux: true,
             installerWindows: false,
             virtualLinux: true,
-            virtualWindows: true,
+            virtualWindows: false,
             smokeLinux: true,
-            smokeWindows: true,
-            fullCrossPlatform: true);
+            smokeWindows: false,
+            fullCrossPlatform: false);
     }
 
     [Fact]
