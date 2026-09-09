@@ -47,7 +47,10 @@ runs=json.load(sys.stdin).get("workflow_runs",[])
 ids=[]
 for run in runs:
     prs=[item.get("number") for item in run.get("pull_requests",[]) if isinstance(item,dict)]
-    if (run.get("path")==path and run.get("event_name")=="pull_request" and
+    trigger=run.get("event")
+    if trigger is None:
+        trigger=run.get("event_name")
+    if (run.get("path")==path and trigger=="pull_request" and
         run.get("head_sha")==head and pr in prs and run.get("status")=="completed" and
         run.get("conclusion")=="success" and isinstance(run.get("id"),int)):
         ids.append(run["id"])
