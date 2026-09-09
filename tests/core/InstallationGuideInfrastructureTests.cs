@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Xunit;
 
@@ -41,6 +43,7 @@ public sealed class InstallationGuideInfrastructureTests
         var rootElement = schema.RootElement;
         Assert.Equal("webassistant-installation-evidence/v1", rootElement.GetProperty("$id").GetString());
         Assert.Equal("object", rootElement.GetProperty("type").GetString());
+        Assert.False(rootElement.GetProperty("additionalProperties").GetBoolean());
 
         var required = rootElement.GetProperty("required")
             .EnumerateArray()
@@ -67,6 +70,9 @@ public sealed class InstallationGuideInfrastructureTests
         Assert.True(File.Exists(verifyPath), $"Отсутствует PDF verification entrypoint: {verifyPath}");
 
         var toolchain = File.ReadAllText(toolchainPath);
+        Assert.Contains("PANDOC_VERSION=", toolchain, StringComparison.Ordinal);
+        Assert.Contains("WEASYPRINT_VERSION=", toolchain, StringComparison.Ordinal);
+        Assert.Contains("POPPLER_VERSION=", toolchain, StringComparison.Ordinal);
         Assert.Contains("sha256:", toolchain, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("latest", toolchain, StringComparison.OrdinalIgnoreCase);
 
@@ -78,11 +84,102 @@ public sealed class InstallationGuideInfrastructureTests
         Assert.Contains("evidence.schema.json", build, StringComparison.Ordinal);
         Assert.Contains("WebAssistant-Installation-Guide.pdf", build, StringComparison.Ordinal);
         Assert.Contains("artifacts", build, StringComparison.Ordinal);
+        Assert.Contains("pandoc", build, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("weasyprint", build, StringComparison.OrdinalIgnoreCase);
 
         var verify = File.ReadAllText(verifyPath);
         Assert.Contains("WebAssistant-Installation-Guide.pdf", verify, StringComparison.Ordinal);
-        Assert.Contains("render", verify, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("pdftoppm", verify, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("pdfinfo", verify, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("page", verify, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void EvidenceValidator_AcceptsCompleteFixtureAndExpandsGuide()
+    {
+        var fixture = CreateEvidenceFixture(RequiredCaptureSlots);
+        try
+        {
+            var output = Path.Combine(fixture.Root, "expanded.md");
+            var result = RunEvidenceTool(fixture, "fixture", fixture.SourceSha, output);
+
+            Assert.Equal(0, result.ExitCode);
+            Assert.True(File.Exists(output));
+            var expanded = File.ReadAllText(output);
+            Assert.DoesNotContain("{{WIN_ARTIFACT_IDENTITY}}", expanded, StringComparison.Ordinal);
+            Assert.DoesNotContain("{{ALT_UNINSTALL}}", expanded, StringComparison.Ordinal);
+            Assert.Contains($"WebAssistant-win-x64-{fixture.Version}.exe", expanded, StringComparison.Ordinal);
+            Assert.Contains($"WebAssistant-linux-x64-{fixture.Version}.zip", expanded, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void EvidenceValidator_RejectsSourceIdentityMismatch()
+    {
+        var fixture = CreateEvidenceFixture(RequiredCaptureSlots);
+        try
+        {
+            var result = RunEvidenceTool(fixture, "fixture", new string('b', 40), Path.Combine(fixture.Root, "expanded.md"));
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("sourceSha", result.Error, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void EvidenceValidator_RejectsMissingRequiredCaptureSlot()
+    {
+        var fixture = CreateEvidenceFixture(RequiredCaptureSlots[..^1]);
+        try
+        {
+            var result = RunEvidenceTool(fixture, "fixture", fixture.SourceSha, Path.Combine(fixture.Root, "expanded.md"));
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("missing required capture slots", result.Error, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void EvidenceValidator_RejectsCaptureHashMismatch()
+    {
+        var fixture = CreateEvidenceFixture(RequiredCaptureSlots);
+        try
+        {
+            File.AppendAllText(fixture.FirstCapture, "tampered");
+            var result = RunEvidenceTool(fixture, "fixture", fixture.SourceSha, Path.Combine(fixture.Root, "expanded.md"));
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("sha256 mismatch", result.Error, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void EvidenceValidator_RejectsFixtureEvidenceInFinalMode()
+    {
+        var fixture = CreateEvidenceFixture(RequiredCaptureSlots);
+        try
+        {
+            var result = RunEvidenceTool(fixture, "final", fixture.SourceSha, Path.Combine(fixture.Root, "expanded.md"));
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("cannot be used in mode=final", result.Error, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(fixture.Root, recursive: true);
+        }
     }
 
     [Fact]
@@ -110,6 +207,7 @@ public sealed class InstallationGuideInfrastructureTests
         Assert.Contains("tests/core/InstallationGuideInfrastructureTests.cs", evidence);
         Assert.Contains("webassist/docs/installation-guide.md", evidence);
         Assert.Contains("webassist/docs/installation-guide/evidence.schema.json", evidence);
+        Assert.Contains("webassist/docs/installation-guide/evidence.py", evidence);
         Assert.Contains("webassist/docs/installation-guide/build.sh", evidence);
         Assert.Contains("webassist/docs/installation-guide/verify.sh", evidence);
     }
@@ -124,6 +222,88 @@ public sealed class InstallationGuideInfrastructureTests
         Assert.Contains("WebAssistant-Installation-Guide.pdf", readme, StringComparison.Ordinal);
         Assert.DoesNotContain("../docs/installation-guide", readme, StringComparison.Ordinal);
     }
+
+    private static EvidenceFixture CreateEvidenceFixture(IEnumerable<string> slots)
+    {
+        var root = Directory.CreateTempSubdirectory("webassistant-guide-evidence-").FullName;
+        var sourceSha = new string('a', 40);
+        var repositoryRoot = FindRepositoryRoot();
+        var version = File.ReadAllText(Path.Combine(repositoryRoot, "webassist", "VERSION")).Trim();
+        var captures = new List<object>();
+        string? firstCapture = null;
+
+        foreach (var slot in slots)
+        {
+            var fileName = slot + ".txt";
+            var path = Path.Combine(root, fileName);
+            File.WriteAllText(path, $"fixture {slot}\n");
+            firstCapture ??= path;
+            captures.Add(new
+            {
+                slot,
+                platform = slot.StartsWith("WIN_", StringComparison.Ordinal) ? "windows" : "alt-linux",
+                path = fileName,
+                sha256 = Sha256(path),
+                kind = "fixture"
+            });
+        }
+
+        var manifest = new
+        {
+            schema = "webassistant-installation-evidence/v1",
+            kind = "fixture",
+            sourceSha,
+            version,
+            artifacts = new
+            {
+                windows = new { filename = $"WebAssistant-win-x64-{version}.exe", sha256 = new string('1', 64) },
+                linux = new { filename = $"WebAssistant-linux-x64-{version}.zip", sha256 = new string('2', 64) }
+            },
+            altTarget = new { osName = "fixture", osVersion = "fixture", completed = false },
+            captures
+        };
+        var manifestPath = Path.Combine(root, "evidence.json");
+        File.WriteAllText(manifestPath, JsonSerializer.Serialize(manifest));
+
+        return new EvidenceFixture(root, manifestPath, firstCapture ?? Path.Combine(root, "missing.txt"), sourceSha, version);
+    }
+
+    private static ProcessResult RunEvidenceTool(EvidenceFixture fixture, string mode, string sourceSha, string output)
+    {
+        var repositoryRoot = FindRepositoryRoot();
+        var script = Path.Combine(repositoryRoot, "webassist", "docs", "installation-guide", "evidence.py");
+        var guide = Path.Combine(repositoryRoot, "webassist", "docs", "installation-guide.md");
+        Assert.True(File.Exists(script), $"Отсутствует evidence validator: {script}");
+
+        var startInfo = new ProcessStartInfo("python3")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        foreach (var argument in new[]
+                 {
+                     script,
+                     "--mode", mode,
+                     "--manifest", fixture.Manifest,
+                     "--guide", guide,
+                     "--output-markdown", output,
+                     "--version", fixture.Version,
+                     "--source-sha", sourceSha
+                 })
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Не удалось запустить evidence validator.");
+        var standardOutput = process.StandardOutput.ReadToEnd();
+        var standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        return new ProcessResult(process.ExitCode, standardOutput, standardError);
+    }
+
+    private static string Sha256(string path) =>
+        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
 
     private static string FindRepositoryRoot()
     {
@@ -142,4 +322,7 @@ public sealed class InstallationGuideInfrastructureTests
 
         throw new InvalidOperationException("Не найден корень репозитория WebAssistant.");
     }
+
+    private sealed record EvidenceFixture(string Root, string Manifest, string FirstCapture, string SourceSha, string Version);
+    private sealed record ProcessResult(int ExitCode, string Output, string Error);
 }
