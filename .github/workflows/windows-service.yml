@@ -11,24 +11,32 @@ on:
   push:
     branches: [main]
     paths:
+      - '.gitattributes'
+      - 'webassist/.gitattributes'
       - 'tests/windows-service/**'
       - 'tests/core/SystemServiceProductTests.cs'
       - 'tests/core/IsolatedExportRootAcceptanceTests.cs'
+      - 'tests/core/InstallerArtifactContractTests.cs'
+      - 'tests/core/ConfigurationOwnershipTests.cs'
+      - 'webassist/build/common/**'
       - 'webassist/build/windows/**'
       - 'webassist/install/windows/**'
       - 'webassist/src/WebAssistant/**'
+      - 'webassist/vendor/**'
+      - 'webassist/NuGet.Config'
+      - 'webassist/VERSION'
       - '.github/workflows/windows-service.yml'
 
 permissions:
   contents: read
 
 jobs:
-  windows-service-acceptance:
-    name: Windows Service lifecycle
+  build-windows-installer:
+    name: Build Windows installer artifact once
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
-      - name: Checkout
+      - name: Checkout exact source
         uses: actions/checkout@v6
         with:
           ref: ${{ inputs.source_ref || github.sha }}
@@ -45,54 +53,163 @@ jobs:
           $source = Join-Path $env:GITHUB_WORKSPACE 'webassist'
           $exportRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-export-root'
 
-          if (Test-Path $exportRoot) {
-              Remove-Item $exportRoot -Recurse -Force
+          if (Test-Path -LiteralPath $exportRoot) {
+              Remove-Item -LiteralPath $exportRoot -Recurse -Force
           }
-          New-Item $exportRoot -ItemType Directory -Force | Out-Null
-          Get-ChildItem -LiteralPath $source -Force | Copy-Item -Destination $exportRoot -Recurse -Force
+          New-Item -Path $exportRoot -ItemType Directory -Force | Out-Null
+          Get-ChildItem -LiteralPath $source -Force |
+              Copy-Item -Destination $exportRoot -Recurse -Force
 
           $required = @(
               'WebAssistant.sln',
               '.gitlab-ci.yml',
               'README.md',
-              'build/windows/package.bat'
+              'VERSION',
+              'build/common/default-appsettings.json',
+              'build/common/write-provenance.ps1',
+              'build/windows/package.bat',
+              'build/windows/package.ps1',
+              'build/windows/installer/WebAssistant.Package.wixproj',
+              'build/windows/installer/WebAssistant.Bundle.wixproj'
           )
           foreach ($relativePath in $required) {
-              if (-not (Test-Path (Join-Path $exportRoot $relativePath))) {
+              if (-not (Test-Path -LiteralPath (Join-Path $exportRoot $relativePath) -PathType Leaf)) {
                   throw "Isolated export root is missing $relativePath"
               }
           }
 
-          "WEBASSISTANT_EXPORT_ROOT=$exportRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "WEBASSISTANT_EXPORT_ROOT=$exportRoot"
 
-      - name: Exercise isolated-root install and real Windows Service lifecycle
+      - name: Build canonical versioned EXE and evidence
         shell: pwsh
+        env:
+          WEBASSISTANT_SOURCE_SHA: ${{ inputs.source_ref || github.sha }}
         run: |
-          $installDirectory = Join-Path $env:RUNNER_TEMP 'webassistant-installed'
-          .\tests\windows-service\run-service-acceptance.ps1 `
-              -InstallDirectory $installDirectory `
-              -Port 17654 `
-              -ProductRoot $env:WEBASSISTANT_EXPORT_ROOT
+          $ErrorActionPreference = 'Stop'
+          $outputRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'
+          if (Test-Path -LiteralPath $outputRoot) {
+              Remove-Item -LiteralPath $outputRoot -Recurse -Force
+          }
+          New-Item -Path $outputRoot -ItemType Directory -Force | Out-Null
 
-      - name: Emergency cleanup
+          $packageBatch = Join-Path $env:WEBASSISTANT_EXPORT_ROOT 'build/windows/package.bat'
+          & $packageBatch -OutputDirectory $outputRoot
+          if ($LASTEXITCODE -ne 0) {
+              throw "Canonical Windows producer failed with exit code $LASTEXITCODE."
+          }
+
+          $version = (Get-Content -LiteralPath (Join-Path $env:WEBASSISTANT_EXPORT_ROOT 'VERSION') -Raw).Trim()
+          $artifact = Join-Path $outputRoot "WebAssistant-win-x64-$version.exe"
+          foreach ($requiredPath in @($artifact, "$artifact.sha256", "$artifact.provenance.json")) {
+              if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+                  throw "Canonical Windows producer did not create $requiredPath"
+              }
+          }
+
+      - name: Upload immutable Windows installer bytes
+        uses: actions/upload-artifact@v4
+        with:
+          name: webassistant-windows-installer-${{ inputs.source_ref || github.sha }}
+          path: |
+            ${{ runner.temp }}/webassistant-windows-artifacts/WebAssistant-win-x64-*.exe
+            ${{ runner.temp }}/webassistant-windows-artifacts/WebAssistant-win-x64-*.exe.sha256
+            ${{ runner.temp }}/webassistant-windows-artifacts/WebAssistant-win-x64-*.exe.provenance.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Cleanup producer workspace
         if: always()
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Continue'
+          if ($env:WEBASSISTANT_EXPORT_ROOT -and (Test-Path -LiteralPath $env:WEBASSISTANT_EXPORT_ROOT)) {
+              Remove-Item -LiteralPath $env:WEBASSISTANT_EXPORT_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          $outputRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'
+          if (Test-Path -LiteralPath $outputRoot) {
+              Remove-Item -LiteralPath $outputRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+  windows-installer-acceptance:
+    name: Windows WiX installer lifecycle
+    needs: build-windows-installer
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - name: Checkout acceptance harness
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+
+      - name: Assert immutable consumer surface
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($requiredPath in @(
+              'tests/windows-service/run-installer-acceptance.ps1',
+              'tests/windows-service/run-service-acceptance.ps1'
+          )) {
+              if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+                  throw "Missing Windows acceptance harness: $requiredPath"
+              }
+          }
+
+      - name: Download exact producer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: webassistant-windows-installer-${{ inputs.source_ref || github.sha }}
+          path: ${{ runner.temp }}/webassistant-windows-artifacts
+
+      - name: Verify and exercise exact Windows installer bytes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $artifactRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'
+          $artifacts = @(Get-ChildItem -LiteralPath $artifactRoot -Filter 'WebAssistant-win-x64-*.exe' -File)
+          if ($artifacts.Count -ne 1) {
+              throw "Expected exactly one canonical Windows EXE; found $($artifacts.Count)."
+          }
+
+          $artifact = $artifacts[0].FullName
+          .\tests\windows-service\run-installer-acceptance.ps1 `
+              -ArtifactPath $artifact `
+              -Sha256Path "$artifact.sha256" `
+              -ProvenancePath "$artifact.provenance.json" `
+              -Port 17654
+
+      - name: Emergency exact-bundle cleanup
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $artifactRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'
+          $artifact = Get-ChildItem -LiteralPath $artifactRoot -Filter 'WebAssistant-win-x64-*.exe' -File -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+
+          $installedEntry = Get-ItemProperty `
+              -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', `
+                    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' `
+              -ErrorAction SilentlyContinue |
+              Where-Object { $_.DisplayName -eq 'WebAssistant' } |
+              Select-Object -First 1
           $service = Get-Service -Name 'WebAssistant' -ErrorAction SilentlyContinue
-          if ($service) {
-              sc.exe stop WebAssistant 2>$null | Out-Null
-              sc.exe delete WebAssistant 2>$null | Out-Null
-          }
-          $installDirectory = Join-Path $env:RUNNER_TEMP 'webassistant-installed'
-          if (Test-Path $installDirectory) {
-              Remove-Item $installDirectory -Recurse -Force -ErrorAction SilentlyContinue
-          }
-          if ($env:WEBASSISTANT_EXPORT_ROOT) {
-              $packageDirectory = Join-Path $env:WEBASSISTANT_EXPORT_ROOT 'artifacts\windows-x64'
-              if (Test-Path $packageDirectory) {
-                  Remove-Item $packageDirectory -Recurse -Force -ErrorAction SilentlyContinue
+
+          if ($artifact -and ($installedEntry -or $service)) {
+              try {
+                  $cleanup = Start-Process `
+                      -FilePath $artifact.FullName `
+                      -ArgumentList @('/uninstall', '/quiet', '/norestart') `
+                      -Wait `
+                      -PassThru
+                  if ($cleanup.ExitCode -ne 0) {
+                      Write-Warning "Exact bundle cleanup exited with $($cleanup.ExitCode)."
+                  }
               }
-              if (Test-Path $env:WEBASSISTANT_EXPORT_ROOT) {
-                  Remove-Item $env:WEBASSISTANT_EXPORT_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+              catch {
+                  Write-Warning "Exact bundle cleanup failed: $($_.Exception.Message)"
               }
+          }
+
+          if (Test-Path -LiteralPath $artifactRoot) {
+              Remove-Item -LiteralPath $artifactRoot -Recurse -Force -ErrorAction SilentlyContinue
           }
