@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Configuration;
+using WebAssistant.Runtime;
 using Xunit;
 
 namespace WebAssistant.CoreTests;
@@ -50,6 +52,29 @@ public sealed class ConfigurationOwnershipTests
         Assert.DoesNotContain("cat >\"$config_file\"", install, StringComparison.Ordinal);
         Assert.DoesNotContain("<<'JSON'", install, StringComparison.Ordinal);
         Assert.DoesNotContain("<<\"JSON\"", install, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LinuxInstaller_DefaultStateDirectoriesMatchRuntimeDefaults()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var runtime = WebAssistantRuntimeOptions.Load(new ConfigurationBuilder().Build());
+        Assert.Equal("/var/log/webassistant", runtime.LogDirectory);
+        Assert.Equal("/var/lib/webassistant", runtime.FileSystemRootDirectory);
+
+        var install = ReadRequired("webassist/install/linux/install.sh");
+        var uninstall = ReadRequired("webassist/install/linux/uninstall.sh");
+        var acceptance = ReadRequired("tests/linux-systemd/run-systemd-acceptance.sh");
+
+        Assert.Contains("log_dir=\"/var/log/webassistant\"", install, StringComparison.Ordinal);
+        Assert.Contains("data_dir=\"/var/lib/webassistant\"", install, StringComparison.Ordinal);
+        Assert.Contains("/var/log/webassistant /var/lib/webassistant", uninstall, StringComparison.Ordinal);
+        Assert.Contains("LOG_DIR=\"/var/log/webassistant\"", acceptance, StringComparison.Ordinal);
+        Assert.Contains("DATA_DIR=\"/var/lib/webassistant\"", acceptance, StringComparison.Ordinal);
     }
 
     [Fact]
