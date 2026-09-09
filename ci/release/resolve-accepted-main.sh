@@ -42,21 +42,20 @@ candidate_run_ids() {
   local workflow_path="$1"
   printf '%s' "$runs_json" | python3 -c '
 import json,sys
-path,head,pr=sys.argv[1],sys.argv[2],int(sys.argv[3])
+path,head=sys.argv[1],sys.argv[2]
 runs=json.load(sys.stdin).get("workflow_runs",[])
 ids=[]
 for run in runs:
-    prs=[item.get("number") for item in run.get("pull_requests",[]) if isinstance(item,dict)]
     trigger=run.get("event")
     if trigger is None:
         trigger=run.get("event_name")
     if (run.get("path")==path and trigger=="pull_request" and
-        run.get("head_sha")==head and pr in prs and run.get("status")=="completed" and
+        run.get("head_sha")==head and run.get("status")=="completed" and
         run.get("conclusion")=="success" and isinstance(run.get("id"),int)):
         ids.append(run["id"])
 for run_id in sorted(set(ids), reverse=True):
     print(run_id)
-' "$workflow_path" "$pr_head" "$pr_number"
+' "$workflow_path" "$pr_head"
 }
 
 job_is_green() {
