@@ -24,7 +24,7 @@
 - GitLab infrastructure #159 remains deferred; do not invent runner/container/registry details.
 - Branch protection #3/#25 remains paused; use fixed-head discipline.
 - Do not add environment-specific/publicly forbidden identities; sanitization policy must remain fail-closed.
-- WiX build tool is pinned to stable `7.0.0`; no floating `latest` dependency.
+- WiX build tool is pinned to stable `7.0.0`; no floating `latest` dependency. This is the latest non-prerelease GitHub release observed during plan preparation on 2026-09-09.
 - User-facing Windows release surface is one EXE; internal MSI is build intermediate only.
 - Lifecycle consumers must not call `dotnet publish`, `package.bat`, `package.sh`, or mutate payload after checksum.
 
