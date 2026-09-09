@@ -76,6 +76,11 @@ public sealed class SystemServiceProductTests
         var programPath = Path.Combine(product, "src", "WebAssistant", "Program.cs");
         var packageScript = Path.Combine(product, "build", "windows", "package.ps1");
         var packageBatch = Path.Combine(product, "build", "windows", "package.bat");
+        var installerRoot = Path.Combine(product, "build", "windows", "installer");
+        var packageProject = Path.Combine(installerRoot, "WebAssistant.Package.wixproj");
+        var packageDefinition = Path.Combine(installerRoot, "Package.wxs");
+        var bundleProject = Path.Combine(installerRoot, "WebAssistant.Bundle.wixproj");
+        var bundleDefinition = Path.Combine(installerRoot, "Bundle.wxs");
         var installScript = Path.Combine(product, "install", "windows", "install.ps1");
         var installBatch = Path.Combine(product, "install", "windows", "install.bat");
         var uninstallScript = Path.Combine(product, "install", "windows", "uninstall.ps1");
@@ -86,6 +91,13 @@ public sealed class SystemServiceProductTests
 
         Assert.True(File.Exists(packageScript));
         Assert.True(File.Exists(packageBatch));
+        Assert.True(File.Exists(packageProject));
+        Assert.True(File.Exists(packageDefinition));
+        Assert.True(File.Exists(bundleProject));
+        Assert.True(File.Exists(bundleDefinition));
+
+        // Accepted v0.2 still requires these legacy evidence paths. They are no longer
+        // the canonical installer implementation surface and must not be packaged.
         Assert.True(File.Exists(installScript));
         Assert.True(File.Exists(installBatch));
         Assert.True(File.Exists(uninstallScript));
@@ -110,28 +122,54 @@ public sealed class SystemServiceProductTests
         var packageText = File.ReadAllText(packageScript);
         Assert.Contains("win-x64", packageText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("--self-contained true", packageText, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("install.ps1", packageText, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("uninstall.ps1", packageText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("WebAssistant.Package.wixproj", packageText, StringComparison.Ordinal);
+        Assert.Contains("WebAssistant.Bundle.wixproj", packageText, StringComparison.Ordinal);
+        Assert.Contains("WebAssistant-win-x64-$version.exe", packageText, StringComparison.Ordinal);
+        Assert.DoesNotContain("install.ps1", packageText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("uninstall.ps1", packageText, StringComparison.OrdinalIgnoreCase);
+
+        var packageProjectText = File.ReadAllText(packageProject);
+        var bundleProjectText = File.ReadAllText(bundleProject);
+        Assert.Contains("WixToolset.Sdk/7.0.0", packageProjectText, StringComparison.Ordinal);
+        Assert.Contains("WixToolset.Sdk/7.0.0", bundleProjectText, StringComparison.Ordinal);
+        Assert.Contains("WixToolset.BootstrapperApplications.wixext", bundleProjectText, StringComparison.Ordinal);
+        Assert.Contains("Version=\"7.0.0\"", bundleProjectText, StringComparison.Ordinal);
+
+        var wixPackage = XDocument.Load(packageDefinition);
+        var wixPackageElement = wixPackage.Descendants().Single(element => element.Name.LocalName == "Package");
+        Assert.Equal("$(var.ProductVersion)", wixPackageElement.Attribute("Version")?.Value);
+        Assert.Equal("perMachine", wixPackageElement.Attribute("Scope")?.Value);
+
+        var programFilesDirectory = wixPackage.Descendants().Single(element =>
+            element.Name.LocalName == "StandardDirectory" &&
+            element.Attribute("Id")?.Value == "ProgramFiles64Folder");
+        Assert.NotNull(programFilesDirectory);
+
+        var serviceInstall = wixPackage.Descendants().Single(element => element.Name.LocalName == "ServiceInstall");
+        Assert.Equal("WebAssistant", serviceInstall.Attribute("Name")?.Value);
+        Assert.Equal("auto", serviceInstall.Attribute("Start")?.Value);
+        Assert.Equal("ownProcess", serviceInstall.Attribute("Type")?.Value);
+
+        var serviceControl = wixPackage.Descendants().Single(element => element.Name.LocalName == "ServiceControl");
+        Assert.Equal("WebAssistant", serviceControl.Attribute("Name")?.Value);
+        Assert.Equal("install", serviceControl.Attribute("Start")?.Value);
+        Assert.Equal("both", serviceControl.Attribute("Stop")?.Value);
+        Assert.Equal("uninstall", serviceControl.Attribute("Remove")?.Value);
+
+        var wixBundle = XDocument.Load(bundleDefinition);
+        var bundle = wixBundle.Descendants().Single(element => element.Name.LocalName == "Bundle");
+        Assert.Equal("$(var.ProductVersion)", bundle.Attribute("Version")?.Value);
+        Assert.Equal("yes", bundle.Attribute("Compressed")?.Value);
+
+        var msiPackage = wixBundle.Descendants().Single(element => element.Name.LocalName == "MsiPackage");
+        Assert.Equal("yes", msiPackage.Attribute("ForcePerMachine")?.Value);
+        Assert.Equal("no", msiPackage.Attribute("Visible")?.Value);
+        Assert.Equal("yes", msiPackage.Attribute("Vital")?.Value);
 
         var packageBatText = File.ReadAllText(packageBatch);
         Assert.Contains("%~dp0", packageBatText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("dotnet --list-sdks", packageBatText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("winget install", packageBatText, StringComparison.OrdinalIgnoreCase);
-
-        var install = File.ReadAllText(installScript);
-        Assert.Contains("sc.exe create", install, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("start= auto", install, StringComparison.OrdinalIgnoreCase);
-
-        var installBatText = File.ReadAllText(installBatch);
-        Assert.Contains("%~dp0", installBatText, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("..\\..\\artifacts\\windows-x64", installBatText, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("app\\WebAssistant.exe", installBatText, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("if not exist", installBatText, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("install.ps1", installBatText, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("%*", installBatText, StringComparison.Ordinal);
-
-        var uninstall = File.ReadAllText(uninstallScript);
-        Assert.Contains("sc.exe delete", uninstall, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string FindRepositoryRoot()

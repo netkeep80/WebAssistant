@@ -5,22 +5,19 @@ namespace WebAssistant.CoreTests;
 public sealed class IsolatedExportRootAcceptanceTests
 {
     [Fact]
-    public void WindowsServiceWorkflow_BuildsFromCopiedExportRoot()
+    public void WindowsServiceLifecycleHarness_ConsumesInstalledProductWithoutBuilding()
     {
-        var workflow = ReadRequired(".github/workflows/windows-service.yml");
         var harness = ReadRequired("tests/windows-service/run-service-acceptance.ps1");
 
-        Assert.Contains("WEBASSISTANT_EXPORT_ROOT", workflow, StringComparison.Ordinal);
-        Assert.Contains("Join-Path $env:GITHUB_WORKSPACE 'webassist'", workflow, StringComparison.Ordinal);
-        Assert.Contains("Get-ChildItem -LiteralPath $source -Force | Copy-Item -Destination $exportRoot -Recurse -Force", workflow, StringComparison.Ordinal);
-        Assert.Contains("WebAssistant.sln", workflow, StringComparison.Ordinal);
-        Assert.Contains(".gitlab-ci.yml", workflow, StringComparison.Ordinal);
-        Assert.Contains("README.md", workflow, StringComparison.Ordinal);
-        Assert.Contains("build/windows/package.bat", workflow, StringComparison.Ordinal);
-        Assert.Contains("-ProductRoot $env:WEBASSISTANT_EXPORT_ROOT", workflow, StringComparison.Ordinal);
+        Assert.Contains("[string]$InstallDirectory", harness, StringComparison.Ordinal);
+        Assert.Contains("[string]$ExpectedVersion", harness, StringComparison.Ordinal);
+        Assert.Contains("Get-Service -Name $serviceName -ErrorAction Stop", harness, StringComparison.Ordinal);
+        Assert.Contains("$expectedExecutable = Join-Path $InstallDirectory \"WebAssistant.exe\"", harness, StringComparison.Ordinal);
 
-        Assert.Contains("[string]$ProductRoot", harness, StringComparison.Ordinal);
-        Assert.Contains("$packageBatch = Join-Path $ProductRoot \"build/windows/package.bat\"", harness, StringComparison.Ordinal);
+        Assert.DoesNotContain("[string]$ProductRoot", harness, StringComparison.Ordinal);
+        Assert.DoesNotContain("package.bat", harness, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("dotnet publish", harness, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Set-Content", harness, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
