@@ -352,7 +352,7 @@ Exact content:
 }
 ```
 
-`WebAssistantRuntimeOptions` already treats empty `LogDirectory` and `FileSystem:RootDirectory` as platform defaults (`ProgramData` paths on Windows, `/var/log/webassist` and `/var/lib/webassist` on Linux), so this file is cross-platform and contains no deployment-specific values.
+`WebAssistantRuntimeOptions` already treats empty `LogDirectory` and `FileSystem:RootDirectory` as platform defaults (`ProgramData` paths on Windows, `/var/log/webassistant` and `/var/lib/webassistant` on Linux), so this file is cross-platform and contains no deployment-specific values.
 
 - [ ] **Step 2: Make Windows producer select config before final packaging**
 
