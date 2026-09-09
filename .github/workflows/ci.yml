@@ -29,6 +29,8 @@ jobs:
       core: ${{ steps.plan.outputs.core }}
       linux_systemd: ${{ steps.plan.outputs.linux_systemd }}
       windows_service: ${{ steps.plan.outputs.windows_service }}
+      installer_linux: ${{ steps.plan.outputs.installer_linux }}
+      installer_windows: ${{ steps.plan.outputs.installer_windows }}
       virtual_linux: ${{ steps.plan.outputs.virtual_linux }}
       virtual_windows: ${{ steps.plan.outputs.virtual_windows }}
       virtual_scanner: ${{ steps.plan.outputs.virtual_scanner }}
@@ -222,10 +224,32 @@ jobs:
 
           echo 'ci-fast: PASS'
 
+  build-installers:
+    name: build installers
+    needs: requirements
+    if: ${{ needs.requirements.outputs.final_required == 'true' && (needs.requirements.outputs.installer_linux == 'true' || needs.requirements.outputs.installer_windows == 'true') }}
+    uses: ./.github/workflows/build-installers.yml
+    with:
+      run_linux: ${{ needs.requirements.outputs.installer_linux == 'true' }}
+      run_windows: ${{ needs.requirements.outputs.installer_windows == 'true' }}
+      source_ref: ${{ needs.requirements.outputs.head_sha }}
+
+  installer-acceptance:
+    name: installer acceptance
+    needs:
+      - requirements
+      - build-installers
+    if: ${{ needs.requirements.outputs.final_required == 'true' && (needs.requirements.outputs.installer_linux == 'true' || needs.requirements.outputs.installer_windows == 'true') }}
+    uses: ./.github/workflows/installer-acceptance.yml
+    with:
+      run_linux: ${{ needs.requirements.outputs.installer_linux == 'true' }}
+      run_windows: ${{ needs.requirements.outputs.installer_windows == 'true' }}
+      source_ref: ${{ needs.requirements.outputs.head_sha }}
+
   linux-systemd:
     name: ALT Linux systemd acceptance
     needs: requirements
-    if: ${{ needs.requirements.outputs.final_required == 'true' && needs.requirements.outputs.linux_systemd == 'true' }}
+    if: ${{ needs.requirements.outputs.final_required == 'true' && needs.requirements.outputs.linux_systemd == 'true' && needs.requirements.outputs.installer_linux != 'true' }}
     uses: ./.github/workflows/linux-systemd.yml
     with:
       source_ref: ${{ needs.requirements.outputs.head_sha }}
@@ -233,7 +257,7 @@ jobs:
   windows-service:
     name: Windows Service acceptance
     needs: requirements
-    if: ${{ needs.requirements.outputs.final_required == 'true' && needs.requirements.outputs.windows_service == 'true' }}
+    if: ${{ needs.requirements.outputs.final_required == 'true' && needs.requirements.outputs.windows_service == 'true' && needs.requirements.outputs.installer_windows != 'true' }}
     uses: ./.github/workflows/windows-service.yml
     with:
       source_ref: ${{ needs.requirements.outputs.head_sha }}
@@ -255,6 +279,8 @@ jobs:
     needs:
       - requirements
       - ci-fast
+      - build-installers
+      - installer-acceptance
       - linux-systemd
       - windows-service
       - scanner-final
@@ -266,9 +292,11 @@ jobs:
           REQUIREMENTS_RESULT: ${{ needs.requirements.result }}
           FINAL_REQUIRED: ${{ needs.requirements.outputs.final_required }}
           CI_FAST_RESULT: ${{ needs.ci-fast.result }}
-          LINUX_SYSTEMD_REQUIRED: ${{ needs.requirements.outputs.linux_systemd }}
+          INSTALLER_ACCEPTANCE_REQUIRED: ${{ needs.requirements.outputs.installer_linux == 'true' || needs.requirements.outputs.installer_windows == 'true' }}
+          INSTALLER_ACCEPTANCE_RESULT: ${{ needs.installer-acceptance.result }}
+          LINUX_SYSTEMD_REQUIRED: ${{ needs.requirements.outputs.linux_systemd == 'true' && needs.requirements.outputs.installer_linux != 'true' }}
           LINUX_SYSTEMD_RESULT: ${{ needs.linux-systemd.result }}
-          WINDOWS_SERVICE_REQUIRED: ${{ needs.requirements.outputs.windows_service }}
+          WINDOWS_SERVICE_REQUIRED: ${{ needs.requirements.outputs.windows_service == 'true' && needs.requirements.outputs.installer_windows != 'true' }}
           WINDOWS_SERVICE_RESULT: ${{ needs.windows-service.result }}
           VIRTUAL_SCANNER_REQUIRED: ${{ needs.requirements.outputs.virtual_scanner }}
           VIRTUAL_SCANNER_RESULT: ${{ needs.scanner-final.result }}
@@ -319,6 +347,7 @@ jobs:
           fi
 
           failures=0
+          check_result installer-acceptance "$INSTALLER_ACCEPTANCE_REQUIRED" "$INSTALLER_ACCEPTANCE_RESULT" || failures=1
           check_result linux-systemd "$LINUX_SYSTEMD_REQUIRED" "$LINUX_SYSTEMD_RESULT" || failures=1
           check_result windows-service "$WINDOWS_SERVICE_REQUIRED" "$WINDOWS_SERVICE_RESULT" || failures=1
           check_result scanner-final "$VIRTUAL_SCANNER_REQUIRED" "$VIRTUAL_SCANNER_RESULT" || failures=1
