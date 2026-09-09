@@ -38,13 +38,13 @@ public sealed class ConfigurationOwnershipTests
     }
 
     [Fact]
-    public void LinuxInstaller_RequiresAndCopiesPackagedAppsettingsWithoutGeneratingDefaults()
+    public void LinuxInstaller_RequiresPackagedAppsettingsAndCopiesPayloadWithoutGeneratingDefaults()
     {
         var install = ReadRequired("webassist/install/linux/install.sh");
 
-        Assert.Contains("source_config=\"$script_dir/appsettings.json\"", install, StringComparison.Ordinal);
+        Assert.Contains("source_config=\"$source_app/appsettings.json\"", install, StringComparison.Ordinal);
         Assert.Contains("[[ -f \"$source_config\" ]]", install, StringComparison.Ordinal);
-        Assert.Contains("cp -- \"$source_config\" \"$config_file\"", install, StringComparison.Ordinal);
+        Assert.Contains("cp -a -- \"$source_app\"/. \"$install_dir\"/", install, StringComparison.Ordinal);
 
         Assert.DoesNotContain("cat > \"$config_file\"", install, StringComparison.Ordinal);
         Assert.DoesNotContain("cat >\"$config_file\"", install, StringComparison.Ordinal);
