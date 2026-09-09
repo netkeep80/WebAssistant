@@ -1,0 +1,235 @@
+{
+  "schema": "webassistant-conformance/v0.3",
+  "status": "candidate",
+  "accepted": false,
+  "contract": "webassistant-contract/v0.3",
+  "evidenceModel": "repository-tests-and-ci",
+  "requiredRepositoryPaths": [
+    "README.md",
+    "webassist/README.md",
+    "webassist/docs/api.md",
+    "webassist/docs/linux-service.md",
+    "webassist/docs/windows-service.md",
+    "webassist/.gitlab-ci.yml",
+    "webassist/NuGet.Config",
+    "webassist/src/WebAssistant/WebAssistant.csproj",
+    "webassist/build/linux/package.sh",
+    "webassist/build/windows/package.bat",
+    "webassist/install/linux/install.sh",
+    "webassist/install/windows/install.bat",
+    "webassist/install/windows/install.ps1",
+    "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.1.450cba65.nupkg",
+    "tests/core/BaselineContractTests.cs",
+    "tests/core/PackagingLayoutTests.cs",
+    "tests/core/ProductAutonomyTests.cs",
+    "tests/core/IsolatedExportRootAcceptanceTests.cs",
+    ".github/workflows/linux-systemd.yml",
+    ".github/workflows/windows-service.yml",
+    "tests/core/SystemServiceProductTests.cs",
+    "tests/core/WindowsPowerShellCompatibilityTests.cs",
+    "tests/core/RuntimeOptionsTests.cs",
+    "tests/windows-service/run-service-acceptance.ps1",
+    "tests/linux-systemd/run-systemd-acceptance.sh",
+    "tests/core/HttpScanContractTests.cs",
+    "tests/core/PlatformEndToEndTests.cs",
+    "tests/core/ScanAdapterContractTests.cs",
+    "tests/core/LinuxScanAdapterTests.cs",
+    "tests/core/WindowsScanAdapterTests.cs",
+    ".github/workflows/virtual-scanner.yml",
+    "webassist/src/WebAssistant/Http/ScannerEndpointHandlers.cs",
+    "webassist/src/WebAssistant/Http/ScanCoordinator.cs",
+    "tests/core/DiagnosticsContractTests.cs",
+    "tests/core/RequestLoggingMiddlewareTests.cs",
+    "webassist/src/WebAssistant/Logging/DailyFileLoggerProvider.cs",
+    "tests/core/CorsConfigurationTests.cs",
+    "tests/core/ConfigurationOwnershipTests.cs",
+    "tests/core/RootedPathResolverTests.cs",
+    "tests/core/DependencyOwnershipTests.cs",
+    "webassist/vendor/naps2/README.md",
+    "tests/core/DistributionContractCandidateTests.cs"
+  ],
+  "vectors": [
+    {
+      "id": "WA-C-AUTONOMOUS-ROOT-001",
+      "kind": "positive",
+      "assertion": "Экспортированное содержимое webassist остаётся самостоятельным product root и проходит restore/build/package без файлов родительского development repository.",
+      "requirements": ["WA-REPO-001", "WA-REPO-002"],
+      "evidence": ["tests/core/PackagingLayoutTests.cs", "tests/core/ProductAutonomyTests.cs", "tests/core/IsolatedExportRootAcceptanceTests.cs", ".github/workflows/linux-systemd.yml", ".github/workflows/windows-service.yml"]
+    },
+    {
+      "id": "WA-C-PRODUCT-LOCAL-CI-001",
+      "kind": "positive",
+      "assertion": "Автономный product root содержит собственный .gitlab-ci.yml и этот CI entrypoint сохраняется после copy-export.",
+      "requirements": ["WA-CI-001", "WA-REPO-001"],
+      "evidence": ["webassist/.gitlab-ci.yml", "tests/core/ProductAutonomyTests.cs", "tests/core/IsolatedExportRootAcceptanceTests.cs"]
+    },
+    {
+      "id": "WA-C-SERVICE-LIFECYCLE-001",
+      "kind": "positive",
+      "assertion": "WebAssistant устанавливается и работает как machine-wide Windows Service и ALT Linux systemd service через canonical product entrypoints.",
+      "requirements": ["WA-SERVICE-001", "WA-SERVICE-002"],
+      "evidence": ["tests/core/SystemServiceProductTests.cs", "tests/core/WindowsPowerShellCompatibilityTests.cs", ".github/workflows/linux-systemd.yml", ".github/workflows/windows-service.yml"]
+    },
+    {
+      "id": "WA-C-LOOPBACK-001",
+      "kind": "negative",
+      "assertion": "Listener остаётся loopback-only, а альтернативные configuration mechanisms не могут открыть LAN/0.0.0.0 listener.",
+      "requirements": ["WA-NET-001"],
+      "evidence": ["tests/core/RuntimeOptionsTests.cs", "tests/windows-service/run-service-acceptance.ps1", "tests/linux-systemd/run-systemd-acceptance.sh"]
+    },
+    {
+      "id": "WA-C-VERSIONED-API-001",
+      "kind": "negative",
+      "assertion": "Machine REST API используется под /v1, а unversioned /health и /scan не существуют; service panel остаётся на /.",
+      "requirements": ["WA-API-001", "WA-API-002"],
+      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/PlatformEndToEndTests.cs", "webassist/docs/api.md"]
+    },
+    {
+      "id": "WA-C-SCANNER-HTTP-001",
+      "kind": "positive",
+      "assertion": "Scanner HTTP flow детерминированно выбирает устройство, передаёт exact source, сериализует physical acquisition и возвращает PDF либо явную ошибку.",
+      "requirements": ["WA-SCAN-001", "WA-SCAN-002", "WA-SCAN-003"],
+      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/ScanAdapterContractTests.cs", "tests/core/LinuxScanAdapterTests.cs", "tests/core/WindowsScanAdapterTests.cs", ".github/workflows/virtual-scanner.yml"]
+    },
+    {
+      "id": "WA-C-MULTIPAGE-001",
+      "kind": "positive",
+      "assertion": "Все страницы одного acquisition включаются в один PDF до handoff вызывающей стороне.",
+      "requirements": ["WA-SCAN-004"],
+      "evidence": ["tests/core/PlatformEndToEndTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
+    },
+    {
+      "id": "WA-C-RAW-PDF-TRANSPORT-001",
+      "kind": "negative",
+      "assertion": "Успешный scan передаёт binary application/pdf напрямую; Base64, JSON document envelope и ZIP/raster envelope не являются scanner transport.",
+      "requirements": ["WA-SCAN-001", "WA-TRANSPORT-001"],
+      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/PlatformEndToEndTests.cs", "webassist/docs/api.md"]
+    },
+    {
+      "id": "WA-C-SCANNER-BOUNDARY-001",
+      "kind": "negative",
+      "assertion": "Scanner operation заканчивается после PDF handoff и не превращает завершённый scan document в long-term scanner storage.",
+      "requirements": ["WA-SCAN-004"],
+      "evidence": ["tests/core/HttpScanContractTests.cs", "webassist/src/WebAssistant/Http/ScannerEndpointHandlers.cs", "webassist/src/WebAssistant/Http/ScanCoordinator.cs", "webassist/docs/api.md"]
+    },
+    {
+      "id": "WA-C-SCANNER-EXCLUSIONS-001",
+      "kind": "negative",
+      "assertion": "Scanner operation не выполняет PDF editing/merge/split, OCR/annotation/watermark/deskew/semantic transformation, signing/encryption, business/backend upload и не требует business authentication/per-user business profile.",
+      "requirements": ["WA-SCAN-005"],
+      "evidence": ["webassist/src/WebAssistant/Http/ScannerEndpointHandlers.cs", "webassist/src/WebAssistant/Http/ScanCoordinator.cs", "tests/core/HttpScanContractTests.cs", "webassist/docs/api.md"]
+    },
+    {
+      "id": "WA-C-DIAGNOSTICS-001",
+      "kind": "negative",
+      "assertion": "Diagnostics ограничена безопасной runtime-информацией и собственными daily logs; arbitrary paths и document contents в logs запрещены.",
+      "requirements": ["WA-DIAG-001", "WA-LOG-001"],
+      "evidence": ["tests/core/DiagnosticsContractTests.cs", "tests/core/RequestLoggingMiddlewareTests.cs"]
+    },
+    {
+      "id": "WA-C-DAILY-LOG-001",
+      "kind": "negative",
+      "assertion": "WebAssistant пишет собственные daily log files и current logger не выполняет automatic retention/delete старых daily logs.",
+      "requirements": ["WA-LOG-002"],
+      "evidence": ["tests/core/DiagnosticsContractTests.cs", "webassist/src/WebAssistant/Logging/DailyFileLoggerProvider.cs", "webassist/docs/api.md"]
+    },
+    {
+      "id": "WA-C-CORS-001",
+      "kind": "negative",
+      "assertion": "CORS default-off; только explicit exact HTTP/HTTPS origins разрешаются, wildcard не допускается.",
+      "requirements": ["WA-CORS-001"],
+      "evidence": ["tests/core/CorsConfigurationTests.cs", "tests/core/ConfigurationOwnershipTests.cs"]
+    },
+    {
+      "id": "WA-C-ROOTED-FILESYSTEM-001",
+      "kind": "negative",
+      "assertion": "Filesystem resolution остаётся внутри configured root, обход boundary отвергается, browser-facing filesystem routes в current baseline отсутствуют.",
+      "requirements": ["WA-FS-001", "WA-FS-002"],
+      "evidence": ["tests/core/RootedPathResolverTests.cs", "tests/core/HttpScanContractTests.cs"]
+    },
+    {
+      "id": "WA-C-DEPENDENCY-OWNERSHIP-001",
+      "kind": "negative",
+      "assertion": "Production использует repository-owned fixed WebAssistant.NAPS2.Sdk с pinned integrity/provenance и не может молча заменить его official unfixed SDK.",
+      "requirements": ["WA-DEPS-001"],
+      "evidence": ["tests/core/DependencyOwnershipTests.cs", "webassist/vendor/naps2/README.md", "webassist/NuGet.Config"]
+    },
+    {
+      "id": "WA-C-PRODUCT-DOCS-001",
+      "kind": "positive",
+      "assertion": "Canonical product documentation находится внутри autonomous product root и описывает current API/build/install/runtime surfaces.",
+      "requirements": ["WA-DOC-001", "WA-REPO-002"],
+      "evidence": ["webassist/README.md", "webassist/docs/api.md", "webassist/docs/linux-service.md", "webassist/docs/windows-service.md", "tests/core/ProductAutonomyTests.cs"]
+    },
+    {
+      "id": "WA-C-LANGUAGE-POLICY-001",
+      "kind": "positive",
+      "assertion": "Новая и изменяемая документация и source comments следуют русской language policy с допустимыми нерусскими technical identifiers/terms.",
+      "requirements": ["WA-DOC-002"],
+      "evidence": ["README.md", "webassist/README.md", "webassist/docs/api.md"]
+    },
+    {
+      "id": "WA-C-DIST-PRODUCERS-001",
+      "kind": "positive",
+      "assertion": "Distribution candidate требует, чтобы пять execution scenarios сходились к двум canonical repository-owned producer entrypoints и двум versioned installer artifacts без CI-specific product packaging implementation.",
+      "requirements": ["WA-DIST-001"],
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs"]
+    },
+    {
+      "id": "WA-C-DIST-VERSION-IDENTITY-001",
+      "kind": "negative",
+      "assertion": "Distribution candidate требует exact versioned filenames и единую VERSION identity между webassist/VERSION, filename, application metadata, installer/package metadata и release/tag; mismatch обязан блокировать install/release fail-closed.",
+      "requirements": ["WA-DIST-002"],
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs"]
+    },
+    {
+      "id": "WA-C-PACKAGE-CONFIG-001",
+      "kind": "negative",
+      "assertion": "Distribution candidate фиксирует package-time config selection: source appsettings exact bytes при наличии либо safe default при отсутствии; после package formation installer не может заменить или изменить packaged config.",
+      "requirements": ["WA-DIST-003"],
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs"]
+    },
+    {
+      "id": "WA-C-SELF-CONTAINED-TARGET-001",
+      "kind": "positive",
+      "assertion": "Distribution candidate требует, чтобы target installation не зависела от заранее установленного .NET Runtime/SDK, NuGet, compiler или build tools, не смешивая это с deferred offline-build requirement.",
+      "requirements": ["WA-DIST-004"],
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs"]
+    },
+    {
+      "id": "WA-C-WINDOWS-INSTALLER-001",
+      "kind": "positive",
+      "assertion": "Distribution candidate определяет один canonical Windows EXE с elevation, machine-wide Program Files lifecycle, self-contained payload, automatic Windows Service, ARP/Installed Apps registration, exact DisplayVersion и standard uninstall.",
+      "requirements": ["WA-WIN-INSTALL-001"],
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs"]
+    },
+    {
+      "id": "WA-C-ALT-INSTALLER-001",
+      "kind": "positive",
+      "assertion": "Distribution candidate определяет canonical ALT Linux 10.1 ZIP с packaged config, VERSION, install/uninstall scripts и systemd lifecycle; distro-owned runtime dependencies могут приходить через apt-rpm.",
+      "requirements": ["WA-ALT-INSTALL-001"],
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs"]
+    },
+    {
+      "id": "WA-C-IMMUTABLE-ARTIFACT-001",
+      "kind": "negative",
+      "assertion": "Distribution candidate требует build-once exact artifact identity через SHA-256/provenance и запрещает lifecycle consumers повторно публиковать/паковать продукт или изменять payload после checksum.",
+      "requirements": ["WA-ARTIFACT-001"],
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs"]
+    },
+    {
+      "id": "WA-C-RELEASE-SAME-BYTES-001",
+      "kind": "negative",
+      "assertion": "Distribution candidate требует публиковать в GitHub Release те же exact installer bytes, которые прошли acceptance; повтор той же VERSION с другими hashes запрещён.",
+      "requirements": ["WA-RELEASE-001"],
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs"]
+    },
+    {
+      "id": "WA-C-INSTALL-GUIDE-001",
+      "kind": "positive",
+      "assertion": "Distribution candidate требует release artifact WebAssistant-Installation-Guide.pdf, воспроизводимо построенный из repository-owned editable source и описывающий фактические Windows/ALT install-service-health-uninstall flows.",
+      "requirements": ["WA-INSTALL-DOC-001"],
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs"]
+    }
+  ]
+}
