@@ -1,0 +1,119 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact accepted current main SHA to freeze as the release candidate.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: webassistant-release-candidate
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve accepted frozen main
+    runs-on: ubuntu-24.04
+    outputs:
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
+      version: ${{ steps.resolve.outputs.version }}
+      release_state: ${{ steps.state.outputs.release_state }}
+    steps:
+      - name: Checkout exact requested source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_sha }}
+
+      - name: Resolve accepted-main identity
+        id: resolve
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          result="$(bash ci/release/resolve-accepted-main.sh '${{ inputs.source_sha }}')"
+          source_sha="$(jq -r '.sourceSha' <<<"$result")"
+          version="$(jq -r '.version' <<<"$result")"
+          [[ "$source_sha" == '${{ inputs.source_sha }}' ]]
+          printf 'source_sha=%s\n' "$source_sha" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect same-version release state before any build
+        id: state
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          state_json="$(bash ci/release/inspect-release-state.sh '${{ steps.resolve.outputs.version }}' '${{ steps.resolve.outputs.source_sha }}')"
+          state="$(jq -r '.state' <<<"$state_json")"
+          case "$state" in
+            absent|tag-only|draft|published) ;;
+            *) echo "release-candidate: unsupported preflight state: $state" >&2; exit 1 ;;
+          esac
+          printf 'release_state=%s\n' "$state" >> "$GITHUB_OUTPUT"
+
+  build-installers:
+    name: Build canonical installers once
+    needs: resolve
+    if: ${{ needs.resolve.outputs.release_state == 'absent' || needs.resolve.outputs.release_state == 'tag-only' }}
+    uses: ./.github/workflows/build-installers.yml
+    with:
+      source_ref: ${{ needs.resolve.outputs.source_sha }}
+      run_linux: true
+      run_windows: true
+
+  installer-acceptance:
+    name: Accept exact installer bytes
+    needs:
+      - resolve
+      - build-installers
+    if: ${{ needs.resolve.outputs.release_state == 'absent' || needs.resolve.outputs.release_state == 'tag-only' }}
+    uses: ./.github/workflows/installer-acceptance.yml
+    with:
+      source_ref: ${{ needs.resolve.outputs.source_sha }}
+      run_linux: true
+      run_windows: true
+
+  stage-draft:
+    name: Stage accepted bytes unpublished
+    needs:
+      - resolve
+      - build-installers
+      - installer-acceptance
+    if: ${{ always() && needs.resolve.result == 'success' && needs.build-installers.result == 'success' && needs.installer-acceptance.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout exact frozen source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.source_sha }}
+
+      - name: Download exact accepted installer artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: webassistant-*-installer-${{ needs.resolve.outputs.source_sha }}
+          path: ${{ runner.temp }}/release-assets
+          merge-multiple: true
+
+      - name: Stage exact installer bytes in Draft Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash ci/release/stage-draft-release.sh \
+            "$RUNNER_TEMP/release-assets" \
+            '${{ needs.resolve.outputs.version }}' \
+            '${{ needs.resolve.outputs.source_sha }}' \
+            '${{ github.run_id }}'
