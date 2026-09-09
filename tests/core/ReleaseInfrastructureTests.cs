@@ -529,7 +529,7 @@ esac
             var body = JsonSerializer.Serialize(new { schema = "webassistant-release-candidate/v1", sourceSha = SourceSha, version = Version, candidateRunId = 555, state = "installers-accepted-staged" });
             WriteJson(Path.Combine(data, "draft-release.json"), new object[] { new { id = 77, tag_name = "v0.3.19", target_commitish = SourceSha, draft = true, prerelease = false, body } });
             WriteJson(Path.Combine(data, "published-release.json"), new object[] { new { id = 77, tag_name = "v0.3.19", target_commitish = SourceSha, draft = false, prerelease = false, body } });
-            WriteJson(Path.Combine(data, "candidate-run-success.json"), new { id = 555, path = ".github/workflows/release-candidate.yml", event = "workflow_dispatch", head_sha = SourceSha, status = "completed", conclusion = "success" });
+            WriteJson(Path.Combine(data, "candidate-run-success.json"), new { id = 555, path = ".github/workflows/release-candidate.yml", @event = "workflow_dispatch", head_sha = SourceSha, status = "completed", conclusion = "success" });
             WriteJson(Path.Combine(data, "candidate-run-failure.json"), new { id = 555, path = ".github/workflows/release-candidate.yml", @event = "workflow_dispatch", head_sha = SourceSha, status = "completed", conclusion = "failure" });
             WriteJson(Path.Combine(data, "assets-empty.json"), Array.Empty<object>());
 
