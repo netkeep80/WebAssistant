@@ -1,0 +1,13 @@
+{
+  "WebAssistant": {
+    "Port": 17654,
+    "LogDirectory": "",
+    "Cors": {
+      "Enabled": false,
+      "AllowedOrigins": []
+    },
+    "FileSystem": {
+      "RootDirectory": ""
+    }
+  }
+}
