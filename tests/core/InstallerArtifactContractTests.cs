@@ -115,7 +115,7 @@ public sealed class InstallerArtifactContractTests
     }
 
     [Fact]
-    public void InstallerAcceptanceConsumers_WhenPresent_NeverRebuildOrRewriteAcceptedPayload()
+    public void InstallerAcceptanceConsumers_NeverRebuildOrRewriteAcceptedPayload()
     {
         AssertImmutableConsumer(
             "tests/windows-service/run-installer-acceptance.ps1",
@@ -129,10 +129,7 @@ public sealed class InstallerArtifactContractTests
     private static void AssertImmutableConsumer(string relativePath, IReadOnlyList<string> forbiddenTokens)
     {
         var fullPath = ToFullPath(relativePath);
-        if (!File.Exists(fullPath))
-        {
-            return;
-        }
+        Assert.True(File.Exists(fullPath), $"Required installer acceptance consumer is missing: {relativePath}");
 
         var text = File.ReadAllText(fullPath);
         foreach (var token in forbiddenTokens)
