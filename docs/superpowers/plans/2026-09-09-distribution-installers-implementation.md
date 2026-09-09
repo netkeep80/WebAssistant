@@ -194,10 +194,9 @@ contract.conformanceCorpus == candidate conformance path
 all v0.2 requirement IDs remain present with identical statements
 all v0.2 scanner/API vectors remain present with identical assertions/requirements
 new distribution requirement IDs are present
-all candidate requiredRepositoryPaths exist or are explicitly staged by the implementation sequence only after their task lands
 ```
 
-For the initial candidate-only PR, required paths must reference only already-existing evidence plus the candidate test itself; future implementation PRs extend candidate conformance monotonically as evidence appears.
+For the initial candidate-only PR, `requiredRepositoryPaths` references only already-existing evidence plus `tests/core/DistributionContractCandidateTests.cs`. Implementation PRs extend candidate conformance monotonically only after new evidence files exist.
 
 - [ ] **Step 2: Run the test and observe failure**
 
@@ -279,7 +278,7 @@ Reject versionless canonical output names.
 
 - [ ] **Step 2: Add failing config-ownership tests for both OS producers**
 
-Assert producer scripts look for `src/WebAssistant/appsettings.json`; if absent they copy/generate from `build/common/default-appsettings.json`. Assert Linux `install.sh` contains no here-doc/default JSON generation and fails if packaged `appsettings.json` is missing.
+Assert producer scripts look for `src/WebAssistant/appsettings.json`; if absent they copy from `build/common/default-appsettings.json`. Assert Linux `install.sh` contains no here-doc/default JSON generation and fails if packaged `appsettings.json` is missing.
 
 - [ ] **Step 3: Add failing provenance contract tests**
 
@@ -353,7 +352,7 @@ Exact content:
 }
 ```
 
-Empty path values deliberately delegate platform-owned runtime directories to installer/runtime normalization already used by platform install logic; if current runtime requires non-empty values, adjust the default to the existing cross-platform runtime default values in code, not environment-specific deployment values.
+`WebAssistantRuntimeOptions` already treats empty `LogDirectory` and `FileSystem:RootDirectory` as platform defaults (`ProgramData` paths on Windows, `/var/log/webassist` and `/var/lib/webassist` on Linux), so this file is cross-platform and contains no deployment-specific values.
 
 - [ ] **Step 2: Make Windows producer select config before final packaging**
 
@@ -417,9 +416,9 @@ webassist.service
 
 Use a temporary staging directory under output root, never the final ZIP path. Preserve executable mode bits and LF endings.
 
-- [ ] **Step 3: Create deterministic ZIP**
+- [ ] **Step 3: Create ZIP**
 
-Use a repository-declared available ZIP mechanism on the builder (`zip` after explicit presence check, installing build dependency only in CI setup if needed). Final name is constructed from validated VERSION.
+Require `zip` on the builder with an explicit presence check. GitHub CI installs `zip` as a builder dependency when absent. The target machine does not need `zip` after the user has unpacked the distribution. Final name is constructed from validated VERSION.
 
 - [ ] **Step 4: Generate SHA-256 and provenance after final ZIP closes**
 
@@ -431,7 +430,7 @@ No write to ZIP/staging-derived final bytes after evidence generation. Recompute
 
 - [ ] **Step 6: Run Linux package tests**
 
-Expected: ZIP/evidence tests GREEN; no `.NET` requirement on target payload.
+Expected: ZIP/evidence tests GREEN; no .NET requirement on target payload.
 
 ---
 
@@ -469,7 +468,7 @@ Core test rejects producer/publish tokens and rejects writes into the ZIP itself
 
 - [ ] **Step 4: Update workflow to build once then consume exact ZIP**
 
-Until shared `build-installers.yml` lands, the workflow may contain two jobs in one workflow: producer job uploads artifact; consumer job downloads it. Do not package inside consumer.
+Until shared `build-installers.yml` lands, the workflow contains a producer job that uploads the artifact and a consumer job that downloads it. Packaging never occurs inside the consumer job.
 
 - [ ] **Step 5: Keep ALT target naming honest**
 
@@ -509,7 +508,7 @@ Assert pinned `WixToolset.Sdk/7.0.0`, internal MSI project, bundle project, mach
 
 - [ ] **Step 3: Implement final Burn bundle**
 
-`Bundle.wxs` embeds/chains the internal MSI, requests per-machine elevation, registers one WebAssistant uninstall entry, uses VERSION as bundle version, and makes the MSI package non-user-facing where WiX supports hiding the nested package entry.
+`Bundle.wxs` embeds/chains the internal MSI, requests per-machine elevation, registers one WebAssistant uninstall entry, uses VERSION as bundle version, and hides the nested MSI from the user-facing uninstall surface using the supported WiX package visibility setting.
 
 - [ ] **Step 4: Pin WiX build dependency**
 
