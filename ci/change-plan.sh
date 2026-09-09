@@ -36,7 +36,7 @@ fi
 
 # VERSION обязателен в каждой принимаемой транзакции. Когда рядом есть
 # содержательное изменение, он не должен искусственно расширять change plan.
-# VERSION-only transition, напротив, трактуется fail-closed как full.
+# VERSION-only transition, напротив, трактуется fail-closed как distribution full.
 original_count=${#paths[@]}
 meaningful_paths=()
 for path in "${paths[@]}"; do
@@ -50,6 +50,8 @@ paths=("${meaningful_paths[@]}")
 core=true
 linux_systemd=false
 windows_service=false
+installer_linux=false
+installer_windows=false
 virtual_linux=false
 virtual_windows=false
 smoke_linux=false
@@ -68,8 +70,28 @@ require_full() {
   full_cross_platform=true
 }
 
-if [[ ${#paths[@]} -eq 0 ]]; then
+require_distribution_both() {
   require_full
+  installer_linux=true
+  installer_windows=true
+}
+
+require_windows_platform() {
+  saw_windows=true
+  windows_service=true
+  virtual_windows=true
+  smoke_windows=true
+}
+
+require_linux_platform() {
+  saw_linux=true
+  linux_systemd=true
+  virtual_linux=true
+  smoke_linux=true
+}
+
+if [[ ${#paths[@]} -eq 0 ]]; then
+  require_distribution_both
 fi
 
 for path in "${paths[@]}"; do
@@ -78,38 +100,62 @@ for path in "${paths[@]}"; do
       # Documentation is validated by core/repository tests only.
       ;;
 
-    webassist/src/WebAssistant/Scanning/WindowsScanAdapter.cs|\
+    .github/workflows/build-installers.yml|\
+    .github/workflows/installer-acceptance.yml|\
+    .github/workflows/ci.yml|\
+    ci/change-plan.sh|\
+    webassist/build/common/*|\
+    tests/core/InstallerArtifactContractTests.cs|\
+    tests/core/ConfigurationOwnershipTests.cs)
+      require_distribution_both
+      break
+      ;;
+
+    .github/workflows/windows-service.yml)
+      require_windows_platform
+      ;;
+
+    .github/workflows/linux-systemd.yml)
+      require_linux_platform
+      ;;
+
     webassist/build/windows/*|\
     webassist/install/windows/*|\
+    tests/windows-service/run-installer-acceptance.ps1)
+      require_windows_platform
+      installer_windows=true
+      ;;
+
+    webassist/build/linux/*|\
+    webassist/install/linux/*|\
+    tests/linux-systemd/run-installer-acceptance.sh)
+      require_linux_platform
+      installer_linux=true
+      ;;
+
+    webassist/src/WebAssistant/Scanning/WindowsScanAdapter.cs|\
     tests/windows-service/*|\
     tests/virtual-scanner/windows/*|\
     tests/core/WindowsScanAdapterTests.cs)
-      saw_windows=true
-      windows_service=true
-      virtual_windows=true
-      smoke_windows=true
+      require_windows_platform
       ;;
 
     webassist/src/WebAssistant/Scanning/LinuxScanAdapter.cs|\
-    webassist/build/linux/*|\
-    webassist/install/linux/*|\
     tests/linux-systemd/*|\
     tests/virtual-scanner/linux/*|\
     tests/core/LinuxScanAdapterTests.cs|\
     tests/core/LinuxVirtualScanAdapterTests.cs)
-      saw_linux=true
-      linux_systemd=true
-      virtual_linux=true
-      smoke_linux=true
+      require_linux_platform
       ;;
 
     webassist/VERSION)
-      require_full
+      require_distribution_both
       break
       ;;
 
     # Общий product surface, governance/contract, CI infrastructure,
-    # shared tests и любой неизвестный путь всегда расширяются fail-closed.
+    # shared tests и любой неизвестный путь всегда расширяются fail-closed,
+    # но не придумывают distribution scope без distribution-affecting path.
     webassist/src/*|\
     webassist/vendor/*|\
     webassist/NuGet.Config|\
@@ -140,6 +186,8 @@ fi
 printf 'core=%s\n' "$core"
 printf 'linux_systemd=%s\n' "$linux_systemd"
 printf 'windows_service=%s\n' "$windows_service"
+printf 'installer_linux=%s\n' "$installer_linux"
+printf 'installer_windows=%s\n' "$installer_windows"
 printf 'virtual_linux=%s\n' "$virtual_linux"
 printf 'virtual_windows=%s\n' "$virtual_windows"
 printf 'virtual_scanner=%s\n' "$virtual_scanner"

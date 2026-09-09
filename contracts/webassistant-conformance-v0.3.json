@@ -57,7 +57,13 @@
     "tests/core/DependencyOwnershipTests.cs",
     "webassist/vendor/naps2/README.md",
     "tests/core/DistributionContractCandidateTests.cs",
-    "tests/core/InstallerArtifactContractTests.cs"
+    "tests/core/InstallerArtifactContractTests.cs",
+    "tests/core/CiWorkflowContractTests.cs",
+    "tests/core/ChangePlanClassifierTests.cs",
+    "ci/change-plan.sh",
+    ".github/workflows/ci.yml",
+    ".github/workflows/build-installers.yml",
+    ".github/workflows/installer-acceptance.yml"
   ],
   "vectors": [
     {
@@ -184,14 +190,14 @@
       "kind": "positive",
       "assertion": "Distribution candidate требует, чтобы пять execution scenarios сходились к двум canonical repository-owned producer entrypoints и двум versioned installer artifacts без CI-specific product packaging implementation.",
       "requirements": ["WA-DIST-001"],
-      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "tests/core/InstallerArtifactContractTests.cs", "webassist/build/linux/package.sh", "webassist/build/windows/package.bat", ".github/workflows/linux-systemd.yml", ".github/workflows/windows-service.yml"]
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "tests/core/InstallerArtifactContractTests.cs", "tests/core/CiWorkflowContractTests.cs", "webassist/build/linux/package.sh", "webassist/build/windows/package.bat", ".github/workflows/linux-systemd.yml", ".github/workflows/windows-service.yml", ".github/workflows/build-installers.yml", ".github/workflows/ci.yml"]
     },
     {
       "id": "WA-C-DIST-VERSION-IDENTITY-001",
       "kind": "negative",
       "assertion": "Distribution candidate требует exact versioned filenames и единую VERSION identity между webassist/VERSION, filename, application metadata, installer/package metadata и release/tag; mismatch обязан блокировать install/release fail-closed.",
       "requirements": ["WA-DIST-002"],
-      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "tests/core/InstallerArtifactContractTests.cs", "tests/windows-service/run-installer-acceptance.ps1", "tests/linux-systemd/run-installer-acceptance.sh"]
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "tests/core/InstallerArtifactContractTests.cs", "tests/windows-service/run-installer-acceptance.ps1", "tests/linux-systemd/run-installer-acceptance.sh", ".github/workflows/build-installers.yml", ".github/workflows/installer-acceptance.yml"]
     },
     {
       "id": "WA-C-PACKAGE-CONFIG-001",
@@ -205,28 +211,28 @@
       "kind": "positive",
       "assertion": "Distribution candidate требует, чтобы target installation не зависела от заранее установленного .NET Runtime/SDK, NuGet, compiler или build tools, не смешивая это с deferred offline-build requirement.",
       "requirements": ["WA-DIST-004"],
-      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "webassist/build/windows/package.ps1", "webassist/build/linux/package.sh", ".github/workflows/windows-service.yml", ".github/workflows/linux-systemd.yml"]
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "webassist/build/windows/package.ps1", "webassist/build/linux/package.sh", ".github/workflows/windows-service.yml", ".github/workflows/linux-systemd.yml", ".github/workflows/build-installers.yml", ".github/workflows/installer-acceptance.yml"]
     },
     {
       "id": "WA-C-WINDOWS-INSTALLER-001",
       "kind": "positive",
       "assertion": "Distribution candidate определяет один canonical Windows EXE с elevation, machine-wide Program Files lifecycle, self-contained payload, automatic Windows Service, ARP/Installed Apps registration, exact DisplayVersion и standard uninstall.",
       "requirements": ["WA-WIN-INSTALL-001"],
-      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "tests/core/SystemServiceProductTests.cs", "webassist/build/windows/installer/Package.wxs", "webassist/build/windows/installer/Bundle.wxs", "tests/windows-service/run-installer-acceptance.ps1", ".github/workflows/windows-service.yml"]
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "tests/core/SystemServiceProductTests.cs", "webassist/build/windows/installer/Package.wxs", "webassist/build/windows/installer/Bundle.wxs", "tests/windows-service/run-installer-acceptance.ps1", ".github/workflows/windows-service.yml", ".github/workflows/build-installers.yml", ".github/workflows/installer-acceptance.yml"]
     },
     {
       "id": "WA-C-ALT-INSTALLER-001",
       "kind": "positive",
       "assertion": "Distribution candidate определяет canonical ALT Linux 10.1 ZIP с packaged config, VERSION, install/uninstall scripts и systemd lifecycle; distro-owned runtime dependencies могут приходить через apt-rpm.",
       "requirements": ["WA-ALT-INSTALL-001"],
-      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "webassist/build/linux/package.sh", "webassist/install/linux/install.sh", "webassist/install/linux/uninstall.sh", "tests/linux-systemd/run-installer-acceptance.sh", "tests/linux-systemd/run-systemd-acceptance.sh", ".github/workflows/linux-systemd.yml"]
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "webassist/build/linux/package.sh", "webassist/install/linux/install.sh", "webassist/install/linux/uninstall.sh", "tests/linux-systemd/run-installer-acceptance.sh", "tests/linux-systemd/run-systemd-acceptance.sh", ".github/workflows/linux-systemd.yml", ".github/workflows/build-installers.yml", ".github/workflows/installer-acceptance.yml"]
     },
     {
       "id": "WA-C-IMMUTABLE-ARTIFACT-001",
       "kind": "negative",
       "assertion": "Distribution candidate требует build-once exact artifact identity через SHA-256/provenance и запрещает lifecycle consumers повторно публиковать/паковать продукт или изменять payload после checksum.",
       "requirements": ["WA-ARTIFACT-001"],
-      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "tests/core/InstallerArtifactContractTests.cs", "webassist/build/common/write-provenance.ps1", "webassist/build/common/write-provenance.sh", "tests/windows-service/run-installer-acceptance.ps1", "tests/linux-systemd/run-installer-acceptance.sh", ".github/workflows/windows-service.yml", ".github/workflows/linux-systemd.yml"]
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "tests/core/InstallerArtifactContractTests.cs", "tests/core/CiWorkflowContractTests.cs", "webassist/build/common/write-provenance.ps1", "webassist/build/common/write-provenance.sh", "tests/windows-service/run-installer-acceptance.ps1", "tests/linux-systemd/run-installer-acceptance.sh", ".github/workflows/windows-service.yml", ".github/workflows/linux-systemd.yml", ".github/workflows/build-installers.yml", ".github/workflows/installer-acceptance.yml", ".github/workflows/ci.yml"]
     },
     {
       "id": "WA-C-RELEASE-SAME-BYTES-001",

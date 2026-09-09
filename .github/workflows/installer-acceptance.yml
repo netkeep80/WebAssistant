@@ -1,0 +1,153 @@
+name: Installer acceptance
+
+on:
+  workflow_call:
+    inputs:
+      source_ref:
+        description: Exact commit SHA whose uploaded installers are tested.
+        required: true
+        type: string
+      run_linux:
+        description: Exercise the canonical Linux installer artifact.
+        required: true
+        type: boolean
+      run_windows:
+        description: Exercise the canonical Windows installer artifact.
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  linux-installer-acceptance:
+    name: ALT p11 historical artifact lifecycle
+    if: ${{ inputs.run_linux }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout acceptance harness
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref }}
+
+      - name: Assert Linux acceptance harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f tests/linux-systemd/run-systemd-acceptance.sh
+          test -f tests/linux-systemd/run-installer-acceptance.sh
+
+      - name: Download exact Linux producer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: webassistant-linux-installer-${{ inputs.source_ref }}
+          path: ${{ runner.temp }}/webassistant-linux-artifacts
+
+      - name: Verify and exercise exact Linux installer bytes
+        shell: bash
+        env:
+          ALT_IMAGE: registry.altlinux.org/p11/alt:latest
+        run: |
+          set -euo pipefail
+          artifact="$(find "$RUNNER_TEMP/webassistant-linux-artifacts" -maxdepth 1 -type f -name 'WebAssistant-linux-x64-*.zip' -print -quit)"
+          [[ -n "$artifact" ]] || { echo "Linux ZIP artifact not found" >&2; exit 1; }
+          bash tests/linux-systemd/run-installer-acceptance.sh \
+            "$artifact" \
+            "${artifact}.sha256" \
+            "${artifact}.provenance.json"
+
+      - name: Emergency Linux cleanup
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          containers="$(docker ps -aq --filter 'name=^webassistant-alt-p11-' 2>/dev/null || true)"
+          [[ -z "$containers" ]] || docker rm -f $containers >/dev/null 2>&1 || true
+          images="$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep '^webassistant-alt-p11-systemd:' || true)"
+          [[ -z "$images" ]] || docker image rm -f $images >/dev/null 2>&1 || true
+          rm -rf -- "$RUNNER_TEMP/webassistant-linux-artifacts"
+
+  windows-installer-acceptance:
+    name: Windows WiX installer lifecycle
+    if: ${{ inputs.run_windows }}
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - name: Checkout acceptance harness
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref }}
+
+      - name: Assert Windows acceptance harness
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($requiredPath in @(
+              'tests/windows-service/run-installer-acceptance.ps1',
+              'tests/windows-service/run-service-acceptance.ps1'
+          )) {
+              if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+                  throw "Missing Windows acceptance harness: $requiredPath"
+              }
+          }
+
+      - name: Download exact Windows producer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: webassistant-windows-installer-${{ inputs.source_ref }}
+          path: ${{ runner.temp }}/webassistant-windows-artifacts
+
+      - name: Verify and exercise exact Windows installer bytes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $artifactRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'
+          $artifacts = @(Get-ChildItem -LiteralPath $artifactRoot -Filter 'WebAssistant-win-x64-*.exe' -File)
+          if ($artifacts.Count -ne 1) {
+              throw "Expected exactly one canonical Windows EXE; found $($artifacts.Count)."
+          }
+
+          $artifact = $artifacts[0].FullName
+          .\tests\windows-service\run-installer-acceptance.ps1 `
+              -ArtifactPath $artifact `
+              -Sha256Path "$artifact.sha256" `
+              -ProvenancePath "$artifact.provenance.json" `
+              -Port 17654
+
+      - name: Emergency exact-bundle cleanup
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $artifactRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'
+          $artifact = Get-ChildItem -LiteralPath $artifactRoot -Filter 'WebAssistant-win-x64-*.exe' -File -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+
+          $installedEntry = Get-ItemProperty `
+              -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', `
+                    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' `
+              -ErrorAction SilentlyContinue |
+              Where-Object { $_.DisplayName -eq 'WebAssistant' } |
+              Select-Object -First 1
+          $service = Get-Service -Name 'WebAssistant' -ErrorAction SilentlyContinue
+
+          if ($artifact -and ($installedEntry -or $service)) {
+              try {
+                  $cleanup = Start-Process `
+                      -FilePath $artifact.FullName `
+                      -ArgumentList @('/uninstall', '/quiet', '/norestart') `
+                      -Wait `
+                      -PassThru
+                  if ($cleanup.ExitCode -ne 0) {
+                      Write-Warning "Exact bundle cleanup exited with $($cleanup.ExitCode)."
+                  }
+              }
+              catch {
+                  Write-Warning "Exact bundle cleanup failed: $($_.Exception.Message)"
+              }
+          }
+
+          if (Test-Path -LiteralPath $artifactRoot) {
+              Remove-Item -LiteralPath $artifactRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
