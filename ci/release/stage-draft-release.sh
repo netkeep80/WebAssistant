@@ -34,14 +34,10 @@ for asset in "${assets[@]}"; do
   [[ -f "$asset" ]] || fail "missing required staged asset: $(basename -- "$asset")"
 done
 
-state_json="$(bash "${script_dir}/inspect-release-state.sh" "$version" "$source_sha")" || fail "cannot establish same-version release state"
-state="$(printf '%s' "$state_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')"
-
-if [[ "$state" == "published" ]]; then
-  fail "same-version Release is already published; candidate staging must use the published no-build preflight path"
-fi
-
-if [[ "$state" == "draft" ]]; then
+verify_remote_assets() {
+  local state_json="$1"
+  local require_complete="$2"
+  local seen=0
   while IFS=$'\t' read -r remote_name remote_digest; do
     [[ -n "$remote_name" ]] || continue
     local_match=""
@@ -54,11 +50,25 @@ if [[ "$state" == "draft" ]]; then
     [[ -n "$local_match" ]] || fail "draft contains unexpected public asset: $remote_name"
     local_digest="$(sha256sum -- "$local_match" | awk '{print $1}')"
     [[ "$remote_digest" == "sha256:${local_digest}" ]] || fail "remote asset digest conflicts with accepted bytes: $remote_name"
+    seen=$((seen + 1))
   done < <(printf '%s' "$state_json" | python3 -c '
 import json,sys
 for asset in json.load(sys.stdin).get("assets",[]):
     print((asset.get("name") or "") + "\t" + (asset.get("digest") or ""))
 ')
+  if [[ "$require_complete" == "true" && "$seen" -ne 6 ]]; then
+    fail "remote staged installer asset set is incomplete: expected 6, got $seen"
+  fi
+}
+
+state_json="$(bash "${script_dir}/inspect-release-state.sh" "$version" "$source_sha")" || fail "cannot establish same-version release state"
+state="$(printf '%s' "$state_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')"
+
+if [[ "$state" == "published" ]]; then
+  fail "same-version Release is already published; candidate staging must use the published no-build preflight path"
+fi
+if [[ "$state" == "draft" ]]; then
+  verify_remote_assets "$state_json" false
 fi
 
 metadata="$(python3 - "$source_sha" "$version" "$candidate_run_id" <<'PY'
@@ -106,6 +116,11 @@ done
 if [[ ${#missing[@]} -gt 0 ]]; then
   gh release upload "$tag" "${missing[@]}" --repo "$repo" || fail "cannot upload accepted installer assets"
 fi
+
+post_json="$(bash "${script_dir}/inspect-release-state.sh" "$version" "$source_sha")" || fail "cannot re-inspect Draft Release after upload"
+post_state="$(printf '%s' "$post_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["state"])')"
+[[ "$post_state" == "draft" ]] || fail "post-upload Release state must remain unpublished draft"
+verify_remote_assets "$post_json" true
 
 python3 - "$tag" "$source_sha" "$version" "$candidate_run_id" <<'PY'
 import json,sys
