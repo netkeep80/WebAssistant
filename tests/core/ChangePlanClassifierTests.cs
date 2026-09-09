@@ -13,6 +13,8 @@ public sealed class ChangePlanClassifierTests
             core: true,
             linuxSystemd: false,
             windowsService: false,
+            installerLinux: false,
+            installerWindows: false,
             virtualLinux: false,
             virtualWindows: false,
             smokeLinux: false,
@@ -21,13 +23,15 @@ public sealed class ChangePlanClassifierTests
     }
 
     [Fact]
-    public void WindowsOnly_RequiresOnlyWindowsPlatformSuites()
+    public void WindowsScannerChange_RequiresWindowsPlatformWithoutDistributionBuild()
     {
         AssertPlan(
             ["webassist/src/WebAssistant/Scanning/WindowsScanAdapter.cs", "webassist/VERSION"],
             core: true,
             linuxSystemd: false,
             windowsService: true,
+            installerLinux: false,
+            installerWindows: false,
             virtualLinux: false,
             virtualWindows: true,
             smokeLinux: false,
@@ -36,13 +40,15 @@ public sealed class ChangePlanClassifierTests
     }
 
     [Fact]
-    public void LinuxOnly_RequiresOnlyLinuxPlatformSuites()
+    public void LinuxScannerChange_RequiresLinuxPlatformWithoutDistributionBuild()
     {
         AssertPlan(
             ["webassist/src/WebAssistant/Scanning/LinuxScanAdapter.cs", "webassist/VERSION"],
             core: true,
             linuxSystemd: true,
             windowsService: false,
+            installerLinux: false,
+            installerWindows: false,
             virtualLinux: true,
             virtualWindows: false,
             smokeLinux: true,
@@ -51,13 +57,15 @@ public sealed class ChangePlanClassifierTests
     }
 
     [Fact]
-    public void CommonProduct_RequiresFullCrossPlatformEvidence()
+    public void WindowsDistributionChange_RequiresSharedWindowsInstaller()
     {
         AssertPlan(
-            ["webassist/src/WebAssistant/Http/ScanCoordinator.cs", "webassist/VERSION"],
+            ["webassist/build/windows/package.ps1", "webassist/VERSION"],
             core: true,
             linuxSystemd: true,
             windowsService: true,
+            installerLinux: false,
+            installerWindows: true,
             virtualLinux: true,
             virtualWindows: true,
             smokeLinux: true,
@@ -66,7 +74,84 @@ public sealed class ChangePlanClassifierTests
     }
 
     [Fact]
-    public void MixedPlatformChanges_RequireFullCrossPlatformEvidence()
+    public void LinuxDistributionChange_RequiresSharedLinuxInstaller()
+    {
+        AssertPlan(
+            ["webassist/build/linux/package.sh", "webassist/VERSION"],
+            core: true,
+            linuxSystemd: true,
+            windowsService: true,
+            installerLinux: true,
+            installerWindows: false,
+            virtualLinux: true,
+            virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
+            fullCrossPlatform: true);
+    }
+
+    [Fact]
+    public void SharedDistributionChange_RequiresBothSharedInstallers()
+    {
+        AssertPlan(
+            ["webassist/build/common/write-provenance.sh", "webassist/VERSION"],
+            core: true,
+            linuxSystemd: true,
+            windowsService: true,
+            installerLinux: true,
+            installerWindows: true,
+            virtualLinux: true,
+            virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
+            fullCrossPlatform: true);
+
+        AssertPlan(
+            [".github/workflows/build-installers.yml", "webassist/VERSION"],
+            core: true,
+            linuxSystemd: true,
+            windowsService: true,
+            installerLinux: true,
+            installerWindows: true,
+            virtualLinux: true,
+            virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
+            fullCrossPlatform: true);
+
+        AssertPlan(
+            [".github/workflows/installer-acceptance.yml", "webassist/VERSION"],
+            core: true,
+            linuxSystemd: true,
+            windowsService: true,
+            installerLinux: true,
+            installerWindows: true,
+            virtualLinux: true,
+            virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
+            fullCrossPlatform: true);
+    }
+
+    [Fact]
+    public void CommonProduct_RequiresFullCrossPlatformEvidenceWithoutDistributionBuild()
+    {
+        AssertPlan(
+            ["webassist/src/WebAssistant/Http/ScanCoordinator.cs", "webassist/VERSION"],
+            core: true,
+            linuxSystemd: true,
+            windowsService: true,
+            installerLinux: false,
+            installerWindows: false,
+            virtualLinux: true,
+            virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
+            fullCrossPlatform: true);
+    }
+
+    [Fact]
+    public void MixedDistributionChanges_RequireBothSharedInstallers()
     {
         AssertPlan(
             [
@@ -77,6 +162,8 @@ public sealed class ChangePlanClassifierTests
             core: true,
             linuxSystemd: true,
             windowsService: true,
+            installerLinux: true,
+            installerWindows: true,
             virtualLinux: true,
             virtualWindows: true,
             smokeLinux: true,
@@ -92,6 +179,8 @@ public sealed class ChangePlanClassifierTests
             core: true,
             linuxSystemd: false,
             windowsService: true,
+            installerLinux: false,
+            installerWindows: false,
             virtualLinux: false,
             virtualWindows: true,
             smokeLinux: false,
@@ -107,6 +196,8 @@ public sealed class ChangePlanClassifierTests
             core: true,
             linuxSystemd: true,
             windowsService: false,
+            installerLinux: false,
+            installerWindows: false,
             virtualLinux: true,
             virtualWindows: false,
             smokeLinux: true,
@@ -115,39 +206,15 @@ public sealed class ChangePlanClassifierTests
     }
 
     [Fact]
-    public void SharedDistributionWorkflowChange_RequiresFullCrossPlatformEvidence()
-    {
-        AssertPlan(
-            [".github/workflows/build-installers.yml", "webassist/VERSION"],
-            core: true,
-            linuxSystemd: true,
-            windowsService: true,
-            virtualLinux: true,
-            virtualWindows: true,
-            smokeLinux: true,
-            smokeWindows: true,
-            fullCrossPlatform: true);
-
-        AssertPlan(
-            [".github/workflows/installer-acceptance.yml", "webassist/VERSION"],
-            core: true,
-            linuxSystemd: true,
-            windowsService: true,
-            virtualLinux: true,
-            virtualWindows: true,
-            smokeLinux: true,
-            smokeWindows: true,
-            fullCrossPlatform: true);
-    }
-
-    [Fact]
-    public void UnknownProductPath_FailsClosedToFullCrossPlatformEvidence()
+    public void UnknownProductPath_FailsClosedWithoutInventingDistributionScope()
     {
         AssertPlan(
             ["webassist/src/WebAssistant/NewCapability/Thing.cs", "webassist/VERSION"],
             core: true,
             linuxSystemd: true,
             windowsService: true,
+            installerLinux: false,
+            installerWindows: false,
             virtualLinux: true,
             virtualWindows: true,
             smokeLinux: true,
@@ -156,13 +223,15 @@ public sealed class ChangePlanClassifierTests
     }
 
     [Fact]
-    public void ClassifierOrWorkflowChange_RequiresItsOwnFullSelfTestSurface()
+    public void ClassifierOrTopLevelCiChange_RequiresBothSharedInstallers()
     {
         AssertPlan(
             ["ci/change-plan.sh", ".github/workflows/ci.yml", "webassist/VERSION"],
             core: true,
             linuxSystemd: true,
             windowsService: true,
+            installerLinux: true,
+            installerWindows: true,
             virtualLinux: true,
             virtualWindows: true,
             smokeLinux: true,
@@ -171,13 +240,15 @@ public sealed class ChangePlanClassifierTests
     }
 
     [Fact]
-    public void VersionOnlyChange_FailsClosedInsteadOfBecomingDocsOnly()
+    public void VersionOnlyChange_FailsClosedToBothSharedInstallers()
     {
         AssertPlan(
             ["webassist/VERSION"],
             core: true,
             linuxSystemd: true,
             windowsService: true,
+            installerLinux: true,
+            installerWindows: true,
             virtualLinux: true,
             virtualWindows: true,
             smokeLinux: true,
@@ -190,6 +261,8 @@ public sealed class ChangePlanClassifierTests
         bool core,
         bool linuxSystemd,
         bool windowsService,
+        bool installerLinux,
+        bool installerWindows,
         bool virtualLinux,
         bool virtualWindows,
         bool smokeLinux,
@@ -201,6 +274,8 @@ public sealed class ChangePlanClassifierTests
         Assert.Equal(core, Flag(plan, "core"));
         Assert.Equal(linuxSystemd, Flag(plan, "linux_systemd"));
         Assert.Equal(windowsService, Flag(plan, "windows_service"));
+        Assert.Equal(installerLinux, Flag(plan, "installer_linux"));
+        Assert.Equal(installerWindows, Flag(plan, "installer_windows"));
         Assert.Equal(virtualLinux, Flag(plan, "virtual_linux"));
         Assert.Equal(virtualWindows, Flag(plan, "virtual_windows"));
         Assert.Equal(smokeLinux, Flag(plan, "smoke_linux"));
