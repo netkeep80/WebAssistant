@@ -24,21 +24,25 @@ public sealed class IsolatedExportRootAcceptanceTests
     }
 
     [Fact]
-    public void LinuxSystemdWorkflow_BuildsFromCopiedExportRoot()
+    public void LinuxSystemdWorkflow_BuildsOnceFromCopiedExportRootAndConsumesArtifact()
     {
         var workflow = ReadRequired(".github/workflows/linux-systemd.yml");
-        var harness = ReadRequired("tests/linux-systemd/run-systemd-acceptance.sh");
+        var lifecycle = ReadRequired("tests/linux-systemd/run-systemd-acceptance.sh");
+        var consumer = ReadRequired("tests/linux-systemd/run-installer-acceptance.sh");
 
         Assert.Contains("WEBASSISTANT_EXPORT_ROOT", workflow, StringComparison.Ordinal);
         Assert.Contains("cp -a \"$GITHUB_WORKSPACE/webassist/.\" \"$export_root/\"", workflow, StringComparison.Ordinal);
         Assert.Contains("WebAssistant.sln", workflow, StringComparison.Ordinal);
         Assert.Contains(".gitlab-ci.yml", workflow, StringComparison.Ordinal);
         Assert.Contains("README.md", workflow, StringComparison.Ordinal);
-        Assert.Contains("build/linux/package.sh", workflow, StringComparison.Ordinal);
-        Assert.Contains("\"$WEBASSISTANT_EXPORT_ROOT\"", workflow, StringComparison.Ordinal);
+        Assert.Contains("$WEBASSISTANT_EXPORT_ROOT/build/linux/package.sh", workflow, StringComparison.Ordinal);
+        Assert.Contains("actions/upload-artifact@v4", workflow, StringComparison.Ordinal);
+        Assert.Contains("actions/download-artifact@v4", workflow, StringComparison.Ordinal);
+        Assert.Contains("run-installer-acceptance.sh", workflow, StringComparison.Ordinal);
 
-        Assert.Contains("PRODUCT_ROOT=\"${2:-}\"", harness, StringComparison.Ordinal);
-        Assert.Contains("package_script=\"$PRODUCT_ROOT/build/linux/package.sh\"", harness, StringComparison.Ordinal);
+        Assert.DoesNotContain("PRODUCT_ROOT=", lifecycle, StringComparison.Ordinal);
+        Assert.DoesNotContain("package_script=", lifecycle, StringComparison.Ordinal);
+        Assert.Contains("run-systemd-acceptance.sh", consumer, StringComparison.Ordinal);
     }
 
     private static string ReadRequired(string relativePath)
