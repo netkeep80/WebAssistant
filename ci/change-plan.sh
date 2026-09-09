@@ -102,9 +102,12 @@ for path in "${paths[@]}"; do
 
     .github/workflows/build-installers.yml|\
     .github/workflows/installer-acceptance.yml|\
+    .github/workflows/release-candidate.yml|\
     .github/workflows/ci.yml|\
+    ci/release/*|\
     ci/change-plan.sh|\
     webassist/build/common/*|\
+    tests/core/ReleaseInfrastructureTests.cs|\
     tests/core/InstallerArtifactContractTests.cs|\
     tests/core/ConfigurationOwnershipTests.cs)
       require_distribution_both
