@@ -215,10 +215,15 @@ public sealed class ReleaseInfrastructureTests
         using var conformance = JsonDocument.Parse(text);
         Assert.Equal("candidate", conformance.RootElement.GetProperty("status").GetString());
         Assert.False(conformance.RootElement.GetProperty("accepted").GetBoolean());
+
         var vector = conformance.RootElement.GetProperty("vectors").EnumerateArray().Single(item => item.GetProperty("id").GetString() == "WA-C-RELEASE-SAME-BYTES-001");
         var evidence = vector.GetProperty("evidence").EnumerateArray().Select(item => item.GetString()).Where(item => item is not null).Cast<string>().ToHashSet(StringComparer.Ordinal);
-        foreach (var required in new[] { "tests/core/ReleaseInfrastructureTests.cs", ".github/workflows/release-candidate.yml", "ci/release/resolve-accepted-main.sh", "ci/release/verify-installer-assets.sh", "ci/release/stage-draft-release.sh", "ci/release/finalize-release.sh" })
-            Assert.Contains(required, evidence);
+        Assert.Contains("tests/core/DistributionContractCandidateTests.cs", evidence);
+        Assert.Contains("tests/core/ReleaseInfrastructureTests.cs", evidence);
+
+        var requiredPaths = conformance.RootElement.GetProperty("requiredRepositoryPaths").EnumerateArray().Select(item => item.GetString()).Where(item => item is not null).Cast<string>().ToHashSet(StringComparer.Ordinal);
+        foreach (var required in new[] { ".github/workflows/release-candidate.yml", "ci/release/resolve-accepted-main.sh", "ci/release/inspect-release-state.sh", "ci/release/verify-installer-assets.sh", "ci/release/stage-draft-release.sh", "ci/release/finalize-release.sh" })
+            Assert.Contains(required, requiredPaths);
     }
 
     [Fact]
