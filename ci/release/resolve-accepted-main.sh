@@ -38,31 +38,58 @@ base_sha="$(printf '%s' "$pr_json" | python3 -c 'import json,sys; print(json.loa
 
 runs_json="$(gh api "repos/${repo}/actions/runs?head_sha=${pr_head}&event=pull_request&per_page=100")" || fail "cannot read PR workflow evidence"
 
-# The exact ci-required job is enforced by the repository CI graph. This resolver
-# additionally requires the successful repository-owned CI workflow for the exact
-# PR head/number; job-level ci-required inspection is tightened in the next TDD slice.
-check_owned_workflow() {
+candidate_run_ids() {
   local workflow_path="$1"
-  local label="$2"
   printf '%s' "$runs_json" | python3 -c '
 import json,sys
-path,label,head,pr=sys.argv[1],sys.argv[2],sys.argv[3],int(sys.argv[4])
+path,head,pr=sys.argv[1],sys.argv[2],int(sys.argv[3])
 runs=json.load(sys.stdin).get("workflow_runs",[])
-matches=[]
+ids=[]
 for run in runs:
     prs=[item.get("number") for item in run.get("pull_requests",[]) if isinstance(item,dict)]
     if (run.get("path")==path and run.get("event_name")=="pull_request" and
         run.get("head_sha")==head and pr in prs and run.get("status")=="completed" and
-        run.get("conclusion")=="success"):
-        matches.append(run)
-if len(matches)<1:
-    print(f"missing successful {label} evidence", file=sys.stderr)
-    raise SystemExit(4)
-' "$workflow_path" "$label" "$pr_head" "$pr_number"
+        run.get("conclusion")=="success" and isinstance(run.get("id"),int)):
+        ids.append(run["id"])
+for run_id in sorted(set(ids), reverse=True):
+    print(run_id)
+' "$workflow_path" "$pr_head" "$pr_number"
 }
 
-check_owned_workflow ".github/workflows/ci.yml" "ci-required" || fail "ci-required evidence is missing or unsuccessful"
-check_owned_workflow ".github/workflows/repo-guard.yml" "repo-guard" || fail "repo-guard evidence is missing or unsuccessful"
+job_is_green() {
+  local run_id="$1"
+  local job_name="$2"
+  local jobs_json
+  jobs_json="$(gh api "repos/${repo}/actions/runs/${run_id}/jobs?per_page=100")" || return 1
+  printf '%s' "$jobs_json" | python3 -c '
+import json,sys
+name=sys.argv[1]
+jobs=json.load(sys.stdin).get("jobs",[])
+matches=[j for j in jobs if j.get("name")==name]
+if len(matches)!=1:
+    raise SystemExit(1)
+j=matches[0]
+if j.get("status")!="completed" or j.get("conclusion")!="success":
+    raise SystemExit(1)
+' "$job_name"
+}
+
+select_green_run() {
+  local workflow_path="$1"
+  local job_name="$2"
+  local run_id
+  while IFS= read -r run_id; do
+    [[ -n "$run_id" ]] || continue
+    if job_is_green "$run_id" "$job_name"; then
+      printf '%s\n' "$run_id"
+      return 0
+    fi
+  done < <(candidate_run_ids "$workflow_path")
+  return 1
+}
+
+ci_run_id="$(select_green_run ".github/workflows/ci.yml" "ci-required")" || fail "ci-required job evidence is missing or unsuccessful"
+repo_guard_run_id="$(select_green_run ".github/workflows/repo-guard.yml" "repo-guard")" || fail "repo-guard job evidence is missing or unsuccessful"
 
 read_version_at() {
   local ref="$1"
@@ -89,7 +116,7 @@ if tuple(map(int,m1.groups())) <= tuple(map(int,m2.groups())):
     raise SystemExit(1)
 PY
 
-python3 - "$source_sha" "$pr_head" "$version" "$pr_number" "$base_sha" "$base_version" <<'PY'
+python3 - "$source_sha" "$pr_head" "$version" "$pr_number" "$base_sha" "$base_version" "$ci_run_id" "$repo_guard_run_id" <<'PY'
 import json,sys
 print(json.dumps({
     "sourceSha": sys.argv[1],
@@ -97,6 +124,8 @@ print(json.dumps({
     "version": sys.argv[3],
     "acceptedPr": int(sys.argv[4]),
     "baseSha": sys.argv[5],
-    "baseVersion": sys.argv[6]
+    "baseVersion": sys.argv[6],
+    "ciRunId": int(sys.argv[7]),
+    "repoGuardRunId": int(sys.argv[8])
 }, separators=(",",":")))
 PY
