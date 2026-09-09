@@ -42,6 +42,60 @@ public sealed class CiWorkflowContractTests
         Assert.Contains("pull_request:", repoGuard, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void DistributionCi_BuildsInstallersOnceAndConsumesExactUploadedArtifacts()
+    {
+        var root = FindRepositoryRoot();
+        var workflows = Path.Combine(root, ".github", "workflows");
+        var build = ReadRequired(Path.Combine(workflows, "build-installers.yml"));
+        var acceptance = ReadRequired(Path.Combine(workflows, "installer-acceptance.yml"));
+        var ci = ReadRequired(Path.Combine(workflows, "ci.yml"));
+
+        Assert.Contains("workflow_call:", build, StringComparison.Ordinal);
+        Assert.Contains("source_ref:", build, StringComparison.Ordinal);
+        Assert.Contains("run_linux:", build, StringComparison.Ordinal);
+        Assert.Contains("run_windows:", build, StringComparison.Ordinal);
+        Assert.Contains("build-linux-installer:", build, StringComparison.Ordinal);
+        Assert.Contains("build-windows-installer:", build, StringComparison.Ordinal);
+        Assert.Contains("build/linux/package.sh", build, StringComparison.Ordinal);
+        Assert.Contains("build/windows/package.bat", build, StringComparison.Ordinal);
+        Assert.Contains("actions/upload-artifact@v4", build, StringComparison.Ordinal);
+        Assert.Contains("webassistant-linux-installer-${{ inputs.source_ref }}", build, StringComparison.Ordinal);
+        Assert.Contains("webassistant-windows-installer-${{ inputs.source_ref }}", build, StringComparison.Ordinal);
+        Assert.DoesNotContain("run-installer-acceptance", build, StringComparison.OrdinalIgnoreCase);
+
+        Assert.Contains("workflow_call:", acceptance, StringComparison.Ordinal);
+        Assert.Contains("source_ref:", acceptance, StringComparison.Ordinal);
+        Assert.Contains("run_linux:", acceptance, StringComparison.Ordinal);
+        Assert.Contains("run_windows:", acceptance, StringComparison.Ordinal);
+        Assert.Contains("actions/download-artifact@v4", acceptance, StringComparison.Ordinal);
+        Assert.Contains("tests/linux-systemd/run-installer-acceptance.sh", acceptance, StringComparison.Ordinal);
+        Assert.Contains("tests/windows-service/run-installer-acceptance.ps1", acceptance, StringComparison.Ordinal);
+        Assert.DoesNotContain("build/linux/package.sh", acceptance, StringComparison.Ordinal);
+        Assert.DoesNotContain("build/windows/package.bat", acceptance, StringComparison.Ordinal);
+        Assert.DoesNotContain("dotnet publish", acceptance, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("actions/setup-dotnet", acceptance, StringComparison.OrdinalIgnoreCase);
+
+        Assert.Contains("build-installers:", ci, StringComparison.Ordinal);
+        Assert.Contains("uses: ./.github/workflows/build-installers.yml", ci, StringComparison.Ordinal);
+        Assert.Contains("installer-acceptance:", ci, StringComparison.Ordinal);
+        Assert.Contains("- build-installers", ci, StringComparison.Ordinal);
+        Assert.Contains("uses: ./.github/workflows/installer-acceptance.yml", ci, StringComparison.Ordinal);
+        Assert.Contains("INSTALLER_ACCEPTANCE_RESULT: ${{ needs.installer-acceptance.result }}", ci, StringComparison.Ordinal);
+        Assert.Contains("check_result installer-acceptance", ci, StringComparison.Ordinal);
+        Assert.DoesNotContain("uses: ./.github/workflows/linux-systemd.yml", ci, StringComparison.Ordinal);
+        Assert.DoesNotContain("uses: ./.github/workflows/windows-service.yml", ci, StringComparison.Ordinal);
+
+        Assert.Contains("scanner-final:", ci, StringComparison.Ordinal);
+        Assert.Contains("uses: ./.github/workflows/virtual-scanner.yml", ci, StringComparison.Ordinal);
+    }
+
+    private static string ReadRequired(string path)
+    {
+        Assert.True(File.Exists(path), $"Required workflow is missing: {path}");
+        return File.ReadAllText(path);
+    }
+
     private static void AssertReusableComponent(string workflows, string fileName)
     {
         var text = File.ReadAllText(Path.Combine(workflows, fileName));
