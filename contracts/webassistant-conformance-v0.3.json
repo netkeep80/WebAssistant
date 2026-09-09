@@ -191,7 +191,7 @@
       "kind": "negative",
       "assertion": "Distribution candidate требует exact versioned filenames и единую VERSION identity между webassist/VERSION, filename, application metadata, installer/package metadata и release/tag; mismatch обязан блокировать install/release fail-closed.",
       "requirements": ["WA-DIST-002"],
-      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "tests/core/InstallerArtifactContractTests.cs", "webassist/VERSION", "tests/windows-service/run-installer-acceptance.ps1", "tests/linux-systemd/run-installer-acceptance.sh"]
+      "evidence": ["tests/core/DistributionContractCandidateTests.cs", "tests/core/InstallerArtifactContractTests.cs", "tests/windows-service/run-installer-acceptance.ps1", "tests/linux-systemd/run-installer-acceptance.sh"]
     },
     {
       "id": "WA-C-PACKAGE-CONFIG-001",
