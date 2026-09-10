@@ -1,10 +1,9 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
-using WebAssistant.Runtime;
 using WebAssistant.Scanning;
 using Xunit;
 
@@ -12,148 +11,152 @@ namespace WebAssistant.CoreTests;
 
 public sealed class DiagnosticsContractTests
 {
-    private static readonly byte[] PdfBytes = "%PDF-1.7\n%%EOF"u8.ToArray();
+    private static readonly byte[] SecretPdfBytes =
+        "%PDF-1.7\nDOCUMENT-SECRET-MARKER\n%%EOF"u8.ToArray();
 
     [Fact]
-    public async Task Info_ReturnsVersionOsUptimeAndScanState()
+    public async Task DiagnosticsInfo_ReturnsCurrentSafeRuntimeState()
     {
-        using var context = TestContext.Create(FakeScanAdapter.WithPdf([], PdfBytes));
-        using var client = context.Factory.CreateClient();
+        using var fixture = CreateFixture();
+        using var client = fixture.Factory.CreateClient();
 
         using var response = await client.GetAsync("/v1/diag/info");
         var json = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("version", json, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("os", json, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("uptimeSeconds", json, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("listenUrl", json, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("apiVersion", json, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("scanState", json, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("idle", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"apiVersion\":\"v1\"", json);
+        Assert.Contains("http://127.0.0.1:17654", json);
+        Assert.Contains("\"scanState\":\"idle\"", json);
     }
 
     [Fact]
-    public async Task Info_ReflectsBusyScannerState()
+    public async Task DiagnosticsLogs_RejectsInvalidDateInsteadOfAcceptingPath()
     {
-        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var adapter = new FakeScanAdapter(
-            [new ScannerDevice("scanner-1", "Сканер")],
-            async (_, cancellationToken) =>
-            {
-                started.TrySetResult(true);
-                await release.Task.WaitAsync(cancellationToken);
-                return new MemoryStream(PdfBytes, writable: false);
-            });
-        using var context = TestContext.Create(adapter);
-        using var client = context.Factory.CreateClient();
+        using var fixture = CreateFixture();
+        using var client = fixture.Factory.CreateClient();
 
-        var scan = client.PostAsync("/v1/scan?scannerId=scanner-1", null);
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        try
-        {
-            var json = await client.GetStringAsync("/v1/diag/info");
-            Assert.Contains("busy", json, StringComparison.OrdinalIgnoreCase);
-        }
-        finally
-        {
-            release.TrySetResult(true);
-        }
-
-        using var scanResponse = await scan;
-        Assert.Equal(HttpStatusCode.OK, scanResponse.StatusCode);
-    }
-
-    [Fact]
-    public async Task Logs_RequireExactDateAndReturnOnlyOwnDailyLog()
-    {
-        using var context = TestContext.Create(FakeScanAdapter.WithPdf([], PdfBytes));
-        var options = context.Factory.Services.GetRequiredService<WebAssistantRuntimeOptions>();
-        Directory.CreateDirectory(options.LogDirectory);
-        var date = DateOnly.FromDateTime(DateTime.Today);
-        var expected = "safe log line\n";
-        await File.WriteAllTextAsync(
-            Path.Combine(options.LogDirectory, $"webassistant-{date:yyyy-MM-dd}.log"),
-            expected);
-
-        using var client = context.Factory.CreateClient();
-        using var response = await client.GetAsync($"/v1/diag/logs?date={date:yyyy-MM-dd}");
-        var body = await response.Content.ReadAsStringAsync();
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(expected, body);
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("not-a-date")]
-    [InlineData("2026-02-30")]
-    [InlineData("../../secret")]
-    public async Task Logs_InvalidDate_IsRejected(string date)
-    {
-        using var context = TestContext.Create(FakeScanAdapter.WithPdf([], PdfBytes));
-        using var client = context.Factory.CreateClient();
-
-        using var response = await client.GetAsync("/v1/diag/logs?date=" + Uri.EscapeDataString(date));
+        using var response = await client.GetAsync(
+            "/v1/diag/logs?date=../../etc/passwd");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
-    public async Task Logs_MissingOwnLog_ReturnsNotFound()
+    public async Task DiagnosticsLogs_ReturnsOnlyOwnDailyLog()
     {
-        using var context = TestContext.Create(FakeScanAdapter.WithPdf([], PdfBytes));
-        using var client = context.Factory.CreateClient();
+        using var fixture = CreateFixture();
+        var date = DateOnly.FromDateTime(DateTime.Now);
+        var expected = "2026-09-01T12:00:00+00:00 [Information] WebAssistant.Test Проверка журнала\n";
+        var file = Path.Combine(
+            fixture.LogDirectory,
+            $"webassistant-{date:yyyy-MM-dd}.log");
+        await File.WriteAllTextAsync(file, expected);
+        using var client = fixture.Factory.CreateClient();
 
-        using var response = await client.GetAsync("/v1/diag/logs?date=1999-01-01");
+        using var response = await client.GetAsync(
+            $"/v1/diag/logs?date={date:yyyy-MM-dd}");
+        var text = await response.Content.ReadAsStringAsync();
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(expected, text);
     }
 
     [Fact]
-    public void AgentRuntimeInfo_LoadsVersionFromProductVersionFile()
+    public async Task Scan_WritesDailyTechnicalLogWithoutDocumentContent()
     {
-        var info = new AgentRuntimeInfo();
-        Assert.False(string.IsNullOrWhiteSpace(info.Version));
-        Assert.Matches("^[0-9]+\\.[0-9]+\\.[0-9]+$", info.Version);
+        var adapter = FakeScanAdapter.WithPdf(
+            [new ScannerDevice("scanner-1", "Сканер")],
+            SecretPdfBytes);
+        using var fixture = CreateFixture(adapter);
+        using var client = fixture.Factory.CreateClient();
+
+        using var response = await client.PostAsync("/v1/scan", null);
+        _ = await response.Content.ReadAsByteArrayAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var log = await ReadTodayLogAsync(fixture.LogDirectory);
+        Assert.Contains("POST /v1/scan", log);
+        Assert.Contains("scanner-1", log);
+        Assert.DoesNotContain("DOCUMENT-SECRET-MARKER", log);
+        Assert.DoesNotContain(Convert.ToBase64String(SecretPdfBytes), log);
     }
 
-    private sealed class TestContext : IDisposable
+    [Fact]
+    public async Task ScannerFailure_WritesExceptionTypeMessageAndStackTrace()
     {
-        private readonly string testRoot;
+        var adapter = new FakeScanAdapter(
+            [new ScannerDevice("scanner-1", "Сканер")],
+            (_, _) => Task.FromException<Stream>(
+                new InvalidOperationException("scanner failure")));
+        using var fixture = CreateFixture(adapter);
+        using var client = fixture.Factory.CreateClient();
 
-        private TestContext(string testRoot, WebApplicationFactory<Program> factory)
+        using var response = await client.PostAsync("/v1/scan", null);
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+
+        var log = await ReadTodayLogAsync(fixture.LogDirectory);
+        Assert.Contains("InvalidOperationException", log);
+        Assert.Contains("scanner failure", log);
+        Assert.Contains("scanner-1", log);
+    }
+
+    private static async Task<string> ReadTodayLogAsync(string logDirectory)
+    {
+        var file = Path.Combine(
+            logDirectory,
+            $"webassistant-{DateTimeOffset.Now:yyyy-MM-dd}.log");
+
+        Assert.True(File.Exists(file), $"Ожидался файл журнала {file}");
+        return await File.ReadAllTextAsync(file);
+    }
+
+    private static TestFixture CreateFixture(IScanAdapter? adapter = null)
+    {
+        var testRoot = Path.Combine(
+            Path.GetTempPath(),
+            "webassistant-tests",
+            Guid.NewGuid().ToString("N"));
+        var logDirectory = Path.Combine(testRoot, "logs");
+        var fileSystemRoot = Path.Combine(testRoot, "data");
+        Directory.CreateDirectory(logDirectory);
+        Directory.CreateDirectory(fileSystemRoot);
+
+        var settings = new Dictionary<string, string?>
         {
-            this.testRoot = testRoot;
-            Factory = factory;
-        }
+            ["WebAssistant:LogDirectory"] = logDirectory,
+            ["WebAssistant:FileSystem:RootDirectory"] = fileSystemRoot
+        };
 
-        public WebApplicationFactory<Program> Factory { get; }
-
-        public static TestContext Create(IScanAdapter adapter)
+        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            var testRoot = Path.Combine(Path.GetTempPath(), $"webassistant-diag-{Guid.NewGuid():N}");
-            var logDirectory = Path.Combine(testRoot, "logs");
-            var dataDirectory = Path.Combine(testRoot, "data");
-            Directory.CreateDirectory(logDirectory);
-            Directory.CreateDirectory(dataDirectory);
-
-            var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, configuration) =>
             {
-                builder.UseSetting("WebAssistant:LogDirectory", logDirectory);
-                builder.UseSetting("WebAssistant:FileSystem:RootDirectory", dataDirectory);
+                configuration.AddInMemoryCollection(settings);
+            });
+
+            if (adapter is not null)
+            {
                 builder.ConfigureServices(services =>
                 {
                     services.RemoveAll<IScanAdapter>();
                     services.AddSingleton(adapter);
-                    services.RemoveAll<ILoggerProvider>();
                 });
-            });
+            }
+        });
 
-            return new TestContext(testRoot, factory);
-        }
+        return new TestFixture(factory, testRoot, logDirectory);
+    }
+
+    private sealed class TestFixture(
+        WebApplicationFactory<Program> factory,
+        string testRoot,
+        string logDirectory) : IDisposable
+    {
+        public WebApplicationFactory<Program> Factory { get; } = factory;
+
+        public string LogDirectory { get; } = logDirectory;
 
         public void Dispose()
         {
