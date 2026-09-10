@@ -10,11 +10,15 @@ webassistant_has_icu() {
 }
 
 webassistant_has_gtk3() {
-    ldconfig -p 2>/dev/null | grep -q 'libgtk-3\.so\.0'
+    local libraries
+    libraries="$(ldconfig -p 2>/dev/null || true)"
+    grep -q 'libgtk-3\.so\.0' <<<"$libraries"
 }
 
 webassistant_has_libsane() {
-    ldconfig -p 2>/dev/null | grep -q 'libsane\.so\.1'
+    local libraries
+    libraries="$(ldconfig -p 2>/dev/null || true)"
+    grep -q 'libsane\.so\.1' <<<"$libraries"
 }
 
 webassistant_has_scanimage() {
