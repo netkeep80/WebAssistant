@@ -66,7 +66,7 @@ public sealed class LinuxScanAdapterTests
     }
 
     [Fact]
-    public void ProductionAdapter_UsesDirectSaneSdkWithoutCliOrTempPdfOrchestration()
+    public void ProductionAdapter_UsesDirectSaneSdkAndStableIdentityWithoutCliOrTempPdfOrchestration()
     {
         var repositoryRoot = FindRepositoryRoot();
         var sourcePath = Path.Combine(
@@ -80,6 +80,8 @@ public sealed class LinuxScanAdapterTests
 
         Assert.Contains("Driver.Sane", source, StringComparison.Ordinal);
         Assert.Contains("ScanController", source, StringComparison.Ordinal);
+        Assert.Contains("ScannerIdentity.Create(ScannerBackend.Sane", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("new ScannerDevice(device.ID", source, StringComparison.Ordinal);
         Assert.DoesNotContain("ProcessStartInfo", source, StringComparison.Ordinal);
         Assert.DoesNotContain("System.Diagnostics", source, StringComparison.Ordinal);
         Assert.DoesNotContain("--source", source, StringComparison.Ordinal);
