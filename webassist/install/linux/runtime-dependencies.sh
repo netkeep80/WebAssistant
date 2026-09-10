@@ -22,10 +22,22 @@ webassistant_has_scanimage() {
 }
 
 webassistant_resolve_icu_package() {
-    apt-cache pkgnames 2>/dev/null |
-        sed -n -E 's/^(libicu([0-9]+))$/\2 \1/p' |
-        sort -nr |
-        awk 'NR == 1 { print $2 }'
+    local package
+    local best_package=""
+    local best_major=-1
+
+    while IFS= read -r package; do
+        if [[ "$package" =~ ^libicu([0-9]+)$ ]]; then
+            local major="${BASH_REMATCH[1]}"
+            if (( major > best_major )); then
+                best_major="$major"
+                best_package="$package"
+            fi
+        fi
+    done < <(apt-cache pkgnames 2>/dev/null || true)
+
+    [[ -n "$best_package" ]] || return 1
+    printf '%s\n' "$best_package"
 }
 
 webassistant_missing_capabilities() {
@@ -34,7 +46,7 @@ webassistant_missing_capabilities() {
     webassistant_has_gtk3 || missing+=(GTK3)
     webassistant_has_libsane || missing+=(libsane)
     webassistant_has_scanimage || missing+=(scanimage)
-    printf '%s\n' "${missing[@]}"
+    ((${#missing[@]} == 0)) || printf '%s\n' "${missing[@]}"
 }
 
 ensure_webassistant_runtime_dependencies() {
@@ -51,21 +63,8 @@ ensure_webassistant_runtime_dependencies() {
             echo "ICU runtime отсутствует, а apt-cache не найден для разрешения доступного пакета ICU." >&2
             return 1
         }
-        command -v sed >/dev/null 2>&1 || {
-            echo "Не найдена команда sed, необходимая для разрешения доступного пакета ICU." >&2
-            return 1
-        }
-        command -v sort >/dev/null 2>&1 || {
-            echo "Не найдена команда sort, необходимая для разрешения доступного пакета ICU." >&2
-            return 1
-        }
-        command -v awk >/dev/null 2>&1 || {
-            echo "Не найдена команда awk, необходимая для разрешения доступного пакета ICU." >&2
-            return 1
-        }
 
-        icu_package="$(webassistant_resolve_icu_package)"
-        [[ -n "$icu_package" ]] || {
+        icu_package="$(webassistant_resolve_icu_package)" || {
             echo "ICU runtime отсутствует, и в подключённых репозиториях ALT Linux не найден подходящий пакет libicu с числовой major-версией." >&2
             return 1
         }
@@ -96,10 +95,10 @@ ensure_webassistant_runtime_dependencies() {
         return 0
     fi
 
-    local still_missing
-    still_missing="$(webassistant_missing_capabilities)"
-    if [[ -n "$still_missing" ]]; then
-        echo "После установки пакетов всё ещё отсутствуют runtime-возможности WebAssistant: $(tr '\n' ' ' <<<"$still_missing" | sed 's/[[:space:]]*$//')." >&2
+    local still_missing=()
+    mapfile -t still_missing < <(webassistant_missing_capabilities)
+    if ((${#still_missing[@]} > 0)); then
+        echo "После установки пакетов всё ещё отсутствуют runtime-возможности WebAssistant: ${still_missing[*]}." >&2
         return 1
     fi
 
