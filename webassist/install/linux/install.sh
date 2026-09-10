@@ -10,20 +10,12 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source_app="$script_dir/app"
 source_config="$source_app/appsettings.json"
 source_service="$script_dir/webassist.service"
+runtime_helper="$script_dir/runtime-dependencies.sh"
 install_dir="/opt/webassist"
 log_dir="/var/log/webassistant"
 data_dir="/var/lib/webassistant"
 service_unit="/etc/systemd/system/webassist.service"
 config_file="$install_dir/appsettings.json"
-runtime_packages=(libicu74 libgtk+3 libsane sane)
-
-runtime_dependencies_installed() {
-    local package
-    for package in "${runtime_packages[@]}"; do
-        rpm -q "$package" >/dev/null 2>&1 || return 1
-    done
-    return 0
-}
 
 [[ -d "$source_app" ]] || {
     echo "Не найден каталог package app: $source_app" >&2
@@ -37,32 +29,21 @@ runtime_dependencies_installed() {
     echo "Не найден webassist.service: $source_service" >&2
     exit 1
 }
+[[ -f "$runtime_helper" ]] || {
+    echo "Package повреждён: отсутствует runtime-dependencies.sh" >&2
+    exit 1
+}
 
-for command_name in rpm systemctl groupadd groupdel useradd userdel usermod getent install; do
+for command_name in systemctl groupadd groupdel useradd userdel usermod getent install; do
     command -v "$command_name" >/dev/null 2>&1 || {
         echo "Не найдена обязательная системная команда: $command_name" >&2
         exit 1
     }
 done
 
-if runtime_dependencies_installed; then
-    echo "Системные runtime-зависимости WebAssistant уже установлены; apt-rpm не изменяется."
-else
-    command -v apt-get >/dev/null 2>&1 || {
-        echo "Не найдена обязательная системная команда apt-get для установки отсутствующих runtime-зависимостей." >&2
-        exit 1
-    }
-
-    if ! apt-get update; then
-        echo "Не удалось обновить метаданные пакетных репозиториев ALT Linux через apt-rpm. Исправьте конфигурацию или состояние apt-rpm и повторите установку WebAssistant." >&2
-        exit 1
-    fi
-
-    if ! apt-get install -y "${runtime_packages[@]}"; then
-        echo "Не удалось установить runtime-зависимости WebAssistant через apt-rpm: ${runtime_packages[*]}. Исправьте состояние пакетной системы ALT Linux и повторите установку." >&2
-        exit 1
-    fi
-fi
+# shellcheck source=/dev/null
+source "$runtime_helper"
+ensure_webassistant_runtime_dependencies
 
 if ! getent group webassist >/dev/null 2>&1; then
     groupadd --system webassist
