@@ -19,10 +19,14 @@ builder.WebHost.ConfigureKestrel((context, options) =>
     options.Listen(runtimeOptions.ListenAddress, runtimeOptions.Port);
 });
 
-builder.Services.AddWindowsService(options =>
+if (OperatingSystem.IsWindows())
 {
-    options.ServiceName = "WebAssistant";
-});
+    builder.Services.AddWindowsService(options =>
+    {
+        options.ServiceName = "WebAssistant";
+    });
+}
+
 builder.Services.AddSingleton(serviceProvider =>
     WebAssistantRuntimeOptions.Load(
         serviceProvider.GetRequiredService<IConfiguration>()));
