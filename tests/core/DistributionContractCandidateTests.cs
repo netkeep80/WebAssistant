@@ -10,6 +10,17 @@ public sealed class DistributionContractCandidateTests
     private const string CandidateContractPath = "contracts/webassistant-contract-v0.3.json";
     private const string CandidateConformancePath = "contracts/webassistant-conformance-v0.3.json";
 
+    private static readonly HashSet<string> SupersededRequirementIds =
+    [
+        "WA-SCAN-001",
+        "WA-SCAN-002"
+    ];
+
+    private static readonly HashSet<string> SupersededVectorIds =
+    [
+        "WA-C-SCANNER-HTTP-001"
+    ];
+
     private static readonly string[] DistributionRequirementIds =
     [
         "WA-DIST-001",
@@ -37,7 +48,7 @@ public sealed class DistributionContractCandidateTests
     ];
 
     [Fact]
-    public void DistributionCandidate_PreservesV02AndAddsOnlyCandidateDistributionAuthority()
+    public void DistributionCandidate_PreservesV02ExceptExplicitScannerSupersession()
     {
         var root = FindRepositoryRoot();
 
@@ -65,8 +76,12 @@ public sealed class DistributionContractCandidateTests
             RequiredString(candidateConformance.RootElement, "contract"));
 
         AssertCurrentAuthorityRemainsV02(policy.RootElement);
-        AssertBaselineRequirementsArePreserved(baselineContract.RootElement, candidateContract.RootElement);
-        AssertBaselineVectorsArePreserved(baselineConformance.RootElement, candidateConformance.RootElement);
+        AssertBaselineRequirementsArePreservedExceptExplicitSupersession(
+            baselineContract.RootElement,
+            candidateContract.RootElement);
+        AssertBaselineVectorsArePreservedExceptExplicitSupersession(
+            baselineConformance.RootElement,
+            candidateConformance.RootElement);
 
         var candidateRequirementIds = candidateContract.RootElement
             .GetProperty("requirements")
@@ -101,6 +116,37 @@ public sealed class DistributionContractCandidateTests
             "Candidate conformance graph invalid:\n" + string.Join("\n", graphErrors));
     }
 
+    [Fact]
+    public void CandidateScannerContract_AuthorizesUnifiedStableAutoModel()
+    {
+        var root = FindRepositoryRoot();
+        using var candidateContract = ReadJson(root, CandidateContractPath);
+        var statements = candidateContract.RootElement
+            .GetProperty("requirements")
+            .EnumerateArray()
+            .Select(requirement => RequiredString(requirement, "statement"))
+            .ToArray();
+
+        Assert.Contains(statements, statement =>
+            statement.Contains("WIA", StringComparison.Ordinal) &&
+            statement.Contains("TWAIN", StringComparison.Ordinal) &&
+            statement.Contains("scannerId", StringComparison.Ordinal));
+
+        Assert.Contains(statements, statement =>
+            statement.Contains("POST /v1/scan", StringComparison.Ordinal) &&
+            statement.Contains("source", StringComparison.Ordinal) &&
+            statement.Contains("duplex", StringComparison.Ordinal));
+
+        Assert.Contains(statements, statement =>
+            statement.Contains("PRESENT", StringComparison.Ordinal) &&
+            statement.Contains("ABSENT", StringComparison.Ordinal) &&
+            statement.Contains("UNKNOWN", StringComparison.Ordinal));
+
+        Assert.DoesNotContain(statements, statement =>
+            statement.Contains("/v1/scan/feeder", StringComparison.Ordinal) ||
+            statement.Contains("/v1/scan/duplex", StringComparison.Ordinal));
+    }
+
     private static void AssertCurrentAuthorityRemainsV02(JsonElement policy)
     {
         var current = policy
@@ -115,7 +161,9 @@ public sealed class DistributionContractCandidateTests
             RequiredString(current.GetProperty("conformance"), "path"));
     }
 
-    private static void AssertBaselineRequirementsArePreserved(JsonElement baseline, JsonElement candidate)
+    private static void AssertBaselineRequirementsArePreservedExceptExplicitSupersession(
+        JsonElement baseline,
+        JsonElement candidate)
     {
         var candidateRequirements = candidate
             .GetProperty("requirements")
@@ -131,12 +179,20 @@ public sealed class DistributionContractCandidateTests
         {
             var id = RequiredString(baselineRequirement, "id");
             Assert.True(candidateRequirements.TryGetValue(id, out var candidateRequirement), $"Candidate потерял requirement {id}");
+
+            if (SupersededRequirementIds.Contains(id))
+            {
+                continue;
+            }
+
             Assert.Equal(RequiredString(baselineRequirement, "kind"), candidateRequirement.Kind);
             Assert.Equal(RequiredString(baselineRequirement, "statement"), candidateRequirement.Statement);
         }
     }
 
-    private static void AssertBaselineVectorsArePreserved(JsonElement baseline, JsonElement candidate)
+    private static void AssertBaselineVectorsArePreservedExceptExplicitSupersession(
+        JsonElement baseline,
+        JsonElement candidate)
     {
         var candidateVectors = candidate
             .GetProperty("vectors")
@@ -152,6 +208,12 @@ public sealed class DistributionContractCandidateTests
         {
             var id = RequiredString(baselineVector, "id");
             Assert.True(candidateVectors.TryGetValue(id, out var candidateVector), $"Candidate потерял conformance vector {id}");
+
+            if (SupersededVectorIds.Contains(id))
+            {
+                continue;
+            }
+
             Assert.Equal(RequiredString(baselineVector, "assertion"), candidateVector.Assertion);
             Assert.Equal(ReadStringArray(baselineVector, "requirements"), candidateVector.Requirements);
         }
