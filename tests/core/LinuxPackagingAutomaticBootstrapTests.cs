@@ -67,6 +67,7 @@ public sealed class LinuxPackagingAutomaticBootstrapTests
         Assert.NotEmpty(entries);
         Assert.All(entries, entry => Assert.StartsWith(rootName + "/", entry, StringComparison.Ordinal));
         Assert.Contains(rootName + "/install.sh", entries);
+        Assert.Contains(rootName + "/runtime-dependencies.sh", entries);
         Assert.Contains(rootName + "/uninstall.sh", entries);
         Assert.Contains(rootName + "/VERSION", entries);
         Assert.Contains(rootName + "/webassist.service", entries);
