@@ -11,10 +11,10 @@ namespace WebAssistant.CoreTests;
 public sealed class DependencyOwnershipTests
 {
     private const string PackageId = "WebAssistant.NAPS2.Sdk";
-    private const string PackageVersion = "1.3.0-webassistant.1.450cba65";
-    private const string PackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.1.450cba65.nupkg";
+    private const string PackageVersion = "1.3.0-webassistant.2.450cba65";
+    private const string PackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg";
     private const string UpstreamCommit = "450cba65aaffe6387041050a573051a64cd80fe9";
-    private const string ExpectedPackageSha256 = "de8e718254bc12ee9235e63f9987f657018a6c13529631bd87bed8f318eecd4a";
+    private const string ExpectedPackageSha256 = "2dbc6e96cf0d46a554318f3224561861e669dd09b60fc618319c53fed10dcc9f";
     private const long MaxPackageBytes = 1024L * 1024L;
 
     [Fact]
