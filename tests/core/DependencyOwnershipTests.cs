@@ -4,6 +4,8 @@ using System.Xml.Linq;
 using NAPS2.Scan;
 using Xunit;
 
+#pragma warning disable CA2252
+
 namespace WebAssistant.CoreTests;
 
 public sealed class DependencyOwnershipTests
@@ -132,3 +134,5 @@ public sealed class DependencyOwnershipTests
         throw new InvalidOperationException("Не найден корень репозитория.");
     }
 }
+
+#pragma warning restore CA2252
