@@ -39,7 +39,7 @@ on:
       - '.github/workflows/virtual-scanner.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   resolve-inputs:
@@ -141,40 +141,6 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-
-      - name: Rebuild candidate repository-owned SDK
-        shell: bash
-        run: webassist/vendor/naps2/rebuild-fixed-sdk.sh
-
-      - name: Upload candidate repository-owned SDK
-        uses: actions/upload-artifact@v4
-        with:
-          name: webassistant-naps2-sdk-candidate
-          path: webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Commit candidate repository-owned SDK
-        if: ${{ github.event_name == 'pull_request' }}
-        shell: bash
-        env:
-          TARGET_BRANCH: ${{ github.head_ref }}
-        run: |
-          set -euo pipefail
-          [[ -n "$TARGET_BRANCH" ]] || {
-            echo 'Missing pull request head branch.' >&2
-            exit 1
-          }
-          package='webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg'
-          git add -- "$package"
-          if git diff --cached --quiet; then
-            echo 'Candidate package is already committed.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Vendor immutable NAPS2 SDK .2 package'
-          git push origin "HEAD:$TARGET_BRANCH"
 
       - name: Prepare isolated SANE configuration
         shell: bash
