@@ -115,13 +115,32 @@ public sealed class SystemServiceProductTests
         Assert.True(File.Exists(workflow));
 
         var project = XDocument.Load(projectPath);
-        var package = project.Descendants("PackageReference").SingleOrDefault(element =>
-            string.Equals(
+        var windowsServicePackages = project.Descendants("PackageReference")
+            .Where(element => string.Equals(
                 element.Attribute("Include")?.Value,
                 "Microsoft.Extensions.Hosting.WindowsServices",
+                StringComparison.Ordinal))
+            .ToArray();
+        Assert.Equal(2, windowsServicePackages.Length);
+        Assert.All(
+            windowsServicePackages,
+            package => Assert.Equal("10.0.11", package.Attribute("Version")?.Value));
+
+        var linuxWindowsServicePackage = Assert.Single(
+            windowsServicePackages,
+            package => string.Equals(
+                package.Parent?.Attribute("Condition")?.Value,
+                "'$(RuntimeIdentifier)' == 'linux-x64'",
                 StringComparison.Ordinal));
-        Assert.NotNull(package);
-        Assert.Equal("10.0.11", package.Attribute("Version")?.Value);
+        Assert.Equal("runtime", linuxWindowsServicePackage.Attribute("ExcludeAssets")?.Value);
+
+        var nonLinuxWindowsServicePackage = Assert.Single(
+            windowsServicePackages,
+            package => string.Equals(
+                package.Parent?.Attribute("Condition")?.Value,
+                "'$(RuntimeIdentifier)' != 'linux-x64'",
+                StringComparison.Ordinal));
+        Assert.Null(nonLinuxWindowsServicePackage.Attribute("ExcludeAssets"));
 
         var program = File.ReadAllText(programPath);
         Assert.Contains("AddWindowsService", program, StringComparison.Ordinal);
