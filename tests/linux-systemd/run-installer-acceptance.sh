@@ -102,6 +102,7 @@ PY
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 extract_root="$(mktemp -d "${RUNNER_TEMP:-/tmp}/webassistant-linux-artifact.XXXXXX")"
+payload_root="$extract_root/${artifact_name%.zip}"
 cleanup() {
     rm -rf -- "$extract_root"
 }
@@ -109,19 +110,19 @@ trap cleanup EXIT
 
 unzip -q "$artifact_path" -d "$extract_root"
 
-test -x "$extract_root/app/WebAssistant"
-test -f "$extract_root/app/appsettings.json"
-test -f "$extract_root/VERSION"
-test -x "$extract_root/install.sh"
-test -x "$extract_root/uninstall.sh"
-test -f "$extract_root/webassist.service"
+test -x "$payload_root/app/WebAssistant"
+test -f "$payload_root/app/appsettings.json"
+test -f "$payload_root/VERSION"
+test -x "$payload_root/install.sh"
+test -x "$payload_root/uninstall.sh"
+test -f "$payload_root/webassist.service"
 
-inside_version="$(tr -d '\r\n' < "$extract_root/VERSION")"
+inside_version="$(tr -d '\r\n' < "$payload_root/VERSION")"
 [[ "$inside_version" == "$version" ]] || {
     echo "VERSION inside ZIP differs from artifact filename." >&2
     exit 1
 }
 
-bash "$script_dir/run-systemd-acceptance.sh" "$extract_root"
+bash "$script_dir/run-systemd-acceptance.sh" "$payload_root"
 
 echo "linux_installer_artifact_acceptance=PASS"
