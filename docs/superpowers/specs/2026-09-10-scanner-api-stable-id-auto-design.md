@@ -211,7 +211,7 @@ wa1-twain-<digest>
 wa1-sane-<digest>
 ```
 
-where `<digest>` is unpadded base64url of:
+where `<digest>` is the full unpadded base64url encoding of the 32-byte result:
 
 ```text
 SHA-256( UTF8( backend + "\0" + nativeId ) )
@@ -224,6 +224,10 @@ wia\0<WIA_DIP_DEV_ID>
 twain\0<TWAIN ProductName/source name>
 sane\0<NAPS2 SANE device ID>
 ```
+
+The backend token is exactly lowercase `wia`, `twain`, or `sane`.
+
+`nativeId` is the exact .NET string returned by the backend address surface. It is encoded as UTF-8 exactly as received. Do not trim it, case-fold it, normalize whitespace, apply Unicode normalization, or substitute the display name. This preserves the exact address key that the backend itself resolves and avoids collapsing distinct native endpoints. A backend change to that exact address key is a legitimate scanner-identity change.
 
 The backend is included both in the digest input and in the readable prefix. This intentionally keeps WIA and TWAIN endpoints distinct even when they refer to one physical device.
 
@@ -255,13 +259,13 @@ boot-local state
 hash of display name without backend namespace
 ```
 
-### 6.4 TWAIN ambiguity
+### 6.4 Native-ID ambiguity
 
-Within one enumeration, group TWAIN endpoints by the exact backend-native address key that NAPS2 can later resolve.
+Within each backend enumeration, group endpoints by the exact backend-native address key that the backend/NAPS2 can later resolve.
 
-If more than one live TWAIN endpoint has the same address key, WebAssistant must not manufacture separate IDs by index or enumeration order.
+If more than one live endpoint in one backend has the same exact address key, WebAssistant must not manufacture separate IDs by index or enumeration order. Such endpoints are not returned as independently usable scanner endpoints. Enumeration produces an `ambiguousNativeIdentity` warning for that backend, and acquisition cannot target those ambiguous instances through a stable `scannerId`.
 
-Such endpoints are not returned as independently usable scanner endpoints. Enumeration produces a warning identifying the TWAIN ambiguity without leaking unstable identity. Acquisition cannot target an ambiguous endpoint through a stable `scannerId`.
+TWAIN is the known concrete risk because the pinned NAPS2 layer uses product/source name as its address key. The same fail-closed rule nevertheless applies to WIA or SANE if a backend unexpectedly returns duplicate address keys.
 
 This is fail-closed behavior, not silent deduplication based on physical-device guesses.
 
@@ -524,15 +528,16 @@ Linux scanner behavior must not regress due to this shared SDK extension.
 
 A public `scannerId` is resolved statelessly for each request:
 
-1. parse the `wa1-<backend>-` namespace;
-2. enumerate the indicated backend;
-3. normalize candidate native IDs;
-4. recompute their stable IDs with the same algorithm;
-5. select the exact matching endpoint;
-6. load current capabilities;
-7. validate source/duplex;
-8. resolve auto to a concrete source when requested;
-9. acquire and export PDF.
+1. validate and parse the exact `wa1-<backend>-<digest>` format;
+2. reject unsupported identity algorithm versions/backends rather than guessing;
+3. enumerate the indicated backend;
+4. normalize candidate native IDs without changing their exact value;
+5. recompute their stable IDs with the same algorithm;
+6. select the exact matching endpoint;
+7. load current capabilities;
+8. validate source/duplex;
+9. resolve auto to a concrete source when requested;
+10. acquire and export PDF.
 
 WebAssistant does not persist a reverse mapping database. This avoids stale state and makes reboot/process stability a pure function of backend-native identity.
 
@@ -546,12 +551,14 @@ P0 normalized failures:
 400 Bad Request
     malformed JSON
     missing/blank scannerId
+    malformed scannerId format
+    unsupported scanner identity algorithm version/backend prefix
     invalid source enum
     auto + duplex=true
     flatbed + duplex=true
 
 404 Not Found
-    syntactically valid scannerId does not resolve to a live endpoint
+    syntactically valid supported scannerId does not resolve to a live endpoint
 
 409 Conflict
     another physical acquisition is already active
@@ -621,9 +628,10 @@ At minimum tests must prove:
 - stable ID is independent of enumeration order;
 - stable ID is deterministic across repeated resolver instances/process-equivalent construction;
 - `scannerId` is derived only from canonical backend/native identity, not index;
-- duplicate TWAIN native address keys fail closed and do not receive index-based IDs;
+- duplicate backend-native address keys fail closed and do not receive index-based IDs;
 - one backend enumeration failure preserves endpoints from the other with a warning;
 - both backend enumeration failures produce 503;
+- malformed/unsupported `scannerId` formats produce 400 without backend guessing;
 - old source-specific routes are absent;
 - scannerId is required;
 - omitted source becomes auto;
@@ -704,7 +712,7 @@ This P0 design does not implement:
 - public `scannerId` uses the documented deterministic `wa1` algorithm;
 - real process/service restart and Windows reboot evidence confirms stable IDs;
 - WIA and TWAIN are enumerated independently and returned as separate endpoints;
-- duplicate unaddressable TWAIN native identities fail closed;
+- duplicate unaddressable native identities fail closed;
 - partial backend failure is deterministic and visible;
 - `GET /v1/scanners` exposes backend and minimal source capabilities;
 - top-level `source=auto|flatbed|feeder`, default `auto`;
