@@ -286,11 +286,11 @@ public sealed class HttpScanContractTests
                     new MemoryStream(pdfBytes, writable: false)));
         }
 
-        public Task<IReadOnlyList<ScannerDevice>> GetScannersAsync(
+        public Task<ScannerDiscoveryResult> GetScannersAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(scanners);
+            return Task.FromResult(new ScannerDiscoveryResult(scanners));
         }
 
         public Task<Stream> ScanAsync(
