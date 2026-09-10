@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Xml.Linq;
+using NAPS2.Scan;
 using Xunit;
 
 namespace WebAssistant.CoreTests;
@@ -30,6 +31,15 @@ public sealed class DependencyOwnershipTests
         var actualSha256 = Convert.ToHexString(SHA256.HashData(package)).ToLowerInvariant();
 
         Assert.Equal(ExpectedPackageSha256, actualSha256);
+    }
+
+    [Fact]
+    public void FixedSdk_ExposesNullableFeederPaperState()
+    {
+        var property = typeof(PaperSourceCaps).GetProperty("FeederHasPaper");
+
+        Assert.NotNull(property);
+        Assert.Equal(typeof(bool?), property.PropertyType);
     }
 
     [Fact]
