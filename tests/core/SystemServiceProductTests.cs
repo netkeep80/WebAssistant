@@ -14,6 +14,7 @@ public sealed class SystemServiceProductTests
         var programPath = Path.Combine(product, "src", "WebAssistant", "Program.cs");
         var packageScript = Path.Combine(product, "build", "linux", "package.sh");
         var installScript = Path.Combine(product, "install", "linux", "install.sh");
+        var runtimeDependencyScript = Path.Combine(product, "install", "linux", "runtime-dependencies.sh");
         var uninstallScript = Path.Combine(product, "install", "linux", "uninstall.sh");
         var unitFile = Path.Combine(product, "install", "linux", "webassist.service");
         var documentation = Path.Combine(product, "docs", "linux-service.md");
@@ -22,6 +23,7 @@ public sealed class SystemServiceProductTests
 
         Assert.True(File.Exists(packageScript));
         Assert.True(File.Exists(installScript));
+        Assert.True(File.Exists(runtimeDependencyScript));
         Assert.True(File.Exists(uninstallScript));
         Assert.True(File.Exists(unitFile));
         Assert.True(File.Exists(documentation));
@@ -43,13 +45,19 @@ public sealed class SystemServiceProductTests
         var packageText = File.ReadAllText(packageScript);
         Assert.Contains("linux-x64", packageText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("--self-contained true", packageText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("runtime-dependencies.sh", packageText, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(".rpm", packageText, StringComparison.OrdinalIgnoreCase);
 
         var install = File.ReadAllText(installScript);
-        Assert.Contains("apt-get", install, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("libicu74", install, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("libicu74", install, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("runtime-dependencies.sh", install, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ensure_webassistant_runtime_dependencies", install, StringComparison.Ordinal);
         Assert.Contains("systemctl", install, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("enable webassist.service", install, StringComparison.OrdinalIgnoreCase);
+
+        var runtimeDependencies = File.ReadAllText(runtimeDependencyScript);
+        Assert.Contains("apt-get", runtimeDependencies, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("libicu74", runtimeDependencies, StringComparison.OrdinalIgnoreCase);
 
         var unit = File.ReadAllText(unitFile);
         Assert.Contains("Type=notify", unit, StringComparison.Ordinal);

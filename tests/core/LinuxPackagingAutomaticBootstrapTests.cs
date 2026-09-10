@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using Xunit;
 
 namespace WebAssistant.CoreTests;
@@ -30,7 +31,8 @@ public sealed class LinuxPackagingAutomaticBootstrapTests
         WriteMarkerCommand(Path.Combine(fakeBin, "apt-get"), aptMarker, 87);
         WriteMarkerCommand(Path.Combine(fakeBin, "sudo"), sudoMarker, 86);
 
-        var packageScript = Path.Combine(FindRepositoryRoot(), "webassist", "build", "linux", "package.sh");
+        var repositoryRoot = FindRepositoryRoot();
+        var packageScript = Path.Combine(repositoryRoot, "webassist", "build", "linux", "package.sh");
         var startInfo = new ProcessStartInfo("/usr/bin/bash")
         {
             RedirectStandardOutput = true,
@@ -54,6 +56,25 @@ public sealed class LinuxPackagingAutomaticBootstrapTests
         Assert.True(File.Exists(publishMarker), "Bootstrapped SDK must perform the canonical publish.");
         Assert.False(File.Exists(aptMarker), "Automatic bootstrap must not use apt-get.");
         Assert.False(File.Exists(sudoMarker), "Automatic bootstrap must not elevate into a package manager.");
+
+        var version = File.ReadAllText(Path.Combine(repositoryRoot, "webassist", "VERSION")).Trim();
+        var rootName = $"WebAssistant-linux-x64-{version}";
+        var zipPath = Path.Combine(output, rootName + ".zip");
+        Assert.True(File.Exists(zipPath), $"Canonical Linux ZIP is missing: {zipPath}");
+
+        using var archive = ZipFile.OpenRead(zipPath);
+        var entries = archive.Entries.Select(entry => entry.FullName).ToArray();
+        Assert.NotEmpty(entries);
+        Assert.All(entries, entry => Assert.StartsWith(rootName + "/", entry, StringComparison.Ordinal));
+        Assert.Contains(rootName + "/install.sh", entries);
+        Assert.Contains(rootName + "/runtime-dependencies.sh", entries);
+        Assert.Contains(rootName + "/uninstall.sh", entries);
+        Assert.Contains(rootName + "/VERSION", entries);
+        Assert.Contains(rootName + "/webassist.service", entries);
+        Assert.Contains(rootName + "/app/WebAssistant", entries);
+        Assert.DoesNotContain(entries, entry => entry.StartsWith("/", StringComparison.Ordinal));
+        Assert.DoesNotContain(entries, entry => entry.Split('/', StringSplitOptions.RemoveEmptyEntries).Contains(".."));
+        Assert.Single(entries.Select(entry => entry.Split('/', StringSplitOptions.RemoveEmptyEntries)[0]).Distinct(StringComparer.Ordinal));
     }
 
     private static void WriteFakeDotnet(string path, string sdkVersion, string publishMarker)

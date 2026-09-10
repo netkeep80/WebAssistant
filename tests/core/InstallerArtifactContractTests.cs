@@ -79,6 +79,28 @@ public sealed class InstallerArtifactContractTests
     }
 
     [Fact]
+    public void LinuxProducer_StagesArchiveBasenameAsSingleRootBeforeCompression()
+    {
+        var linux = ReadRequired("webassist/build/linux/package.sh");
+
+        Assert.Contains("package_root_name=\"${artifact_name%.zip}\"", linux, StringComparison.Ordinal);
+        Assert.Contains("package_root=\"$staging_root/$package_root_name\"", linux, StringComparison.Ordinal);
+        Assert.Contains("cd -- \"$staging_root\"", linux, StringComparison.Ordinal);
+        Assert.Contains("zip -q -r \"$artifact_path\" \"$package_root_name\"", linux, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LinuxInstallerAcceptance_ConsumesCanonicalSingleRootWithoutRebuild()
+    {
+        var consumer = ReadRequired("tests/linux-systemd/run-installer-acceptance.sh");
+
+        Assert.Contains("payload_root=\"$extract_root/${artifact_name%.zip}\"", consumer, StringComparison.Ordinal);
+        Assert.Contains("test -x \"$payload_root/app/WebAssistant\"", consumer, StringComparison.Ordinal);
+        Assert.Contains("inside_version=\"$(tr -d '\\r\\n' < \"$payload_root/VERSION\")\"", consumer, StringComparison.Ordinal);
+        Assert.Contains("run-systemd-acceptance.sh\" \"$payload_root\"", consumer, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WindowsInstaller_UsesPinnedWix7MachineWideServiceBundle()
     {
         var props = ReadRequired("webassist/build/windows/installer/Directory.Build.props");
