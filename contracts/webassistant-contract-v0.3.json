@@ -59,12 +59,12 @@
     {
       "id": "WA-SCAN-001",
       "kind": "required",
-      "statement": "Scanner capability перечисляет устройства, использует детерминированный scannerId selection и при успешном acquisition возвращает один raw application/pdf response."
+      "statement": "GET /v1/scanners возвращает устройства с детерминированным persistent scannerId; на Windows WIA и TWAIN перечисляются независимо и оба backend входят в единый список доступных scanner endpoints. Успешный acquisition возвращает один raw application/pdf response."
     },
     {
       "id": "WA-SCAN-002",
       "kind": "required",
-      "statement": "POST /v1/scan, /v1/scan/feeder и /v1/scan/duplex передают соответственно glass, feeder и duplex source без скрытого fallback на другой source."
+      "statement": "POST /v1/scan является единственным scanner acquisition route. JSON request требует scannerId; source имеет значения auto, flatbed или feeder и по умолчанию равен auto; settings.duplex является отдельным boolean и по умолчанию false. Source-specific scanner routes отсутствуют."
     },
     {
       "id": "WA-SCAN-003",
@@ -85,6 +85,16 @@
       "id": "WA-SCAN-005",
       "kind": "boundary",
       "statement": "Scanner operation сама не выполняет edit/merge/split PDF, OCR/annotation/watermark/deskew/semantic document transformation, signing/encryption, business/backend upload и не требует business authentication или per-user business profile. Это ограничения scanner capability, а не глобальные запреты WebAssistant; независимые capabilities такого типа требуют отдельного contract/conformance change."
+    },
+    {
+      "id": "WA-SCAN-006",
+      "kind": "required",
+      "statement": "Автовыбор source использует tri-state состояние бумаги PRESENT, ABSENT или UNKNOWN: для устройства со стеклом и лотком PRESENT выбирает feeder, ABSENT и UNKNOWN выбирают flatbed; UNKNOWN никогда не трактуется как PRESENT. Явно заданный source не имеет скрытого fallback."
+    },
+    {
+      "id": "WA-SCAN-007",
+      "kind": "required",
+      "statement": "WebAssistant не хранит mutable пользовательский scanner profile или выбранные scannerId/source/settings; вызывающее приложение владеет этими настройками, сохраняет их при необходимости и передаёт в каждом scanner request."
     },
     {
       "id": "WA-DIAG-001",
