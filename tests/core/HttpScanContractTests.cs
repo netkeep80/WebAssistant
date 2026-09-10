@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,135 +30,347 @@ public sealed class HttpScanContractTests
     }
 
     [Fact]
-    public async Task Scanners_ReturnsIdAndName()
+    public async Task Scanners_ReturnsNormalizedEnvelopeCapabilitiesAndWarnings()
     {
-        var adapter = FakeScanAdapter.WithPdf(
-            [
-                new ScannerDevice("scanner-1", "Первый"),
-                new ScannerDevice("scanner-2", "Второй")
-            ],
+        var scanner = CreateScanner(
+            ScannerBackend.Wia,
+            "wia-native-1",
+            "Первый",
+            supportsFlatbed: true,
+            supportsFeeder: true,
+            supportsDuplex: true,
+            FeederPaperState.Present);
+        var adapter = FakeScanAdapter.WithDiscovery(
+            new ScannerDiscoveryResult(
+                [scanner],
+                [new ScannerDiscoveryWarning(ScannerBackend.Twain, "enumerationFailed")]),
             PdfBytes);
         using var factory = CreateFactory(adapter);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync("/v1/scanners");
         var json = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(json);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("scanner-1", json);
-        Assert.Contains("Первый", json);
-        Assert.Contains("scanner-2", json);
-        Assert.Contains("Второй", json);
+        var scanners = document.RootElement.GetProperty("scanners");
+        var item = Assert.Single(scanners.EnumerateArray().ToArray());
+        Assert.Equal(scanner.Id, item.GetProperty("scannerId").GetString());
+        Assert.Equal("Первый", item.GetProperty("name").GetString());
+        Assert.Equal("wia", item.GetProperty("backend").GetString());
+        var sources = item.GetProperty("sources");
+        Assert.True(sources.GetProperty("flatbed").GetBoolean());
+        Assert.True(sources.GetProperty("feeder").GetBoolean());
+        Assert.True(sources.GetProperty("duplex").GetBoolean());
+
+        var warning = Assert.Single(document.RootElement.GetProperty("warnings").EnumerateArray().ToArray());
+        Assert.Equal("twain", warning.GetProperty("backend").GetString());
+        Assert.Equal("enumerationFailed", warning.GetProperty("code").GetString());
+        Assert.DoesNotContain("native", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("feederPaperState", json, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task Scan_WithOneScanner_ReturnsRawPdf()
+    public async Task Scanners_UnavailableDiscovery_ReturnsServiceUnavailable()
     {
-        var adapter = FakeScanAdapter.WithPdf(
-            [new ScannerDevice("scanner-1", "Сканер")],
+        var adapter = FakeScanAdapter.WithDiscovery(
+            new ScannerDiscoveryResult(
+                [],
+                [
+                    new ScannerDiscoveryWarning(ScannerBackend.Wia, "enumerationFailed"),
+                    new ScannerDiscoveryWarning(ScannerBackend.Twain, "enumerationFailed")
+                ],
+                isAvailable: false),
             PdfBytes);
         using var factory = CreateFactory(adapter);
         using var client = factory.CreateClient();
 
-        using var response = await client.PostAsync("/v1/scan", null);
-        var body = await response.Content.ReadAsByteArrayAsync();
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("application/pdf", response.Content.Headers.ContentType?.MediaType);
-        Assert.Equal(PdfBytes, body);
-        Assert.Equal("scanner-1", adapter.LastScannerId);
-        Assert.Equal(ScanSource.Glass, adapter.LastSource);
-        Assert.Equal(1, adapter.ScanCalls);
-    }
-
-    [Fact]
-    public async Task Scan_WithNoScanners_ReturnsServiceUnavailableWithoutAcquisition()
-    {
-        var adapter = FakeScanAdapter.WithPdf([], PdfBytes);
-        using var factory = CreateFactory(adapter);
-        using var client = factory.CreateClient();
-
-        using var response = await client.PostAsync("/v1/scan", null);
+        using var response = await client.GetAsync("/v1/scanners");
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Scan_RequiresJsonBodyAndScannerId()
+    {
+        var scanner = CreateScanner(ScannerBackend.Wia, "wia-native-1", "Сканер");
+        var adapter = FakeScanAdapter.WithPdf([scanner], PdfBytes);
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var noBody = await client.PostAsync("/v1/scan", null);
+        using var noScannerId = await client.PostAsJsonAsync("/v1/scan", new { source = "auto" });
+        using var blankScannerId = await client.PostAsJsonAsync("/v1/scan", new { scannerId = "   " });
+
+        Assert.Equal(HttpStatusCode.BadRequest, noBody.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, noScannerId.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, blankScannerId.StatusCode);
         Assert.Equal(0, adapter.ScanCalls);
     }
 
     [Fact]
-    public async Task Scan_WithMultipleScanners_RequiresExplicitScannerId()
+    public async Task Scan_MinimalRequest_DefaultsToAutoAndSimplex()
     {
-        var adapter = FakeScanAdapter.WithPdf(
-            [
-                new ScannerDevice("scanner-1", "Первый"),
-                new ScannerDevice("scanner-2", "Второй")
-            ],
-            PdfBytes);
+        var scanner = CreateScanner(
+            ScannerBackend.Wia,
+            "wia-native-1",
+            "Сканер",
+            supportsFlatbed: true,
+            supportsFeeder: true,
+            supportsDuplex: true,
+            FeederPaperState.Present);
+        var adapter = FakeScanAdapter.WithPdf([scanner], PdfBytes);
         using var factory = CreateFactory(adapter);
         using var client = factory.CreateClient();
 
-        using var response = await client.PostAsync("/v1/scan", null);
-
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal(0, adapter.ScanCalls);
-        Assert.Null(adapter.LastScannerId);
-    }
-
-    [Fact]
-    public async Task Scan_ExplicitScanner_SelectsExactDevice()
-    {
-        var adapter = FakeScanAdapter.WithPdf(
-            [
-                new ScannerDevice("scanner-1", "Первый"),
-                new ScannerDevice("scanner-2", "Второй")
-            ],
-            PdfBytes);
-        using var factory = CreateFactory(adapter);
-        using var client = factory.CreateClient();
-
-        using var response = await client.PostAsync("/v1/scan?scannerId=scanner-2", null);
+        using var response = await PostScanAsync(client, new { scannerId = scanner.Id });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("scanner-2", adapter.LastScannerId);
+        Assert.Equal(scanner.Id, adapter.LastScannerId);
+        Assert.Equal(ScanSource.Feeder, adapter.LastSource);
         Assert.Equal(1, adapter.ScanCalls);
     }
 
-    [Fact]
-    public async Task Scan_UnknownScanner_ReturnsNotFoundBeforeAcquisition()
+    [Theory]
+    [InlineData("Absent")]
+    [InlineData("Unknown")]
+    public async Task Scan_AutoWithoutProvenPaperInDualSource_UsesFlatbed(string paperStateName)
     {
-        var adapter = FakeScanAdapter.WithPdf(
-            [new ScannerDevice("scanner-1", "Первый")],
-            PdfBytes);
+        var paperState = Enum.Parse<FeederPaperState>(paperStateName);
+        var scanner = CreateScanner(
+            ScannerBackend.Wia,
+            "wia-native-1",
+            "Сканер",
+            supportsFlatbed: true,
+            supportsFeeder: true,
+            supportsDuplex: false,
+            paperState);
+        var adapter = FakeScanAdapter.WithPdf([scanner], PdfBytes);
         using var factory = CreateFactory(adapter);
         using var client = factory.CreateClient();
 
-        using var response = await client.PostAsync("/v1/scan?scannerId=missing", null);
+        using var response = await PostScanAsync(client, new
+        {
+            scannerId = scanner.Id,
+            source = "auto"
+        });
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Equal(0, adapter.ScanCalls);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(ScanSource.Glass, adapter.LastSource);
     }
 
     [Fact]
-    public async Task Scan_EmptyExplicitScannerId_ReturnsBadRequestWithoutAcquisition()
+    public async Task Scan_ExplicitFlatbedAndFeederMapToExactConcreteSources()
     {
-        var adapter = FakeScanAdapter.WithPdf(
-            [new ScannerDevice("scanner-1", "Сканер")],
-            PdfBytes);
+        var scanner = CreateScanner(
+            ScannerBackend.Wia,
+            "wia-native-1",
+            "Сканер",
+            supportsFlatbed: true,
+            supportsFeeder: true,
+            supportsDuplex: true,
+            FeederPaperState.Present);
+        var adapter = FakeScanAdapter.WithPdf([scanner], PdfBytes);
         using var factory = CreateFactory(adapter);
         using var client = factory.CreateClient();
 
-        using var response = await client.PostAsync("/v1/scan?scannerId=", null);
+        using var flatbed = await PostScanAsync(client, new
+        {
+            scannerId = scanner.Id,
+            source = "flatbed"
+        });
+        Assert.Equal(HttpStatusCode.OK, flatbed.StatusCode);
+        Assert.Equal(ScanSource.Glass, adapter.LastSource);
+
+        using var feeder = await PostScanAsync(client, new
+        {
+            scannerId = scanner.Id,
+            source = "feeder"
+        });
+        Assert.Equal(HttpStatusCode.OK, feeder.StatusCode);
+        Assert.Equal(ScanSource.Feeder, adapter.LastSource);
+    }
+
+    [Fact]
+    public async Task Scan_FeederDuplexMapsToConcreteDuplexSource()
+    {
+        var scanner = CreateScanner(
+            ScannerBackend.Wia,
+            "wia-native-1",
+            "Сканер",
+            supportsFlatbed: true,
+            supportsFeeder: true,
+            supportsDuplex: true,
+            FeederPaperState.Unknown);
+        var adapter = FakeScanAdapter.WithPdf([scanner], PdfBytes);
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var response = await PostScanAsync(client, new
+        {
+            scannerId = scanner.Id,
+            source = "feeder",
+            settings = new { duplex = true }
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(ScanSource.Duplex, adapter.LastSource);
+    }
+
+    [Theory]
+    [InlineData("AUTO")]
+    [InlineData("Flatbed")]
+    [InlineData("FEEDER")]
+    [InlineData("glass")]
+    [InlineData("")]
+    public async Task Scan_SourceMustBeExactLowercasePublicValue(string source)
+    {
+        var scanner = CreateScanner(ScannerBackend.Wia, "wia-native-1", "Сканер");
+        var adapter = FakeScanAdapter.WithPdf([scanner], PdfBytes);
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var response = await PostScanAsync(client, new { scannerId = scanner.Id, source });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, adapter.ScanCalls);
+    }
+
+    [Theory]
+    [InlineData("auto")]
+    [InlineData("flatbed")]
+    public async Task Scan_DuplexWithNonFeederSource_IsBadRequest(string source)
+    {
+        var scanner = CreateScanner(
+            ScannerBackend.Wia,
+            "wia-native-1",
+            "Сканер",
+            supportsFlatbed: true,
+            supportsFeeder: true,
+            supportsDuplex: true,
+            FeederPaperState.Present);
+        var adapter = FakeScanAdapter.WithPdf([scanner], PdfBytes);
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var response = await PostScanAsync(client, new
+        {
+            scannerId = scanner.Id,
+            source,
+            settings = new { duplex = true }
+        });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(0, adapter.ScanCalls);
     }
 
     [Fact]
+    public async Task Scan_UnsupportedExplicitSource_IsUnprocessableBeforeAcquisition()
+    {
+        var scanner = CreateScanner(
+            ScannerBackend.Wia,
+            "wia-native-1",
+            "Сканер",
+            supportsFlatbed: true,
+            supportsFeeder: false,
+            supportsDuplex: false,
+            FeederPaperState.Unknown);
+        var adapter = FakeScanAdapter.WithPdf([scanner], PdfBytes);
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var response = await PostScanAsync(client, new
+        {
+            scannerId = scanner.Id,
+            source = "feeder"
+        });
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal(0, adapter.ScanCalls);
+    }
+
+    [Fact]
+    public async Task Scan_UnsupportedDuplex_IsUnprocessableBeforeAcquisition()
+    {
+        var scanner = CreateScanner(
+            ScannerBackend.Wia,
+            "wia-native-1",
+            "Сканер",
+            supportsFlatbed: true,
+            supportsFeeder: true,
+            supportsDuplex: false,
+            FeederPaperState.Unknown);
+        var adapter = FakeScanAdapter.WithPdf([scanner], PdfBytes);
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var response = await PostScanAsync(client, new
+        {
+            scannerId = scanner.Id,
+            source = "feeder",
+            settings = new { duplex = true }
+        });
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal(0, adapter.ScanCalls);
+    }
+
+    [Fact]
+    public async Task Scan_MalformedScannerId_IsBadRequestBeforeDiscoveryOrAcquisition()
+    {
+        var adapter = FakeScanAdapter.WithPdf([], PdfBytes);
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var response = await PostScanAsync(client, new { scannerId = "scanner-1" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, adapter.DiscoveryCalls);
+        Assert.Equal(0, adapter.ScanCalls);
+    }
+
+    [Fact]
+    public async Task Scan_ValidScannerIdAbsentFromAvailableBackend_IsNotFound()
+    {
+        var existing = CreateScanner(ScannerBackend.Wia, "wia-native-1", "Сканер");
+        var missingId = ScannerIdentity.Create(ScannerBackend.Wia, "wia-native-missing");
+        var adapter = FakeScanAdapter.WithPdf([existing], PdfBytes);
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var response = await PostScanAsync(client, new { scannerId = missingId });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(0, adapter.ScanCalls);
+    }
+
+    [Fact]
+    public async Task Scan_IndicatedBackendUnavailable_IsServiceUnavailable()
+    {
+        var twain = CreateScanner(ScannerBackend.Twain, "twain-native-1", "TWAIN");
+        var requestedWiaId = ScannerIdentity.Create(ScannerBackend.Wia, "wia-native-missing");
+        var adapter = FakeScanAdapter.WithDiscovery(
+            new ScannerDiscoveryResult(
+                [twain],
+                [new ScannerDiscoveryWarning(ScannerBackend.Wia, "enumerationFailed")]),
+            PdfBytes);
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var response = await PostScanAsync(client, new { scannerId = requestedWiaId });
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(0, adapter.ScanCalls);
+    }
+
+    [Fact]
     public async Task ConcurrentScan_ReturnsBusyWithoutSecondAcquisition()
     {
+        var scanner = CreateScanner(ScannerBackend.Wia, "wia-native-1", "Сканер");
         var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var adapter = new FakeScanAdapter(
-            [new ScannerDevice("scanner-1", "Сканер")],
+            new ScannerDiscoveryResult([scanner]),
             async (_, _, cancellationToken) =>
             {
                 started.TrySetResult(true);
@@ -166,14 +380,16 @@ public sealed class HttpScanContractTests
         using var factory = CreateFactory(adapter);
         using var client = factory.CreateClient();
 
-        var firstRequest = client.PostAsync("/v1/scan?scannerId=scanner-1", null);
+        var firstRequest = PostScanAsync(client, new { scannerId = scanner.Id, source = "flatbed" });
         await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         try
         {
-            using var secondResponse = await client.PostAsync(
-                "/v1/scan?scannerId=scanner-1",
-                null);
+            using var secondResponse = await PostScanAsync(client, new
+            {
+                scannerId = scanner.Id,
+                source = "flatbed"
+            });
 
             Assert.Equal(HttpStatusCode.Conflict, secondResponse.StatusCode);
             Assert.Equal(1, adapter.ScanCalls);
@@ -188,41 +404,56 @@ public sealed class HttpScanContractTests
         Assert.Equal(1, adapter.ScanCalls);
     }
 
-    [Theory]
-    [InlineData("/v1/scan", "Glass")]
-    [InlineData("/v1/scan/feeder", "Feeder")]
-    [InlineData("/v1/scan/duplex", "Duplex")]
-    public async Task ScanEndpoints_MapExactRequestedSource(
-        string endpoint,
-        string expectedSourceName)
+    [Fact]
+    public async Task Scan_SuccessReturnsRawPdf()
     {
-        var expectedSource = Enum.Parse<ScanSource>(expectedSourceName);
-        var adapter = FakeScanAdapter.WithPdf(
-            [new ScannerDevice("scanner-1", "Сканер")],
-            PdfBytes);
+        var scanner = CreateScanner(ScannerBackend.Wia, "wia-native-1", "Сканер");
+        var adapter = FakeScanAdapter.WithPdf([scanner], PdfBytes);
         using var factory = CreateFactory(adapter);
         using var client = factory.CreateClient();
 
-        using var response = await client.PostAsync(
-            endpoint + "?scannerId=scanner-1",
-            null);
+        using var response = await PostScanAsync(client, new
+        {
+            scannerId = scanner.Id,
+            source = "flatbed"
+        });
+        var body = await response.Content.ReadAsByteArrayAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(expectedSource, adapter.LastSource);
-        Assert.Equal(1, adapter.ScanCalls);
+        Assert.Equal("application/pdf", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(PdfBytes, body);
+    }
+
+    [Theory]
+    [InlineData("/v1/scan/feeder")]
+    [InlineData("/v1/scan/duplex")]
+    public async Task SupersededSourceSpecificRoutes_DoNotExist(string route)
+    {
+        var scanner = CreateScanner(ScannerBackend.Wia, "wia-native-1", "Сканер");
+        using var factory = CreateFactory(FakeScanAdapter.WithPdf([scanner], PdfBytes));
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsJsonAsync(route, new { scannerId = scanner.Id });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
     public async Task AdapterFailure_DoesNotBecomeSuccessfulPdf()
     {
+        var scanner = CreateScanner(ScannerBackend.Wia, "wia-native-1", "Сканер");
         var adapter = new FakeScanAdapter(
-            [new ScannerDevice("scanner-1", "Сканер")],
+            new ScannerDiscoveryResult([scanner]),
             (_, _, _) => Task.FromException<Stream>(
                 new InvalidOperationException("scanner failure")));
         using var factory = CreateFactory(adapter);
         using var client = factory.CreateClient();
 
-        using var response = await client.PostAsync("/v1/scan", null);
+        using var response = await PostScanAsync(client, new
+        {
+            scannerId = scanner.Id,
+            source = "flatbed"
+        });
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
         Assert.NotEqual("application/pdf", response.Content.Headers.ContentType?.MediaType);
@@ -231,13 +462,16 @@ public sealed class HttpScanContractTests
     [Fact]
     public async Task EmptyPdf_DoesNotBecomeSuccessfulDocument()
     {
-        var adapter = FakeScanAdapter.WithPdf(
-            [new ScannerDevice("scanner-1", "Сканер")],
-            []);
+        var scanner = CreateScanner(ScannerBackend.Wia, "wia-native-1", "Сканер");
+        var adapter = FakeScanAdapter.WithPdf([scanner], []);
         using var factory = CreateFactory(adapter);
         using var client = factory.CreateClient();
 
-        using var response = await client.PostAsync("/v1/scan", null);
+        using var response = await PostScanAsync(client, new
+        {
+            scannerId = scanner.Id,
+            source = "flatbed"
+        });
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
         Assert.NotEqual("application/pdf", response.Content.Headers.ContentType?.MediaType);
@@ -254,6 +488,26 @@ public sealed class HttpScanContractTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    private static ScannerDevice CreateScanner(
+        ScannerBackend backend,
+        string nativeId,
+        string name,
+        bool supportsFlatbed = true,
+        bool supportsFeeder = false,
+        bool supportsDuplex = false,
+        FeederPaperState paperState = FeederPaperState.Unknown) =>
+        new(
+            ScannerIdentity.Create(backend, nativeId),
+            name,
+            backend,
+            supportsFlatbed,
+            supportsFeeder,
+            supportsDuplex,
+            paperState);
+
+    private static Task<HttpResponseMessage> PostScanAsync(HttpClient client, object request) =>
+        client.PostAsJsonAsync("/v1/scan", request);
+
     private static WebApplicationFactory<Program> CreateFactory(IScanAdapter adapter)
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -267,38 +521,42 @@ public sealed class HttpScanContractTests
     }
 
     private sealed class FakeScanAdapter(
-        IReadOnlyList<ScannerDevice> scanners,
+        ScannerDiscoveryResult discovery,
         Func<string, ScanSource, CancellationToken, Task<Stream>> scanAsync) : IScanAdapter
     {
+        private int discoveryCalls;
         private int scanCalls;
 
         public string? LastScannerId { get; private set; }
         public ScanSource? LastSource { get; private set; }
+        public int DiscoveryCalls => Volatile.Read(ref discoveryCalls);
         public int ScanCalls => Volatile.Read(ref scanCalls);
 
         public static FakeScanAdapter WithPdf(
             IReadOnlyList<ScannerDevice> scanners,
-            byte[] pdfBytes)
-        {
-            return new FakeScanAdapter(
-                scanners,
+            byte[] pdfBytes) =>
+            WithDiscovery(new ScannerDiscoveryResult(scanners), pdfBytes);
+
+        public static FakeScanAdapter WithDiscovery(
+            ScannerDiscoveryResult discovery,
+            byte[] pdfBytes) =>
+            new(
+                discovery,
                 (_, _, _) => Task.FromResult<Stream>(
                     new MemoryStream(pdfBytes, writable: false)));
-        }
 
         public Task<ScannerDiscoveryResult> GetScannersAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(new ScannerDiscoveryResult(scanners));
+            Interlocked.Increment(ref discoveryCalls);
+            return Task.FromResult(discovery);
         }
 
         public Task<Stream> ScanAsync(
             string scannerId,
-            CancellationToken cancellationToken = default)
-        {
-            return ScanAsync(scannerId, ScanSource.Glass, cancellationToken);
-        }
+            CancellationToken cancellationToken = default) =>
+            ScanAsync(scannerId, ScanSource.Glass, cancellationToken);
 
         public Task<Stream> ScanAsync(
             string scannerId,
