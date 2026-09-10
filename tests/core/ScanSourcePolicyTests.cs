@@ -6,13 +6,14 @@ namespace WebAssistant.CoreTests;
 public sealed class ScanSourcePolicyTests
 {
     [Theory]
-    [InlineData(FeederPaperState.Present, ScanSource.Feeder)]
-    [InlineData(FeederPaperState.Absent, ScanSource.Glass)]
-    [InlineData(FeederPaperState.Unknown, ScanSource.Glass)]
-    public void Auto_DualSource_UsesTriStatePaperPolicy(
-        FeederPaperState paperState,
-        ScanSource expected)
+    [InlineData("Present", "Feeder")]
+    [InlineData("Absent", "Glass")]
+    [InlineData("Unknown", "Glass")]
+    public void Auto_DualSource_UsesTriStatePaperPolicy(string paperStateName, string expectedName)
     {
+        var paperState = Enum.Parse<FeederPaperState>(paperStateName);
+        var expected = Enum.Parse<ScanSource>(expectedName);
+
         var actual = ScanSourcePolicy.Resolve(
             RequestedScanSource.Auto,
             duplex: false,
@@ -25,11 +26,13 @@ public sealed class ScanSourcePolicyTests
     }
 
     [Theory]
-    [InlineData(FeederPaperState.Present)]
-    [InlineData(FeederPaperState.Absent)]
-    [InlineData(FeederPaperState.Unknown)]
-    public void Auto_FeederOnly_UsesFeederRegardlessOfPaperState(FeederPaperState paperState)
+    [InlineData("Present")]
+    [InlineData("Absent")]
+    [InlineData("Unknown")]
+    public void Auto_FeederOnly_UsesFeederRegardlessOfPaperState(string paperStateName)
     {
+        var paperState = Enum.Parse<FeederPaperState>(paperStateName);
+
         var actual = ScanSourcePolicy.Resolve(
             RequestedScanSource.Auto,
             duplex: false,
@@ -42,11 +45,13 @@ public sealed class ScanSourcePolicyTests
     }
 
     [Theory]
-    [InlineData(FeederPaperState.Present)]
-    [InlineData(FeederPaperState.Absent)]
-    [InlineData(FeederPaperState.Unknown)]
-    public void Auto_FlatbedOnly_UsesFlatbedRegardlessOfPaperState(FeederPaperState paperState)
+    [InlineData("Present")]
+    [InlineData("Absent")]
+    [InlineData("Unknown")]
+    public void Auto_FlatbedOnly_UsesFlatbedRegardlessOfPaperState(string paperStateName)
     {
+        var paperState = Enum.Parse<FeederPaperState>(paperStateName);
+
         var actual = ScanSourcePolicy.Resolve(
             RequestedScanSource.Auto,
             duplex: false,
@@ -97,10 +102,12 @@ public sealed class ScanSourcePolicyTests
     }
 
     [Theory]
-    [InlineData(FeederPaperState.Absent)]
-    [InlineData(FeederPaperState.Unknown)]
-    public void ExplicitFeeder_NeverFallsBackToFlatbed(FeederPaperState paperState)
+    [InlineData("Absent")]
+    [InlineData("Unknown")]
+    public void ExplicitFeeder_NeverFallsBackToFlatbed(string paperStateName)
     {
+        var paperState = Enum.Parse<FeederPaperState>(paperStateName);
+
         var actual = ScanSourcePolicy.Resolve(
             RequestedScanSource.Feeder,
             duplex: false,
