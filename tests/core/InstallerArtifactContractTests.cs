@@ -90,6 +90,17 @@ public sealed class InstallerArtifactContractTests
     }
 
     [Fact]
+    public void LinuxInstallerAcceptance_ConsumesCanonicalSingleRootWithoutRebuild()
+    {
+        var consumer = ReadRequired("tests/linux-systemd/run-installer-acceptance.sh");
+
+        Assert.Contains("payload_root=\"$extract_root/${artifact_name%.zip}\"", consumer, StringComparison.Ordinal);
+        Assert.Contains("test -x \"$payload_root/app/WebAssistant\"", consumer, StringComparison.Ordinal);
+        Assert.Contains("inside_version=\"$(tr -d '\\r\\n' < \"$payload_root/VERSION\")\"", consumer, StringComparison.Ordinal);
+        Assert.Contains("run-systemd-acceptance.sh\" \"$payload_root\"", consumer, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WindowsInstaller_UsesPinnedWix7MachineWideServiceBundle()
     {
         var props = ReadRequired("webassist/build/windows/installer/Directory.Build.props");
