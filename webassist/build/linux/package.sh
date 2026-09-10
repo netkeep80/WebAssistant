@@ -130,7 +130,8 @@ echo "Используется .NET SDK 10: $dotnet_source ($dotnet_command)"
 
 mkdir -p -- "$output_root"
 staging_root="$(mktemp -d "$output_root/.webassistant-linux-stage.XXXXXX")"
-package_root="$staging_root/package"
+package_root_name="${artifact_name%.zip}"
+package_root="$staging_root/$package_root_name"
 app_directory="$package_root/app"
 
 cleanup_staging() {
@@ -176,8 +177,8 @@ chmod +x -- "$package_root/install.sh" "$package_root/uninstall.sh"
 
 rm -f -- "$artifact_path" "${artifact_path}.sha256" "${artifact_path}.provenance.json"
 (
-    cd -- "$package_root"
-    zip -q -r "$artifact_path" .
+    cd -- "$staging_root"
+    zip -q -r "$artifact_path" "$package_root_name"
 )
 
 [[ -f "$artifact_path" ]] || {
