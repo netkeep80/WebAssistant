@@ -4,7 +4,7 @@
 
 **Goal:** Produce the next WebAssistant Linux candidate with a same-name single ZIP root, ALT Linux 10.1-compatible runtime dependency detection, and only dependency-graph-safe Linux platform cleanup, without changing scanner API semantics.
 
-**Architecture:** Keep packaging, installation dependency resolution, and platform-purity as independently reviewable units. Packaging creates the final archive topology before hashing; installation uses capability probes with package resolution only for missing capabilities; platform-purity is attempted only at the MSBuild/NuGet boundary and is deferred if it requires scanner/API redesign. VERSION changes exactly once only after all accepted implementation work is GREEN.
+**Architecture:** Keep packaging, installation dependency resolution, and platform-purity as independently reviewable units. Packaging creates the final archive topology before hashing; installation uses capability probes with package resolution only for missing capabilities; platform-purity is attempted only at the MSBuild/NuGet/service-host boundary and is deferred if it requires scanner/API redesign. VERSION changes exactly once only after all accepted implementation work is GREEN.
 
 **Tech Stack:** Bash, .NET 10 / C#, xUnit, MSBuild/NuGet, GitHub Actions, repo-guard, ALT Linux apt-rpm/systemd/SANE.
 
@@ -39,13 +39,7 @@
 
 - [ ] **Step 1: Create the implementation branch from the plan commit**
 
-Create:
-
-```text
-feature/186-188-linux-distribution-corrections
-```
-
-from the exact plan commit so the approved spec and plan travel with implementation.
+Create `feature/186-188-linux-distribution-corrections` from the exact plan commit so the approved spec and plan travel with implementation.
 
 - [ ] **Step 2: Open a Draft PR**
 
@@ -68,13 +62,7 @@ and a repo-guard ChangeIntent limiting the initial implementation surface to pac
 
 - [ ] **Step 3: Verify no source mutation occurred before RED**
 
-Read `webassist/VERSION`; expected:
-
-```text
-0.3.20
-```
-
-Confirm `main` remains `bcfc06bb207d5f0f9f58436e8e73d76f26ab9e9b` and Draft `v0.3.20` is not edited.
+Read `webassist/VERSION`; expected `0.3.20`. Confirm `main` remains `bcfc06bb207d5f0f9f58436e8e73d76f26ab9e9b` and Draft `v0.3.20` is not edited.
 
 ---
 
@@ -91,7 +79,7 @@ Confirm `main` remains `bcfc06bb207d5f0f9f58436e8e73d76f26ab9e9b` and Draft `v0.
 
 - [ ] **Step 1: Extend the existing fake-publish package test to inspect the generated ZIP**
 
-After `package.sh` succeeds in `LinuxPackage_WithoutSdk_AutomaticallyBootstrapsDotnet10ByDefault`, locate the only canonical ZIP in the output directory and add assertions equivalent to:
+Add `using System.IO.Compression;`. After `package.sh` succeeds in `LinuxPackage_WithoutSdk_AutomaticallyBootstrapsDotnet10ByDefault`, add:
 
 ```csharp
 var version = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "webassist", "VERSION")).Trim();
@@ -110,12 +98,13 @@ Assert.Contains(rootName + "/webassist.service", entries);
 Assert.Contains(rootName + "/app/WebAssistant", entries);
 Assert.DoesNotContain(entries, entry => entry.StartsWith("/", StringComparison.Ordinal));
 Assert.DoesNotContain(entries, entry => entry.Split('/', StringSplitOptions.RemoveEmptyEntries).Contains(".."));
-Assert.Single(entries.Select(entry => entry.Split('/', StringSplitOptions.RemoveEmptyEntries)[0]).Distinct(StringComparer.Ordinal));
+Assert.Single(entries
+    .Where(entry => entry.Length > 0)
+    .Select(entry => entry.Split('/', StringSplitOptions.RemoveEmptyEntries)[0])
+    .Distinct(StringComparer.Ordinal));
 ```
 
-Add `using System.IO.Compression;` at the top.
-
-- [ ] **Step 2: Add static contract coverage for the staging model**
+- [ ] **Step 2: Add static contract coverage matching the intended staging implementation**
 
 In `InstallerArtifactContractTests.cs`, add:
 
@@ -123,15 +112,15 @@ In `InstallerArtifactContractTests.cs`, add:
 [Fact]
 public void LinuxProducer_StagesArchiveBasenameAsSingleRootBeforeCompression()
 {
-    var version = ReadRequired("webassist/VERSION").Trim();
     var linux = ReadRequired("webassist/build/linux/package.sh");
-    Assert.Contains("package_root=\"$staging_root/WebAssistant-linux-x64-${version}\"", linux, StringComparison.Ordinal);
+    Assert.Contains("package_root_name=\"${artifact_name%.zip}\"", linux, StringComparison.Ordinal);
+    Assert.Contains("package_root=\"$staging_root/$package_root_name\"", linux, StringComparison.Ordinal);
     Assert.Contains("cd -- \"$staging_root\"", linux, StringComparison.Ordinal);
-    Assert.Contains("zip -q -r \"$artifact_path\" \"WebAssistant-linux-x64-${version}\"", linux, StringComparison.Ordinal);
+    Assert.Contains("zip -q -r \"$artifact_path\" \"$package_root_name\"", linux, StringComparison.Ordinal);
 }
 ```
 
-This static test intentionally fails on the current `package_root="$staging_root/package"` implementation.
+This intentionally fails on current `package_root="$staging_root/package"` and `zip ... .` behavior.
 
 - [ ] **Step 3: Commit tests only**
 
@@ -143,9 +132,9 @@ test(linux): require same-name single-root ZIP layout RED
 
 Do not edit `package.sh` or VERSION yet.
 
-- [ ] **Step 4: Run/observe exact RED**
+- [ ] **Step 4: Observe exact RED**
 
-Run through CI core tests on the exact tests-only head. Expected failures must be the new ZIP-root assertions; no compile/syntax failure counts as valid RED.
+Use CI core tests on the exact tests-only head. Expected failures are only the new ZIP-root assertions. Compile/syntax errors do not count as valid RED.
 
 ---
 
@@ -162,13 +151,13 @@ Run through CI core tests on the exact tests-only head. Expected failures must b
 
 - [ ] **Step 1: Replace the generic package staging directory**
 
-Change:
+Replace:
 
 ```bash
 package_root="$staging_root/package"
 ```
 
-to:
+with:
 
 ```bash
 package_root_name="${artifact_name%.zip}"
@@ -197,11 +186,7 @@ with:
 )
 ```
 
-Do not touch the artifact after provenance/checksum generation.
-
-- [ ] **Step 3: Run the focused tests**
-
-Run:
+- [ ] **Step 3: Run focused tests**
 
 ```bash
 dotnet test tests/core/WebAssistant.CoreTests.csproj --filter "FullyQualifiedName~LinuxPackagingAutomaticBootstrapTests|FullyQualifiedName~InstallerArtifactContractTests"
@@ -211,28 +196,27 @@ Expected: PASS.
 
 - [ ] **Step 4: Commit #186 GREEN**
 
-Commit message:
-
 ```text
 fix(linux): package under canonical same-name ZIP root
 ```
 
 ---
 
-### Task 4: #187 — isolate and RED-test ALT runtime capability resolution
+### Task 4: #187 — RED-test ALT runtime capability resolution
 
 **Files:**
-- Create: `webassist/install/linux/runtime-dependencies.sh`
-- Create: `tests/core/LinuxRuntimeDependencyTests.cs`
-- Modify later: `webassist/install/linux/install.sh`
+- Create tests: `tests/core/LinuxRuntimeDependencyTests.cs`
+- Modify tests: `tests/core/SystemServiceProductTests.cs`
+- Later create: `webassist/install/linux/runtime-dependencies.sh`
+- Later modify: `webassist/install/linux/install.sh`
 
 **Interfaces:**
-- Consumes: host commands `ldconfig`, `scanimage`, `apt-cache`, `apt-get` and package/runtime state.
-- Produces: shell function `ensure_webassistant_runtime_dependencies` returning 0 only when ICU, GTK3, libsane and scanimage capabilities are present after optional resolution.
+- Consumes: host commands `ldconfig`, `scanimage`, `apt-cache`, `apt-get` and runtime state.
+- Produces after GREEN: shell function `ensure_webassistant_runtime_dependencies` returning 0 only when ICU, GTK3, libsane and scanimage capabilities are present after optional resolution.
 
-- [ ] **Step 1: Add tests before creating the helper**
+- [ ] **Step 1: Add behavioral tests before creating the helper**
 
-Create `LinuxRuntimeDependencyTests.cs` with a temporary fake `PATH`. Tests invoke:
+Create `LinuxRuntimeDependencyTests.cs` with a temporary fake `PATH`. Invoke:
 
 ```bash
 bash -c 'source "$RUNTIME_HELPER"; ensure_webassistant_runtime_dependencies'
@@ -247,7 +231,7 @@ MissingCapability_WithNoResolvablePackage_FailsActionably
 RuntimeDependencyContract_ContainsNoHardCodedLibicuMajor
 ```
 
-For the ALT 10.1 fixture, fake `ldconfig -p` must print:
+ALT 10.1 fixture fake `ldconfig -p` output:
 
 ```text
 libicuuc.so.69
@@ -257,44 +241,48 @@ libgtk-3.so.0
 libsane.so.1
 ```
 
-and fake `scanimage` must exist. Fake `apt-get` writes a marker and exits non-zero; the test asserts the marker was never created.
+and fake `scanimage` exists. Fake `apt-get` writes a marker then exits non-zero. Assert the marker is absent when all capabilities already exist.
 
-For missing ICU, fake `apt-cache pkgnames` prints:
+Missing-ICU fixture: fake `apt-cache pkgnames` prints:
 
 ```text
 libicu69
 libicu-data
 ```
 
-The helper must choose `libicu69`, call `apt-get update`, then `apt-get install -y libicu69`, and re-probe capabilities. The fake `ldconfig` switches from missing to present after the install marker exists.
+Expect `apt-get update`, then `apt-get install -y libicu69`; fake `ldconfig` switches to ICU-present after that install marker.
 
-For unresolvable ICU, fake `apt-cache pkgnames` prints no `libicu[0-9]+`; expected non-zero exit with stderr containing `ICU` and `не найдена` or equivalent actionable text.
+Unresolvable-ICU fixture: `apt-cache pkgnames` has no `libicu[0-9]+`; expect non-zero and stderr naming the ICU capability and inability to resolve a package.
 
-- [ ] **Step 2: Add a current-install regression assertion**
+- [ ] **Step 2: Update the existing system-service contract to the new helper boundary**
 
-Update `SystemServiceProductTests.LinuxPackage_ContainsHardenedSystemdLifecycleSurface` by replacing the old positive assertion:
+In `SystemServiceProductTests.LinuxPackage_ContainsHardenedSystemdLifecycleSurface`, add:
 
 ```csharp
-Assert.Contains("libicu74", install, StringComparison.OrdinalIgnoreCase);
+var runtimeDependenciesPath = Path.Combine(product, "install", "linux", "runtime-dependencies.sh");
+Assert.True(File.Exists(runtimeDependenciesPath));
 ```
 
-with:
+and after reading `install.sh`:
 
 ```csharp
-Assert.DoesNotContain("libicu74", install, StringComparison.OrdinalIgnoreCase);
+var runtimeDependencies = File.ReadAllText(runtimeDependenciesPath);
 Assert.Contains("runtime-dependencies.sh", install, StringComparison.OrdinalIgnoreCase);
 Assert.Contains("ensure_webassistant_runtime_dependencies", install, StringComparison.Ordinal);
+Assert.DoesNotContain("libicu74", install, StringComparison.OrdinalIgnoreCase);
+Assert.Contains("apt-get", runtimeDependencies, StringComparison.OrdinalIgnoreCase);
+Assert.DoesNotContain("libicu74", runtimeDependencies, StringComparison.OrdinalIgnoreCase);
 ```
 
-- [ ] **Step 3: Commit tests only and observe RED**
+Remove the old assertions requiring `apt-get` and `libicu74` directly inside `install.sh`; package-manager ownership moves to the helper.
 
-Commit message:
+- [ ] **Step 3: Commit tests only and observe RED**
 
 ```text
 test(alt): require capability-based runtime dependencies RED
 ```
 
-Expected RED: helper missing plus old `libicu74` contract still present. No production edit and no VERSION bump.
+Expected RED: helper missing and old `libicu74` contract present. No production edit and no VERSION bump.
 
 ---
 
@@ -306,24 +294,27 @@ Expected RED: helper missing plus old `libicu74` contract still present. No prod
 - Modify: `webassist/build/linux/package.sh`
 - Test: `tests/core/LinuxRuntimeDependencyTests.cs`
 - Test: `tests/core/SystemServiceProductTests.cs`
+- Test: `tests/core/LinuxPackagingAutomaticBootstrapTests.cs`
 
 **Interfaces:**
 - `runtime-dependencies.sh` exports `ensure_webassistant_runtime_dependencies`.
-- `install.sh` sources `runtime-dependencies.sh` from its own directory and calls the function before user/service installation.
-- `package.sh` includes `runtime-dependencies.sh` inside the canonical ZIP root next to `install.sh`.
+- `install.sh` sources it from its own package directory and invokes it before user/service installation.
+- `package.sh` includes it next to `install.sh` under the canonical ZIP root.
 
 - [ ] **Step 1: Implement capability probes**
 
-Create `runtime-dependencies.sh` with:
+Create:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
 webassistant_has_icu() {
-    ldconfig -p 2>/dev/null | grep -Eq 'libicuuc\.so\.[0-9]+' &&
-    ldconfig -p 2>/dev/null | grep -Eq 'libicui18n\.so\.[0-9]+' &&
-    ldconfig -p 2>/dev/null | grep -Eq 'libicudata\.so\.[0-9]+'
+    local cache
+    cache="$(ldconfig -p 2>/dev/null || true)"
+    grep -Eq 'libicuuc\.so\.[0-9]+' <<<"$cache" &&
+    grep -Eq 'libicui18n\.so\.[0-9]+' <<<"$cache" &&
+    grep -Eq 'libicudata\.so\.[0-9]+' <<<"$cache"
 }
 
 webassistant_has_gtk3() {
@@ -339,26 +330,32 @@ webassistant_has_scanimage() {
 }
 ```
 
-Do not encode any `libicuNN` major in capability checks.
+Do not encode any ICU major.
 
-- [ ] **Step 2: Implement deterministic ICU package discovery**
+- [ ] **Step 2: Implement deterministic ICU package discovery in Bash only**
 
-Add:
+Use `apt-cache pkgnames`, selecting the numerically greatest exact `libicuNN` package without `sed`/`sort` dependencies:
 
 ```bash
 webassistant_resolve_icu_package() {
-    apt-cache pkgnames 2>/dev/null |
-        sed -n -E 's/^(libicu([0-9]+))$/\2 \1/p' |
-        sort -nr |
-        awk 'NR == 1 { print $2 }'
+    local package best_package="" best_major=-1
+    while IFS= read -r package; do
+        if [[ "$package" =~ ^libicu([0-9]+)$ ]]; then
+            local major="${BASH_REMATCH[1]}"
+            if (( major > best_major )); then
+                best_major="$major"
+                best_package="$package"
+            fi
+        fi
+    done < <(apt-cache pkgnames 2>/dev/null || true)
+    [[ -n "$best_package" ]] || return 1
+    printf '%s\n' "$best_package"
 }
 ```
 
-If no package is returned, fail with an ICU-specific actionable message rather than guessing a major.
-
 - [ ] **Step 3: Map other missing capabilities to stable ALT package names**
 
-Use the exact mapping:
+Exact mapping:
 
 ```text
 GTK3 shared library -> libgtk+3
@@ -366,29 +363,22 @@ libsane shared library -> libsane
 scanimage command -> sane
 ```
 
-Build an array only for capabilities that are actually missing. ICU contributes the dynamically resolved `libicuNN` package name.
+Build `missing_packages` only for actually missing capabilities; ICU contributes the dynamically resolved package.
 
 - [ ] **Step 4: Install only missing packages and re-probe**
 
-The helper must:
+Only if `missing_packages` is non-empty, require `apt-get` and `apt-cache`, run:
 
 ```bash
 apt-get update
 apt-get install -y "${missing_packages[@]}"
 ```
 
-only when `missing_packages` is non-empty, then re-run all four probes. If any capability remains absent, exit non-zero with the missing capability names.
+then re-run all capability probes. If anything remains absent, exit non-zero and print the missing capability names.
 
 - [ ] **Step 5: Wire helper into `install.sh`**
 
-Remove:
-
-```bash
-runtime_packages=(libicu74 libgtk+3 libsane sane)
-runtime_dependencies_installed() { ... }
-```
-
-and the old package-loop block. Add near the path definitions:
+Remove the `runtime_packages=(libicu74 ...)` array, `runtime_dependencies_installed`, and old apt block. Add after root validation and package-path setup:
 
 ```bash
 runtime_helper="$script_dir/runtime-dependencies.sh"
@@ -401,22 +391,20 @@ source "$runtime_helper"
 ensure_webassistant_runtime_dependencies
 ```
 
-Keep root validation before package-manager mutation.
+Keep root validation before any package-manager mutation.
 
 - [ ] **Step 6: Package the helper**
 
-In `package.sh`, add:
+In `package.sh`:
 
 ```bash
 cp -- "$install_root/runtime-dependencies.sh" "$package_root/runtime-dependencies.sh"
 chmod +x -- "$package_root/runtime-dependencies.sh"
 ```
 
-and add it to package integrity assertions/tests.
+Extend the ZIP-entry test to require `${rootName}/runtime-dependencies.sh`.
 
 - [ ] **Step 7: Run focused tests**
-
-Run:
 
 ```bash
 dotnet test tests/core/WebAssistant.CoreTests.csproj --filter "FullyQualifiedName~LinuxRuntimeDependencyTests|FullyQualifiedName~SystemServiceProductTests|FullyQualifiedName~LinuxPackagingAutomaticBootstrapTests"
@@ -425,8 +413,6 @@ dotnet test tests/core/WebAssistant.CoreTests.csproj --filter "FullyQualifiedNam
 Expected: PASS.
 
 - [ ] **Step 8: Commit #187 GREEN**
-
-Commit message:
 
 ```text
 fix(alt): resolve Linux runtime dependencies by capability
@@ -441,56 +427,54 @@ fix(alt): resolve Linux runtime dependencies by capability
 - Potential later modifications: `webassist/src/WebAssistant/WebAssistant.csproj`, `webassist/src/WebAssistant/Program.cs`
 
 **Interfaces:**
-- Consumes: actual `dotnet publish -r linux-x64 --self-contained true` output and `WebAssistant.deps.json`.
-- Produces: evidence distinguishing Windows native payload (forbidden) from Windows-oriented managed assemblies (cleanup candidate).
+- Consumes: actual `dotnet publish -r linux-x64 --self-contained true` output.
+- Produces: evidence distinguishing forbidden Windows native payload from Windows-oriented managed cleanup candidates.
 
 - [ ] **Step 1: Add an actual Linux publish inventory test**
 
-On Linux only, run canonical project publish into a temporary directory using the available .NET 10 SDK and assert first that native Windows payload never appears:
+On Linux only, run canonical project publish into a temporary directory and enumerate all output files. Enforce the already-proven native boundary:
 
 ```csharp
 Assert.DoesNotContain(files, path => path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
 Assert.DoesNotContain(files, path => path.Contains("runtimes/win-", StringComparison.OrdinalIgnoreCase));
 ```
 
-Then add RED assertions for the two direct Windows-only package outputs currently caused by unconditional references:
+Then add intentional RED assertions only for the two direct unconditional Windows package outputs:
 
 ```csharp
 Assert.DoesNotContain(files, path => path.EndsWith("Microsoft.Extensions.Hosting.WindowsServices.dll", StringComparison.OrdinalIgnoreCase));
 Assert.DoesNotContain(files, path => path.EndsWith("NAPS2.Sdk.Worker.Win32.dll", StringComparison.OrdinalIgnoreCase));
 ```
 
-Do not initially ban `NAPS2.Wia.dll`, `WindowsBase.dll`, `NTwain.dll`, or all `Microsoft.Win32.*` files by name; those may be transitive/cross-platform compile assets and need separate reachability evidence.
+Do not initially ban `NAPS2.Wia.dll`, `WindowsBase.dll`, `NTwain.dll`, or all `Microsoft.Win32.*` files by name.
 
 - [ ] **Step 2: Commit audit test only and observe RED**
-
-Commit message:
 
 ```text
 test(linux): expose direct Windows runtime dependencies RED
 ```
 
-Expected: the two direct Windows-oriented assemblies are present in current linux-x64 publish; native-Windows assertions remain GREEN.
+Expected: the two direct Windows-oriented assemblies are present; native-Windows assertions remain GREEN.
 
 ---
 
-### Task 7: #188 — attempt the narrow dependency-graph cleanup, with an explicit stop branch
+### Task 7: #188 — attempt narrow dependency-graph cleanup with an explicit stop branch
 
 **Files:**
 - Potentially modify: `webassist/src/WebAssistant/WebAssistant.csproj`
 - Potentially modify: `webassist/src/WebAssistant/Program.cs`
 - Test: `tests/core/LinuxPublishPlatformPurityTests.cs`
-- Test: existing Windows/Linux build and scanner suites.
+- Existing Windows/Linux build and scanner suites.
 
 **Interfaces:**
-- Consumes: RED evidence from Task 6.
-- Produces one of two explicit outcomes:
-  - **Outcome A:** safe dependency-graph cleanup merged into this transaction and #188 can close;
-  - **Outcome B:** no production cleanup; RED audit assertions specific to managed cleanup are reverted/converted to documented inventory evidence, #188 remains open, and #186/#187 continue unblocked.
+- Consumes: Task 6 RED evidence.
+- Produces exactly one outcome:
+  - **Outcome A:** safe dependency-graph cleanup, #188 may close.
+  - **Outcome B:** production experiment reverted, native purity audit retained, #188 stays open.
 
-- [ ] **Step 1: Try MSBuild runtime-asset conditioning without scanner changes**
+- [ ] **Step 1: First narrow experiment — exclude runtime assets only for linux-x64**
 
-First attempt only this narrow project-level change:
+Split the two direct Windows references as:
 
 ```xml
 <ItemGroup Condition="'$(RuntimeIdentifier)' == 'linux-x64'">
@@ -503,56 +487,78 @@ First attempt only this narrow project-level change:
 </ItemGroup>
 ```
 
-Keep `Systemd`, fixed SDK, GDI and GTK references unchanged initially. Do not edit `Scanning/**`.
+Keep Systemd, fixed SDK, GDI, GTK unchanged and do not edit `Scanning/**`.
 
-- [ ] **Step 2: Run Linux publish/startup and Windows compile tests immediately**
-
-Run:
+- [ ] **Step 2: Publish and test Linux startup immediately**
 
 ```bash
 dotnet publish webassist/src/WebAssistant/WebAssistant.csproj -c Release -r linux-x64 --self-contained true -o /tmp/webassistant-linux-purity
-/tmp/webassistant-linux-purity/WebAssistant --urls http://127.0.0.1:0
 ```
 
-and the repository's existing core/Windows scanner/build tests through CI. The process only needs to reach successful host startup; stop it after the startup evidence is observed.
+Start `/tmp/webassistant-linux-purity/WebAssistant`, wait for successful host startup/health, then terminate it. Also run the purity test and existing Linux scanner tests.
 
-- [ ] **Step 3A: If runtime asset exclusion succeeds cleanly, keep it**
+- [ ] **Step 3: If startup fails specifically because WindowsServices runtime assembly is absent, make one permitted service-host guard attempt**
 
-Conditions for Outcome A are all mandatory:
+Change only the current unconditional registration:
+
+```csharp
+builder.Services.AddWindowsService(options =>
+{
+    options.ServiceName = "WebAssistant";
+});
+```
+
+to:
+
+```csharp
+if (OperatingSystem.IsWindows())
+{
+    builder.Services.AddWindowsService(options =>
+    {
+        options.ServiceName = "WebAssistant";
+    });
+}
+```
+
+This changes hosting registration only, not scanner API or adapters. Re-run Linux publish/startup and Windows build/service tests.
+
+- [ ] **Step 4A: Keep cleanup only if every boundary is GREEN**
+
+Mandatory conditions:
 
 ```text
 Linux publish succeeds
 both direct Windows runtime assemblies are absent
-Linux WebAssistant startup succeeds
+Linux startup/health succeeds
 Linux scanner tests remain GREEN
 Windows compile/scanner/service tests remain GREEN
 no Scanning/** or API changes were needed
 ```
 
-If all hold, keep the project conditioning and let the Task 6 RED assertions become GREEN. Commit:
+If all hold, keep the project/service-host conditioning and commit:
 
 ```text
 fix(linux): exclude direct Windows-only runtime assets
 ```
 
-Then #188 can be closed by the eventual PR.
+The final PR may change `Refs #188` to `Closes #188`.
 
-- [ ] **Step 3B: If any condition fails, revert only the #188 production experiment**
+- [ ] **Step 4B: Otherwise revert only #188 production experimentation**
 
-Return `WebAssistant.csproj`/`Program.cs` to their pre-Task-7 state. Change `LinuxPublishPlatformPurityTests` so it permanently enforces only the already-proven native boundary:
+Restore `WebAssistant.csproj` and `Program.cs` exactly to their pre-Task-7 state. Convert `LinuxPublishPlatformPurityTests` to permanently enforce only:
 
 ```csharp
 Assert.DoesNotContain(files, path => path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
 Assert.DoesNotContain(files, path => path.Contains("runtimes/win-", StringComparison.OrdinalIgnoreCase));
 ```
 
-and records the managed-assembly cleanup as deferred evidence in an issue comment on #188. Do not weaken #186/#187 tests. Commit the audit evidence as:
+Comment on #188 with the exact failed boundary and evidence. Keep `Refs #188`; #188 remains OPEN. Commit retained audit evidence as:
 
 ```text
 test(linux): preserve native platform-purity boundary
 ```
 
-#188 stays OPEN and the PR body remains `Refs #188`, not `Closes #188`.
+Do not weaken #186/#187 tests.
 
 ---
 
@@ -560,37 +566,32 @@ test(linux): preserve native platform-purity boundary
 
 **Files:**
 - Modify: `webassist/VERSION`
-- Update test fixtures only if they intentionally embed the current product version.
-- No semantic contract/policy files.
+- Update only current-version test fixtures that intentionally model the accepted transition.
 
 **Interfaces:**
-- Consumes: GREEN #186/#187 and whichever explicit #188 outcome was accepted.
-- Produces: one monotonic product transition `0.3.20 -> 0.3.21`.
+- Consumes: GREEN #186/#187 and explicit #188 Outcome A or B.
+- Produces: exactly one monotonic product transition `0.3.20 -> 0.3.21`.
 
 - [ ] **Step 1: Run core tests before VERSION bump**
-
-Run:
 
 ```bash
 dotnet test tests/core/WebAssistant.CoreTests.csproj
 ```
 
-Expected: all tests GREEN except any governance rule that intentionally requires accepted-transition VERSION monotonicity only at final PR head.
+Expected: implementation tests GREEN; repo-guard VERSION monotonicity may remain intentionally RED until the final version commit.
 
-- [ ] **Step 2: Confirm generated Linux ZIP topology with a real .NET 10 publish**
-
-Run canonical producer:
+- [ ] **Step 2: Build a local canonical Linux package only as pre-merge test evidence**
 
 ```bash
 WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0 webassist/build/linux/package.sh /tmp/webassistant-linux-artifacts
 unzip -Z1 /tmp/webassistant-linux-artifacts/WebAssistant-linux-x64-0.3.20.zip
 ```
 
-Expected: every entry starts with `WebAssistant-linux-x64-0.3.20/` and exactly one top-level directory exists.
+Expected: every entry starts with `WebAssistant-linux-x64-0.3.20/`; exactly one top-level directory exists. This is test evidence, not the future frozen release candidate.
 
 - [ ] **Step 3: Bump VERSION exactly once**
 
-Change only:
+Change `webassist/VERSION`:
 
 ```text
 0.3.20
@@ -602,21 +603,19 @@ to:
 0.3.21
 ```
 
-Update version-pinned release test fixtures from `0.3.20/0.3.19` to `0.3.21/0.3.20` only where they model the current transition; do not change historical evidence unnecessarily.
+Update release test fixtures from current/base `0.3.20/0.3.19` to `0.3.21/0.3.20` only where they model the current transition; leave historical evidence untouched.
 
 - [ ] **Step 4: Commit final product transition**
-
-Commit message:
 
 ```text
 chore(version): advance WebAssistant to 0.3.21
 ```
 
-No subsequent implementation commit may change VERSION again in this PR.
+No later implementation commit in this PR may bump VERSION again.
 
 ---
 
-### Task 9: Ready/full distribution acceptance and merge
+### Task 9: Ready/full distribution acceptance and exact-head merge
 
 **Files:**
 - No new implementation files unless a failing acceptance test proves a defect.
@@ -626,21 +625,21 @@ No subsequent implementation commit may change VERSION again in this PR.
 - Consumes: exact final feature head with VERSION 0.3.21.
 - Produces: exact accepted merge transition eligible for frozen-main resolver.
 
-- [ ] **Step 1: Run Draft fast feedback**
+- [ ] **Step 1: Require Draft fast-feedback GREEN**
 
-Require exact-head core and repo-guard evidence. Any failure must be diagnosed before Ready; no no-op commits solely to retrigger metadata.
+Require exact-head core and repo-guard evidence. Diagnose any failure before Ready.
 
-- [ ] **Step 2: Update PR ChangeIntent to actual final scope**
+- [ ] **Step 2: Reconcile PR ChangeIntent with final #188 outcome**
 
-If #188 Outcome A succeeded, PR body may use `Closes #188`; otherwise keep `Refs #188` and comment the defer reason in #188. Budgets must reflect exact final diff rather than relaxing unrelated policy.
+If Outcome A succeeded, use `Closes #188`; otherwise keep `Refs #188` and record defer evidence in #188. Budgets reflect actual diff only.
 
-- [ ] **Step 3: Mark PR Ready without changing SHA**
+- [ ] **Step 3: Mark Ready without changing SHA**
 
-Ready must trigger the full distribution-sensitive CI classification.
+Ready must trigger full distribution-sensitive CI.
 
 - [ ] **Step 4: Require full exact-head GREEN**
 
-Verify all applicable gates:
+Verify:
 
 ```text
 core
@@ -653,17 +652,11 @@ scanner smoke/final regression matrix
 ci-required
 ```
 
-For the Linux producer artifact, inspect ZIP entries and platform inventory from the produced bytes; do not rebuild for inspection.
+Inspect the Linux producer artifact from that exact run rather than rebuilding it for review.
 
 - [ ] **Step 5: Merge with exact-head guard**
 
-Use normal merge commit, not direct push/squash, preserving resolver identity:
-
-```text
-main merge SHA -> exact accepted PR head
-```
-
-Verify post-merge main, VERSION 0.3.21, auto-close #186/#187, and #188 state according to Outcome A/B.
+Use normal merge commit, not direct push/squash. Verify post-merge main, VERSION 0.3.21, #186/#187 closed, and #188 state matches Outcome A/B.
 
 ---
 
@@ -679,18 +672,9 @@ Verify post-merge main, VERSION 0.3.21, auto-close #186/#187, and #188 state acc
 
 - [ ] **Step 1: Freeze exact post-merge main**
 
-Verify:
+Verify open repository-side PRs = 0, current authority = v0.2, v0.3 remains candidate/accepted=false, and no conflicting `v0.3.21` Release/tag exists. Leave abandoned `v0.3.20` Draft untouched.
 
-```text
-open repository-side PRs = 0
-current authority = v0.2
-v0.3 remains candidate/accepted=false
-no conflicting v0.3.21 Release/tag
-```
-
-Abandoned `v0.3.20` Draft remains untouched.
-
-- [ ] **Step 2: Dispatch `release-candidate.yml` once for exact frozen SHA**
+- [ ] **Step 2: Dispatch `release-candidate.yml` once**
 
 Input:
 
@@ -700,21 +684,13 @@ source_sha=<exact new main merge SHA>
 
 Require resolver -> producers -> same-byte acceptance -> Draft staging SUCCESS.
 
-- [ ] **Step 3: Verify staged Linux artifact structure without rebuilding**
+- [ ] **Step 3: Verify staged Linux artifact without rebuilding**
 
-Download the exact staged `WebAssistant-linux-x64-0.3.21.zip` and verify:
-
-```text
-single top-level directory = WebAssistant-linux-x64-0.3.21
-no direct root payload
-no traversal/absolute entries
-```
-
-Verify SHA/provenance against Draft metadata.
+Download exact staged `WebAssistant-linux-x64-0.3.21.zip`; verify one top-level `WebAssistant-linux-x64-0.3.21/`, no direct-root payload, no traversal/absolute entries, and SHA/provenance match Draft metadata.
 
 - [ ] **Step 4: Retest exact staged bytes on real ALT Workstation 10.1**
 
-User flow becomes:
+User flow:
 
 ```bash
 unzip WebAssistant-linux-x64-0.3.21.zip
@@ -727,7 +703,7 @@ Expected:
 ```text
 no libicu74 lookup
 existing ICU 69 accepted
-no unnecessary apt mutation when all capabilities are present
+no apt mutation when all capabilities are present
 systemd service active
 /v1/health responds
 /v1/scanners responds
@@ -735,4 +711,4 @@ restart succeeds
 uninstall succeeds
 ```
 
-Use these results as final ALT 10.1 evidence for the installation guide; do not modify source or installer bytes after this point.
+Use this as final ALT 10.1 evidence for the installation guide; source and installer bytes remain frozen.
