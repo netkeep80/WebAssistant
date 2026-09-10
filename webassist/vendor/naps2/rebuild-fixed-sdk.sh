@@ -4,7 +4,7 @@ set -euo pipefail
 UPSTREAM_REPOSITORY="https://github.com/cyanfish/naps2.git"
 UPSTREAM_COMMIT="450cba65aaffe6387041050a573051a64cd80fe9"
 PACKAGE_ID="WebAssistant.NAPS2.Sdk"
-PACKAGE_VERSION="1.3.0-webassistant.1.450cba65"
+PACKAGE_VERSION="1.3.0-webassistant.2.450cba65"
 PACKAGE_FILE="$PACKAGE_ID.$PACKAGE_VERSION.nupkg"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,19 +36,97 @@ import pathlib
 import sys
 
 root = pathlib.Path(sys.argv[1])
+
+
+def replace_exact(path: pathlib.Path, expected: str, replacement: str) -> None:
+    text = path.read_text(encoding="utf-8-sig")
+    if text.count(expected) != 1:
+        raise SystemExit(f"unexpected upstream layout in {path}: expected one exact match")
+    path.write_text(text.replace(expected, replacement), encoding="utf-8")
+
+
 targets = root / "NAPS2.Setup/targets/SdkPackageTargets.targets"
-text = targets.read_text(encoding="utf-8-sig")
-expected = "        <PackageVersion>1.3.0</PackageVersion>"
-replacement = (
-    expected + "\n"
+replace_exact(
+    targets,
+    "        <PackageVersion>1.3.0</PackageVersion>",
+    "        <PackageVersion>1.3.0</PackageVersion>\n"
     "        <PackageId Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
     "WebAssistant.NAPS2.Sdk</PackageId>\n"
     "        <PackageVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
-    "1.3.0-webassistant.1.450cba65</PackageVersion>"
+    "1.3.0-webassistant.2.450cba65</PackageVersion>",
 )
-if text.count(expected) != 1:
-    raise SystemExit("unexpected upstream package target layout")
-targets.write_text(text.replace(expected, replacement), encoding="utf-8")
+
+paper_source_caps = root / "NAPS2.Sdk/Scan/PaperSourceCaps.cs"
+replace_exact(
+    paper_source_caps,
+    "    public bool CanCheckIfFeederHasPaper { get; init; }\n}",
+    "    public bool CanCheckIfFeederHasPaper { get; init; }\n\n"
+    "    /// <summary>\n"
+    "    /// Whether paper is currently present in the feeder when that state can be read.\n"
+    "    /// Null means the current state is unavailable or unknown.\n"
+    "    /// </summary>\n"
+    "    public bool? FeederHasPaper { get; init; }\n}",
+)
+
+wia_driver = root / "NAPS2.Sdk/Scan/Internal/Wia/WiaScanDriver.cs"
+replace_exact(
+    wia_driver,
+    "                        SupportsDuplex = device.SupportsDuplex(),\n"
+    "                        CanCheckIfFeederHasPaper = true\n",
+    "                        SupportsDuplex = device.SupportsDuplex(),\n"
+    "                        CanCheckIfFeederHasPaper = true,\n"
+    "                        FeederHasPaper = device.SupportsFeeder() ? TryGetFeederHasPaper(device) : null\n",
+)
+replace_exact(
+    wia_driver,
+    "    private PerSourceCaps GetItemCaps(WiaDevice device, WiaItem item, bool flatbed)\n",
+    "    private static bool? TryGetFeederHasPaper(WiaDevice device)\n"
+    "    {\n"
+    "        try\n"
+    "        {\n"
+    "            return device.FeederReady();\n"
+    "        }\n"
+    "        catch (WiaException)\n"
+    "        {\n"
+    "            return null;\n"
+    "        }\n"
+    "    }\n\n"
+    "    private PerSourceCaps GetItemCaps(WiaDevice device, WiaItem item, bool flatbed)\n",
+)
+
+twain_driver = root / "NAPS2.Sdk/Scan/Internal/Twain/LocalTwainController.cs"
+replace_exact(
+    twain_driver,
+    "                            CanCheckIfFeederHasPaper =\n"
+    "                                ds.Capabilities.CapAutomaticSenseMedium.IsSupported ||\n"
+    "                                ds.Capabilities.CapFeederLoaded.IsSupported\n",
+    "                            CanCheckIfFeederHasPaper =\n"
+    "                                ds.Capabilities.CapAutomaticSenseMedium.IsSupported ||\n"
+    "                                ds.Capabilities.CapFeederLoaded.IsSupported,\n"
+    "                            FeederHasPaper = TryGetFeederHasPaper(ds)\n",
+)
+replace_exact(
+    twain_driver,
+    "    private PerSourceCaps GetPerSourceCaps(DataSource ds)\n",
+    "    private bool? TryGetFeederHasPaper(DataSource ds)\n"
+    "    {\n"
+    "        var feederLoaded = ds.Capabilities.CapFeederLoaded;\n"
+    "        if (!feederLoaded.IsSupported)\n"
+    "        {\n"
+    "            return null;\n"
+    "        }\n\n"
+    "        try\n"
+    "        {\n"
+    "            return feederLoaded.GetCurrent() == BoolType.True;\n"
+    "        }\n"
+    "        catch (Exception e)\n"
+    "        {\n"
+    "            _logger.LogDebug(e, \"Could not read TWAIN feeder-loaded state\");\n"
+    "            return null;\n"
+    "        }\n"
+    "    }\n\n"
+    "    private PerSourceCaps GetPerSourceCaps(DataSource ds)\n",
+)
 PY
 
 project="$work_dir/NAPS2.Sdk/NAPS2.Sdk.csproj"
