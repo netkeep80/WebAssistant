@@ -4,93 +4,82 @@
 
 **Goal:** Replace the current WIA-first/source-specific scanner API with one JSON `POST /v1/scan`, deterministic persistent scanner identities, independent WIA+TWAIN discovery, and WebAssistant-owned automatic source selection.
 
-**Architecture:** Keep public orchestration and stable identity in WebAssistant. Extend the repository-owned NAPS2 SDK only with a nullable feeder-paper fact, then normalize WIA/TWAIN/SANE endpoints into a small domain model consumed by a pure source-selection policy and the HTTP coordinator. The accepted v0.2 authority remains untouched; the existing unaccepted v0.3 candidate is updated to authorize this semantic delta.
+**Architecture:** Public orchestration, stable identity, partial-failure semantics, and source policy live in WebAssistant. The repository-owned NAPS2 SDK is extended only with nullable feeder-paper state. Accepted v0.2 remains immutable; the existing unaccepted v0.3 candidate is updated to authorize the semantic delta.
 
-**Tech Stack:** .NET 10, ASP.NET Core Minimal APIs, NAPS2 SDK 1.3.0 repository-owned fork/package, NAPS2.Wia, NTwain, xUnit, GitHub Actions, repo-guard.
+**Tech Stack:** .NET 10, ASP.NET Core Minimal APIs, NAPS2 SDK 1.3.0 repository-owned package, NAPS2.Wia, NTwain, xUnit, GitHub Actions, repo-guard.
 
 **Spec:** `docs/superpowers/specs/2026-09-10-scanner-api-stable-id-auto-design.md`
 
 ## Global Constraints
 
-- Implementation base is `main = 77a5c66c431c746d2be2f283640c7951730911eb`, `webassist/VERSION = 0.3.21`; re-check live `main` immediately before execution. If it moved, stop and reconcile this plan before writing code.
-- GitHub is the source of truth. Legacy `netkeep80/ScannerAgent` remains read-only.
-- Preserve accepted `webassistant-contract/v0.2` and `webassistant-conformance/v0.2` byte-for-byte.
-- Update only the existing `webassistant-contract/v0.3` / `webassistant-conformance/v0.3` candidate; keep `status = candidate`, `accepted = false`, and do not move `repo-policy.json.current` from v0.2.
-- TDD is mandatory: each behavior block begins with a tests-only RED commit and recorded exact-head failure before production implementation.
-- Public acquisition is exactly one `POST /v1/scan` JSON route. `scannerId` is required; `source` defaults to `auto`; `settings.duplex` defaults to `false`.
-- Public source values are exactly lowercase `auto`, `flatbed`, `feeder`. Duplex is a separate boolean and never a source.
-- `POST /v1/scan/feeder` and `POST /v1/scan/duplex` must be removed, not retained as aliases.
-- Windows discovery enumerates WIA and TWAIN independently and returns the union of usable endpoints; one backend failure must not suppress the other.
-- Stable IDs are `wa1-<backend>-<full-unpadded-base64url-sha256>`, where the digest input is UTF-8 `backend + "\0" + nativeId` using the exact native ID string with no trimming/case folding/Unicode normalization.
-- WIA native identity is `WIA_DIP_DEV_ID`; TWAIN native identity is the exact NAPS2-addressable source/ProductName; SANE native identity is the exact NAPS2 SANE device ID.
-- Duplicate exact native IDs inside one backend are fail-closed and never disambiguated using enumeration order.
-- Auto on a dual-source endpoint maps feeder paper `PRESENT -> feeder`, `ABSENT -> flatbed`, `UNKNOWN -> flatbed`; feeder-only always resolves feeder and flatbed-only always resolves flatbed.
-- `source=auto + duplex=true` and `source=flatbed + duplex=true` are HTTP 400 before acquisition. Unsupported feeder/duplex capability is HTTP 422 before acquisition.
-- Preserve raw `application/pdf`, multipage-in-one-PDF, one-physical-acquisition-at-a-time, cancellation, safe logging, loopback-only listener, and no long-term scan storage.
-- WebAssistant stores no selected scanner/profile/defaults; caller persistence is `scannerId + source + settings`.
-- The repository-owned NAPS2 package receives a new immutable version `1.3.0-webassistant.2.450cba65`; do not overwrite or delete `1.3.0-webassistant.1.450cba65`.
-- The #163 transition bumps product VERSION exactly once, expected `0.3.21 -> 0.3.22` if the base remains unchanged. Do not create/publish a GitHub Release in #163.
-- #191 Windows upgrade UX, #164 DPI/color/paper-size schema, #192 installer localization, Linux GitLab CI/CD, and final PDF/publication remain out of scope.
+- Re-check live `main` before execution. Planned base is `77a5c66c431c746d2be2f283640c7951730911eb`, `webassist/VERSION = 0.3.21`; if it moved, stop and reconcile the plan first.
+- GitHub is source of truth. `netkeep80/ScannerAgent` remains read-only.
+- Preserve `webassistant-contract/v0.2`, `webassistant-conformance/v0.2`, and `repo-policy.json.current = v0.2` byte-for-byte.
+- Modify only candidate `webassistant-contract/v0.3` / `webassistant-conformance/v0.3`; keep `status=candidate`, `accepted=false`.
+- Every behavior block starts with a tests-only RED commit and exact-head failure evidence before production changes.
+- Only one acquisition route remains: `POST /v1/scan` with JSON body. `scannerId` required; `source` default `auto`; `settings.duplex` default `false`.
+- Public source strings are exactly lowercase `auto`, `flatbed`, `feeder`. Duplex is a boolean, not a source.
+- `/v1/scan/feeder` and `/v1/scan/duplex` are removed, not aliases.
+- Windows enumerates WIA and TWAIN independently and returns the union of usable endpoints. One failed backend cannot hide the other.
+- Stable ID is `wa1-<backend>-<43-char full unpadded base64url SHA-256>` over UTF-8 `backend + "\0" + nativeId`; nativeId is byte-exact as received, with no trim/case-fold/Unicode normalization.
+- Native IDs: WIA=`WIA_DIP_DEV_ID`; TWAIN=exact NAPS2-addressable source/ProductName; SANE=exact NAPS2 SANE device ID.
+- Duplicate exact native IDs within one backend are fail-closed and never numbered by enumeration order.
+- Auto on dual-source: `PRESENT->feeder`, `ABSENT->flatbed`, `UNKNOWN->flatbed`; feeder-only->feeder; flatbed-only->flatbed.
+- `auto+duplex` and `flatbed+duplex` -> HTTP 400 before acquisition. Unsupported feeder/duplex -> HTTP 422 before acquisition.
+- A syntactically valid scannerId whose indicated backend cannot currently be enumerated -> HTTP 503, not 404. 404 means the indicated backend was successfully enumerated and the endpoint is absent.
+- Preserve raw `application/pdf`, multipage one-PDF semantics, single physical acquisition, cancellation, safe logging, loopback-only listener, and no long-term scan storage.
+- WebAssistant stores no scanner/profile/default preferences.
+- New immutable repository-owned SDK version is `WebAssistant.NAPS2.Sdk 1.3.0-webassistant.2.450cba65`; retain `.1.450cba65` unchanged.
+- #163 bumps product VERSION exactly once, expected `0.3.21 -> 0.3.22` if base is unchanged. No Release publication in #163.
+- #191 upgrade UX, #164 DPI/color/paper size, #192 installer localization, Linux GitLab CI/CD, final PDF/release remain out of scope.
 
 ---
 
-## File Structure / Responsibility Map
+## Responsibility Map
 
-New focused domain files under `webassist/src/WebAssistant/Scanning/`:
+Create under `webassist/src/WebAssistant/Scanning/`:
 
-- `ScannerBackend.cs` — `Wia | Twain | Sane` backend identity.
-- `PaperPresence.cs` — `Present | Absent | Unknown` tri-state.
-- `ScannerSourceCapabilities.cs` — flatbed/feeder/duplex booleans.
-- `ScannerEndpoint.cs` — stable public ID + display name + backend + internal native ID + current source capabilities/paper state.
-- `ScannerDiscoveryWarning.cs` — machine-readable backend warning.
-- `ScannerDiscoveryResult.cs` — normalized scanner list, warnings, and discovery-unavailable state.
-- `ScannerIdentity.cs` — only stable ID creation/parsing logic.
-- `ScanSourcePolicy.cs` — pure explicit/auto/duplex validation and concrete source resolution.
-- `Naps2ScanSession.cs` — narrow injectable wrapper around `ScanController`/PDF export so Windows WIA/TWAIN orchestration is unit-testable off Windows.
+```text
+ScannerBackend.cs              enum Wia/Twain/Sane
+PaperPresence.cs               Present/Absent/Unknown
+ScannerSourceCapabilities.cs   flatbed/feeder/duplex booleans
+ScannerEndpoint.cs             stable ID + name + backend + internal native ID + caps + paper state
+ScannerDiscoveryWarning.cs     backend + machine-readable warning code
+ScannerDiscoveryResult.cs      scanners + warnings + Unavailable
+ScannerIdentity.cs             stable ID create/parse only
+ScanSourcePolicy.cs             pure request validation/auto resolution
+Naps2ScanSession.cs             injectable ScanController/PDF wrapper for Windows tests
+```
 
-HTTP files:
+Create `webassist/src/WebAssistant/Http/ScanRequest.cs` for wire DTOs. Modify `ScanCoordinator.cs`, `ScannerEndpointHandlers.cs`, `Program.cs` only for HTTP orchestration.
 
-- `webassist/src/WebAssistant/Http/ScanRequest.cs` — JSON request DTO only.
-- `webassist/src/WebAssistant/Http/ScanCoordinator.cs` — parse/resolve scanner, validate policy, serialize acquisition, map domain failures to HTTP.
-- `webassist/src/WebAssistant/Http/ScannerEndpointHandlers.cs` — scanner-list envelope/warnings.
-- `webassist/src/WebAssistant/Program.cs` — route surface only.
-
-Vendor files:
-
-- `webassist/vendor/naps2/patches/0001-feeder-paper-presence.patch` — auditable three-file NAPS2 source patch.
-- `webassist/vendor/naps2/rebuild-fixed-sdk.sh` — apply patch and build new immutable package identity.
-- `webassist/vendor/naps2/README.md` — exact upstream + patch + package provenance.
-- `webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg` — new package bytes; old package retained.
-
-Primary tests:
-
-- `tests/core/DistributionContractCandidateTests.cs`
-- `tests/core/ScannerIdentityTests.cs` (new)
-- `tests/core/ScanSourcePolicyTests.cs` (new)
-- `tests/core/DependencyOwnershipTests.cs`
-- `tests/core/ScanAdapterContractTests.cs`
-- `tests/core/LinuxScanAdapterTests.cs`
-- `tests/core/WindowsScanAdapterTests.cs`
-- `tests/core/HttpScanContractTests.cs`
-- `tests/core/PlatformEndToEndTests.cs`
-- `tests/core/VirtualScannerWorkflowTests.cs`
+Vendor change is auditable through `webassist/vendor/naps2/patches/0001-feeder-paper-presence.patch`, `rebuild-fixed-sdk.sh`, README provenance, and the new `.nupkg`.
 
 ---
 
-### Task 1: Authorize the scanner semantic delta in candidate v0.3
+### Task 1: Authorize #163 in candidate v0.3
 
 **Files:**
 - Modify: `tests/core/DistributionContractCandidateTests.cs`
 - Modify: `contracts/webassistant-contract-v0.3.json`
 - Modify: `contracts/webassistant-conformance-v0.3.json`
 
-**Interfaces:**
-- Consumes: accepted v0.2 remains immutable.
-- Produces: candidate requirements/vectors authorizing unified scan JSON, stable scanner identity, WIA+TWAIN union, tri-state auto source, and stateless caller-owned preferences.
+**Produces:** candidate scanner requirements `WA-SCAN-001..007` and executable vectors while accepted v0.2 stays unchanged.
 
-- [ ] **Step 1: Write tests-only RED assertions against the candidate contract**
+- [ ] **Step 1: Add tests-only RED for candidate semantics**
 
-Add a focused test that loads `webassistant-contract-v0.3.json` and requires the new scanner semantics while rejecting the superseded source-specific contract text:
+Add a test that requires candidate statements containing all of:
+
+```text
+WIA + TWAIN + scannerId
+POST /v1/scan + source + duplex
+PRESENT + ABSENT + UNKNOWN
+caller-owned/stateless preferences
+```
+
+and rejects any candidate requirement statement containing `/v1/scan/feeder` or `/v1/scan/duplex`.
+
+Use actual code:
 
 ```csharp
 [Fact]
@@ -117,295 +106,219 @@ public void CandidateScannerContract_AuthorizesUnifiedStableAutoModel()
 }
 ```
 
-Keep the existing candidate-status assertions requiring `candidate/false`.
-
-- [ ] **Step 2: Run the focused test and record RED**
-
-Run:
+- [ ] **Step 2: Run RED**
 
 ```bash
 dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
-  --filter 'FullyQualifiedName~DistributionContractCandidateTests.CandidateScannerContract_AuthorizesUnifiedStableAutoModel'
+  --filter 'FullyQualifiedName~CandidateScannerContract_AuthorizesUnifiedStableAutoModel'
 ```
 
-Expected: FAIL because v0.3 still states `/v1/scan`, `/v1/scan/feeder`, `/v1/scan/duplex` map glass/feeder/duplex.
+Expected: FAIL because current v0.3 still specifies three source routes.
 
-- [ ] **Step 3: Update only candidate v0.3 scanner requirements**
+- [ ] **Step 3: Update only scanner requirements in `webassistant-contract-v0.3.json`**
 
-Keep all non-scanner requirements unchanged. Replace scanner candidate semantics so they express:
+Use these semantics:
 
 ```text
-WA-SCAN-001: GET /v1/scanners returns deterministic persistent scannerId values and, on Windows, independently enumerates WIA + TWAIN endpoints without merging backend identities.
-WA-SCAN-002: POST /v1/scan is the only acquisition route; JSON requires scannerId, source defaults auto, settings.duplex defaults false, and feeder/duplex routes do not exist.
-WA-SCAN-003: at most one physical acquisition; concurrent request -> conflict. (unchanged)
-WA-SCAN-004: one acquisition -> one multipage PDF, no long-term scan storage. (unchanged)
-WA-SCAN-005: scanner capability exclusions. (unchanged)
-WA-SCAN-006: auto source uses PRESENT/ABSENT/UNKNOWN and never treats UNKNOWN as PRESENT; explicit source never silently falls back.
-WA-SCAN-007: WebAssistant owns no mutable user/scanner profile; caller persists and resends scannerId/source/settings.
+WA-SCAN-001  GET /v1/scanners returns deterministic persistent scannerId endpoints; Windows WIA and TWAIN are independently enumerated and not physically deduplicated.
+WA-SCAN-002  POST /v1/scan is the only acquisition route; JSON requires scannerId; source defaults auto; settings.duplex defaults false; source-specific routes do not exist.
+WA-SCAN-003  one physical acquisition at a time; competing request -> conflict. (retain)
+WA-SCAN-004  one acquisition -> one multipage PDF; no long-term scan storage. (retain)
+WA-SCAN-005  scanner operation exclusions. (retain)
+WA-SCAN-006  auto uses PRESENT/ABSENT/UNKNOWN, never promotes UNKNOWN to PRESENT; explicit source has no fallback.
+WA-SCAN-007  caller owns persistence of scannerId/source/settings; WebAssistant stores no mutable scanner profile/defaults.
 ```
 
-Keep:
+Keep candidate status false.
 
-```json
-"schema": "webassistant-contract/v0.3",
-"status": "candidate",
-"accepted": false
-```
+- [ ] **Step 4: Update v0.3 conformance using only existing evidence paths at this stage**
 
-- [ ] **Step 4: Update candidate conformance vectors**
-
-Replace the old scanner vector with explicit evidence vectors:
+Create/update vectors:
 
 ```text
-WA-C-SCANNER-DISCOVERY-001
-  requirements: WA-SCAN-001
-  evidence: ScannerIdentityTests, WindowsScanAdapterTests, HttpScanContractTests
-
-WA-C-SCANNER-HTTP-001
-  requirements: WA-SCAN-002, WA-SCAN-003
-  evidence: HttpScanContractTests, ScanAdapterContractTests, PlatformEndToEndTests
-
-WA-C-SCANNER-AUTO-SOURCE-001
-  requirements: WA-SCAN-006
-  evidence: ScanSourcePolicyTests, WindowsScanAdapterTests, LinuxScanAdapterTests
-
-WA-C-SCANNER-STATELESS-001
-  requirements: WA-SCAN-007
-  evidence: HttpScanContractTests, api.md
+WA-C-SCANNER-DISCOVERY-001 -> WA-SCAN-001 -> WindowsScanAdapterTests.cs + HttpScanContractTests.cs
+WA-C-SCANNER-HTTP-001      -> WA-SCAN-002,003 -> HttpScanContractTests.cs + ScanAdapterContractTests.cs + PlatformEndToEndTests.cs
+WA-C-SCANNER-AUTO-001      -> WA-SCAN-006 -> WindowsScanAdapterTests.cs + LinuxScanAdapterTests.cs
+WA-C-SCANNER-STATELESS-001 -> WA-SCAN-007 -> HttpScanContractTests.cs + webassist/docs/api.md
 ```
 
-Add the new test/source paths to `requiredRepositoryPaths` only when those files exist later; at this task, reference only paths already present or create the new test path in the same RED commit if the conformance validator requires existence.
+Do not reference not-yet-created files in `requiredRepositoryPaths`; later tasks add them when they exist.
 
-- [ ] **Step 5: Run candidate/conformance tests GREEN**
-
-Run:
+- [ ] **Step 5: Run candidate/conformance GREEN**
 
 ```bash
 dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
   --filter 'FullyQualifiedName~DistributionContractCandidateTests|FullyQualifiedName~ConformanceGraphValidatorTests'
 ```
 
-Expected: PASS while accepted v0.2 immutability tests remain PASS.
-
-- [ ] **Step 6: Commit the authority delta**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add contracts/webassistant-contract-v0.3.json \
-        contracts/webassistant-conformance-v0.3.json \
-        tests/core/DistributionContractCandidateTests.cs
+git add contracts/webassistant-contract-v0.3.json contracts/webassistant-conformance-v0.3.json tests/core/DistributionContractCandidateTests.cs
 git commit -m "contracts: authorize unified scanner API candidate"
 ```
 
 ---
 
-### Task 2: Add deterministic scanner identity and normalized discovery types
+### Task 2: Add stable identity and normalized scanner domain
 
 **Files:**
-- Create: `webassist/src/WebAssistant/Scanning/ScannerBackend.cs`
-- Create: `webassist/src/WebAssistant/Scanning/PaperPresence.cs`
-- Create: `webassist/src/WebAssistant/Scanning/ScannerSourceCapabilities.cs`
-- Create: `webassist/src/WebAssistant/Scanning/ScannerEndpoint.cs`
-- Create: `webassist/src/WebAssistant/Scanning/ScannerDiscoveryWarning.cs`
-- Create: `webassist/src/WebAssistant/Scanning/ScannerDiscoveryResult.cs`
-- Create: `webassist/src/WebAssistant/Scanning/ScannerIdentity.cs`
+- Create: `ScannerBackend.cs`, `PaperPresence.cs`, `ScannerSourceCapabilities.cs`, `ScannerEndpoint.cs`, `ScannerDiscoveryWarning.cs`, `ScannerDiscoveryResult.cs`, `ScannerIdentity.cs` under `webassist/src/WebAssistant/Scanning/`
 - Create: `tests/core/ScannerIdentityTests.cs`
 - Modify: `contracts/webassistant-conformance-v0.3.json`
 
-**Interfaces:**
-- Produces:
+**Exact interfaces:**
 
 ```csharp
 internal enum ScannerBackend { Wia, Twain, Sane }
 internal enum PaperPresence { Present, Absent, Unknown }
 internal sealed record ScannerSourceCapabilities(bool Flatbed, bool Feeder, bool Duplex);
-internal sealed record ScannerEndpoint(
-    string ScannerId,
-    string Name,
-    ScannerBackend Backend,
-    string NativeId,
-    ScannerSourceCapabilities Sources,
-    PaperPresence FeederPaper);
+internal sealed record ScannerEndpoint(string ScannerId, string Name, ScannerBackend Backend, string NativeId,
+    ScannerSourceCapabilities Sources, PaperPresence FeederPaper);
 internal sealed record ScannerDiscoveryWarning(ScannerBackend Backend, string Code);
-internal sealed record ScannerDiscoveryResult(
-    IReadOnlyList<ScannerEndpoint> Scanners,
-    IReadOnlyList<ScannerDiscoveryWarning> Warnings,
-    bool Unavailable);
-internal static class ScannerIdentity
-{
-    internal static string Create(ScannerBackend backend, string nativeId);
-    internal static bool TryParse(string value, out ScannerBackend backend);
-}
+internal sealed record ScannerDiscoveryResult(IReadOnlyList<ScannerEndpoint> Scanners,
+    IReadOnlyList<ScannerDiscoveryWarning> Warnings, bool Unavailable);
 ```
 
-- [ ] **Step 1: Write tests-only RED for stable ID semantics**
-
-Create tests covering exact deterministic identity, order independence, backend namespace separation, byte-exact native input, and malformed IDs:
+`ScannerIdentity` exposes:
 
 ```csharp
-[Fact]
-public void Create_IsDeterministicAndBackendNamespaced()
-{
-    var first = ScannerIdentity.Create(ScannerBackend.Wia, "native-42");
-    var second = ScannerIdentity.Create(ScannerBackend.Wia, "native-42");
-    var twain = ScannerIdentity.Create(ScannerBackend.Twain, "native-42");
+internal static string Create(ScannerBackend backend, string nativeId);
+internal static bool TryParse(string value, out ScannerBackend backend);
+```
 
-    Assert.Equal(first, second);
-    Assert.StartsWith("wa1-wia-", first, StringComparison.Ordinal);
-    Assert.StartsWith("wa1-twain-", twain, StringComparison.Ordinal);
-    Assert.NotEqual(first, twain);
-    Assert.Equal(51, first.Length); // "wa1-wia-" (8) + 43-char SHA-256 base64url
-}
+- [ ] **Step 1: Write tests-only RED**
 
+Test deterministic equality, WIA/TWAIN namespace separation, exact zero separator, malformed IDs, and non-normalization:
+
+```csharp
 [Theory]
-[InlineData("native")]
 [InlineData(" native")]
 [InlineData("native ")]
 [InlineData("Native")]
-public void Create_DoesNotNormalizeNativeIdentity(string nativeId)
+public void Create_DoesNotNormalizeNativeIdentity(string altered)
 {
     Assert.NotEqual(
         ScannerIdentity.Create(ScannerBackend.Wia, "native"),
-        ScannerIdentity.Create(ScannerBackend.Wia, nativeId + "#different"));
-}
-
-[Theory]
-[InlineData("")]
-[InlineData("wa1-wia-")]
-[InlineData("wa1-unknown-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
-[InlineData("wa1-wia-short")]
-public void TryParse_RejectsMalformedIdentity(string value)
-{
-    Assert.False(ScannerIdentity.TryParse(value, out _));
+        ScannerIdentity.Create(ScannerBackend.Wia, altered));
 }
 ```
 
-Also add an exact vector test using a known digest calculated in the test itself from `SHA256.HashData(Encoding.UTF8.GetBytes("wia\0native-42"))` so the implementation cannot use display name or omit the zero separator.
-
-- [ ] **Step 2: Run and record RED**
-
-```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
-  --filter 'FullyQualifiedName~ScannerIdentityTests'
-```
-
-Expected: compile FAIL because the new domain/identity types do not yet exist.
-
-- [ ] **Step 3: Implement the domain types and identity function**
-
-Implement `ScannerIdentity.Create` exactly:
+Also compute an expected digest inside the test from:
 
 ```csharp
-internal static string Create(ScannerBackend backend, string nativeId)
-{
-    ArgumentException.ThrowIfNullOrEmpty(nativeId);
-    var token = backend switch
-    {
-        ScannerBackend.Wia => "wia",
-        ScannerBackend.Twain => "twain",
-        ScannerBackend.Sane => "sane",
-        _ => throw new ArgumentOutOfRangeException(nameof(backend), backend, null)
-    };
-
-    var bytes = Encoding.UTF8.GetBytes(token + "\0" + nativeId);
-    var digest = SHA256.HashData(bytes);
-    var encoded = Convert.ToBase64String(digest)
-        .TrimEnd('=')
-        .Replace('+', '-')
-        .Replace('/', '_');
-    return $"wa1-{token}-{encoded}";
-}
+SHA256.HashData(Encoding.UTF8.GetBytes("wia\0native-42"))
 ```
 
-`TryParse` must require the exact `wa1-(wia|twain|sane)-` prefix plus exactly 43 base64url characters `[A-Za-z0-9_-]`; it validates syntax only and does not reverse the digest.
+and assert the result is exactly `wa1-wia-` + full unpadded base64url digest. Require 51 chars for WIA IDs (`8+43`).
 
-- [ ] **Step 4: Run identity tests GREEN and full core regression**
+Malformed cases:
+
+```text
+empty
+wa1-wia-
+wa1-wia-short
+wa1-unknown-<43 valid chars>
+wa1-wia-<42 chars>
+wa1-wia-<44 chars>
+wa1-wia-<invalid '=' or '+' char>
+```
+
+- [ ] **Step 2: Run RED**
 
 ```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
-  --filter 'FullyQualifiedName~ScannerIdentityTests'
+dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter 'FullyQualifiedName~ScannerIdentityTests'
+```
+
+Expected: compile failure because types do not exist.
+
+- [ ] **Step 3: Implement identity exactly**
+
+```csharp
+var token = backend switch
+{
+    ScannerBackend.Wia => "wia",
+    ScannerBackend.Twain => "twain",
+    ScannerBackend.Sane => "sane",
+    _ => throw new ArgumentOutOfRangeException(nameof(backend))
+};
+var digest = SHA256.HashData(Encoding.UTF8.GetBytes(token + "\0" + nativeId));
+var encoded = Convert.ToBase64String(digest).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+return $"wa1-{token}-{encoded}";
+```
+
+`TryParse` must validate exact prefix + backend token + exactly 43 `[A-Za-z0-9_-]` characters. It validates syntax only; it cannot reverse SHA-256.
+
+- [ ] **Step 4: Run focused + full core GREEN**
+
+```bash
+dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter 'FullyQualifiedName~ScannerIdentityTests'
 dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release
 ```
 
-Expected: all PASS.
-
-- [ ] **Step 5: Add new paths to candidate conformance and commit**
-
-Add all created domain/test paths to v0.3 `requiredRepositoryPaths`, then:
+- [ ] **Step 5: Add new paths to v0.3 conformance and commit**
 
 ```bash
-git add webassist/src/WebAssistant/Scanning \
-        tests/core/ScannerIdentityTests.cs \
-        contracts/webassistant-conformance-v0.3.json
+git add webassist/src/WebAssistant/Scanning tests/core/ScannerIdentityTests.cs contracts/webassistant-conformance-v0.3.json
 git commit -m "feat: add stable scanner identity model"
 ```
 
 ---
 
-### Task 3: Extend the repository-owned NAPS2 SDK with tri-state feeder presence
+### Task 3: Produce immutable NAPS2 `.2` package with feeder-paper state
 
 **Files:**
 - Create: `webassist/vendor/naps2/patches/0001-feeder-paper-presence.patch`
 - Modify: `webassist/vendor/naps2/rebuild-fixed-sdk.sh`
 - Modify: `webassist/vendor/naps2/README.md`
-- Add binary: `webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg`
+- Add: `webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg`
 - Modify: `webassist/src/WebAssistant/WebAssistant.csproj`
 - Modify: `tests/core/DependencyOwnershipTests.cs`
 - Modify: `contracts/webassistant-conformance-v0.3.json`
 
-**Interfaces:**
-- Produces NAPS2 API:
+**Produces:** `PaperSourceCaps.FeederHasPaper : bool?` with `true=PRESENT`, `false=ABSENT`, `null=UNKNOWN`.
+
+- [ ] **Step 1: Write tests-only RED without weakening integrity checks**
+
+Change `PackageVersion` and `PackageFile` in `DependencyOwnershipTests` to `.2.450cba65`, keep the existing hard-coded SHA assertion in place, and add:
 
 ```csharp
-public bool? PaperSourceCaps.FeederHasPaper { get; init; }
+[Fact]
+public void FixedSdk_ExposesNullableFeederPaperState()
+{
+    var property = typeof(NAPS2.Scan.PaperSourceCaps).GetProperty("FeederHasPaper");
+    Assert.NotNull(property);
+    Assert.Equal(typeof(bool?), property.PropertyType);
+}
 ```
 
-Exact semantics: `true=PRESENT`, `false=ABSENT`, `null=UNKNOWN`.
+Do not remove or runtime-derive `ExpectedPackageSha256`.
 
-- [ ] **Step 1: Write tests-only RED for the new immutable package**
-
-Change `DependencyOwnershipTests` constants to:
-
-```csharp
-private const string PackageVersion = "1.3.0-webassistant.2.450cba65";
-private const string PackageFile =
-    "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg";
-```
-
-Add a reflection assertion after loading the SDK assembly from the package extraction/build output:
-
-```csharp
-var property = typeof(NAPS2.Scan.PaperSourceCaps).GetProperty("FeederHasPaper");
-Assert.NotNull(property);
-Assert.Equal(typeof(bool?), property.PropertyType);
-```
-
-Temporarily remove the old hard-coded SHA expectation only in this RED commit by changing the integrity assertion to require the new file path; restore a pinned exact SHA after building the package in Step 5.
-
-- [ ] **Step 2: Run and record RED**
+- [ ] **Step 2: Run RED**
 
 ```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
-  --filter 'FullyQualifiedName~DependencyOwnershipTests'
+dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter 'FullyQualifiedName~DependencyOwnershipTests'
 ```
 
-Expected: FAIL because the `.2` package does not exist and current referenced `PaperSourceCaps` lacks `FeederHasPaper`.
+Expected: FAIL because `.2` package is absent and referenced SDK still lacks the property.
 
-- [ ] **Step 3: Create an auditable upstream patch**
+- [ ] **Step 3: Create an auditable patch against exact upstream `450cba65aaffe6387041050a573051a64cd80fe9`**
 
-Create `0001-feeder-paper-presence.patch` against exact upstream `450cba65aaffe6387041050a573051a64cd80fe9` with only these semantic changes:
+Patch only:
 
-```diff
---- a/NAPS2.Sdk/Scan/PaperSourceCaps.cs
-+++ b/NAPS2.Sdk/Scan/PaperSourceCaps.cs
-@@
- public class PaperSourceCaps
- {
-+    /// <summary>Current feeder paper state when the driver can report it.</summary>
-+    public bool? FeederHasPaper { get; init; }
- }
+```text
+NAPS2.Sdk/Scan/PaperSourceCaps.cs
+NAPS2.Sdk/Scan/Internal/Wia/WiaScanDriver.cs
+NAPS2.Sdk/Scan/Internal/Twain/LocalTwainController.cs
 ```
 
-In `NAPS2.Sdk/Scan/Internal/Wia/WiaScanDriver.cs`, compute nullable paper state only when feeder is supported and the document-handling status property is readable:
+`PaperSourceCaps` gets:
+
+```csharp
+public bool? FeederHasPaper { get; init; }
+```
+
+WIA population:
 
 ```csharp
 bool? feederHasPaper = null;
@@ -419,92 +332,48 @@ if (device.SupportsFeeder())
 }
 ```
 
-and assign it to `PaperSourceCaps.FeederHasPaper`.
+TWAIN population only if `CapFeederLoaded.IsSupported`; readable True/False maps to bool, read failure/unsupported -> null. `CapAutomaticSenseMedium` alone never supplies PRESENT/ABSENT. SANE leaves null.
 
-In `NAPS2.Sdk/Scan/Internal/Twain/LocalTwainController.cs`, read only `CAP_FEEDERLOADED` when supported:
+- [ ] **Step 4: Update rebuild script**
 
-```csharp
-bool? feederHasPaper = null;
-if (supportsFeeder && ds.Capabilities.CapFeederLoaded.IsSupported)
-{
-    try
-    {
-        feederHasPaper = ds.Capabilities.CapFeederLoaded.GetCurrent() == BoolType.True;
-    }
-    catch
-    {
-        feederHasPaper = null;
-    }
-}
-```
-
-Assign the value to `PaperSourceCaps.FeederHasPaper`. Do not infer paper state from `CAP_AUTOMATICSENSEMEDIUM` alone. SANE leaves the nullable property unset (`null`).
-
-- [ ] **Step 4: Update the reproducible rebuild script**
-
-Set:
-
-```bash
-PACKAGE_VERSION="1.3.0-webassistant.2.450cba65"
-```
-
-After checking out the exact upstream commit and before changing package identity, run:
+Set package version to `1.3.0-webassistant.2.450cba65`, then after exact upstream checkout run:
 
 ```bash
 git -C "$work_dir" apply --check "$script_dir/patches/0001-feeder-paper-presence.patch"
 git -C "$work_dir" apply "$script_dir/patches/0001-feeder-paper-presence.patch"
 ```
 
-Update the embedded package-version replacement to `.2.450cba65`.
+Keep exact upstream commit verification.
 
-- [ ] **Step 5: Rebuild new package bytes, pin SHA, and update product reference**
-
-Run from `webassist/` on a host with Git, Python 3, .NET SDK 10, and access to the public NAPS2 repository:
+- [ ] **Step 5: Rebuild bytes, compute and pin exact SHA, switch product reference**
 
 ```bash
+cd webassist
 ./vendor/naps2/rebuild-fixed-sdk.sh
-PACKAGE="vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg"
-PACKAGE_SHA="$(sha256sum "$PACKAGE" | awk '{print $1}')"
-echo "$PACKAGE_SHA"
+PACKAGE='vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg'
+sha256sum "$PACKAGE"
 ```
 
-Update `WebAssistant.csproj` to reference exactly `.2.450cba65`. Restore `ExpectedPackageSha256` in `DependencyOwnershipTests` to the exact printed lowercase digest by an explicit edit in the same commit; do not derive expected SHA at test runtime.
+Copy the printed lowercase digest into `ExpectedPackageSha256` as a literal constant. Update `WebAssistant.csproj` to `.2.450cba65`. README records exact upstream commit, patch path, package identity/version, and keeps the old `.1` package untouched.
 
-Update README provenance with:
-
-```text
-upstream commit = 450cba65aaffe6387041050a573051a64cd80fe9
-repository patch = vendor/naps2/patches/0001-feeder-paper-presence.patch
-package = WebAssistant.NAPS2.Sdk 1.3.0-webassistant.2.450cba65
-```
-
-Keep the `.1` nupkg in the repository unchanged.
-
-- [ ] **Step 6: Run dependency and Linux build regressions GREEN**
+- [ ] **Step 6: Run GREEN**
 
 ```bash
 dotnet restore tests/core/WebAssistant.CoreTests.csproj
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
-  --filter 'FullyQualifiedName~DependencyOwnershipTests|FullyQualifiedName~LinuxScanAdapterTests'
+dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter 'FullyQualifiedName~DependencyOwnershipTests|FullyQualifiedName~LinuxScanAdapterTests'
 dotnet build webassist/src/WebAssistant/WebAssistant.csproj --configuration Release
 ```
 
-Expected: PASS; Linux still compiles against the nullable shared property.
-
-- [ ] **Step 7: Commit package/provenance as one immutable dependency transition**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add webassist/vendor/naps2 \
-        webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg \
-        webassist/src/WebAssistant/WebAssistant.csproj \
-        tests/core/DependencyOwnershipTests.cs \
-        contracts/webassistant-conformance-v0.3.json
+git add webassist/vendor/naps2 webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg webassist/src/WebAssistant/WebAssistant.csproj tests/core/DependencyOwnershipTests.cs contracts/webassistant-conformance-v0.3.json
 git commit -m "deps: expose feeder paper presence from fixed NAPS2 SDK"
 ```
 
 ---
 
-### Task 4: Introduce pure source selection and migrate the adapter contract
+### Task 4: Add pure source policy and migrate shared adapter contract
 
 **Files:**
 - Modify: `webassist/src/WebAssistant/Scanning/ScanSource.cs`
@@ -518,69 +387,38 @@ git commit -m "deps: expose feeder paper presence from fixed NAPS2 SDK"
 - Modify: `tests/core/LinuxVirtualScanAdapterTests.cs`
 - Modify: `contracts/webassistant-conformance-v0.3.json`
 
-**Interfaces:**
-- `ScanSource` becomes exactly `Auto, Flatbed, Feeder`.
-- `IScanAdapter` becomes:
+**Exact adapter contract:**
 
 ```csharp
 internal interface IScanAdapter
 {
     Task<ScannerDiscoveryResult> GetScannersAsync(CancellationToken cancellationToken = default);
-    Task<Stream> ScanAsync(
-        ScannerEndpoint scanner,
-        ScanSource source,
-        bool duplex,
+    Task<Stream> ScanAsync(ScannerEndpoint scanner, ScanSource source, bool duplex,
         CancellationToken cancellationToken = default);
 }
 ```
 
-- `ScanSourcePolicy.Resolve` produces a concrete `ScanSource` (`Flatbed` or `Feeder`) plus duplex flag or a typed validation/capability failure.
+`ScanSource` becomes exactly `Auto, Flatbed, Feeder`.
 
-- [ ] **Step 1: Write tests-only RED for the complete decision table**
+- [ ] **Step 1: Write tests-only RED for full source table**
 
-Create `ScanSourcePolicyTests` covering:
-
-```csharp
-[Theory]
-[InlineData("Present", "Feeder")]
-[InlineData("Absent", "Flatbed")]
-[InlineData("Unknown", "Flatbed")]
-public void Auto_DualSource_UsesTriStateRule(string paperName, string expectedName)
-{
-    var endpoint = Endpoint(flatbed: true, feeder: true, duplex: true,
-        Enum.Parse<PaperPresence>(paperName));
-    var resolved = ScanSourcePolicy.Resolve(endpoint, ScanSource.Auto, duplex: false);
-    Assert.Equal(Enum.Parse<ScanSource>(expectedName), resolved.Source);
-    Assert.False(resolved.Duplex);
-}
-```
-
-Also require:
+Create `ScanSourcePolicyTests` proving:
 
 ```text
+dual + Present + Auto -> Feeder,false
+dual + Absent  + Auto -> Flatbed,false
+dual + Unknown + Auto -> Flatbed,false
+feeder-only + Auto -> Feeder,false
+flatbed-only + Auto -> Flatbed,false
+no source + Auto -> UnsupportedScanCapabilityException
 Auto + duplex -> ScanRequestValidationException
 Flatbed + duplex -> ScanRequestValidationException
-Feeder + duplex when supported -> Feeder + true
+Feeder + duplex supported -> Feeder,true
 Feeder + duplex unsupported -> UnsupportedScanCapabilityException
-Explicit Flatbed unsupported -> UnsupportedScanCapabilityException
-Explicit Feeder unsupported -> UnsupportedScanCapabilityException
-Feeder-only Auto -> Feeder even with Unknown
-Flatbed-only Auto -> Flatbed
-No source -> UnsupportedScanCapabilityException
+explicit unsupported Flatbed/Feeder -> UnsupportedScanCapabilityException
 ```
 
-- [ ] **Step 2: Run and record RED**
-
-```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
-  --filter 'FullyQualifiedName~ScanSourcePolicyTests'
-```
-
-Expected: compile FAIL because new source model/policy do not exist.
-
-- [ ] **Step 3: Implement pure policy types**
-
-Use two small domain exceptions:
+Define in `ScanSourcePolicy.cs`:
 
 ```csharp
 internal sealed class ScanRequestValidationException(string message) : Exception(message);
@@ -588,58 +426,48 @@ internal sealed class UnsupportedScanCapabilityException(string message) : Excep
 internal sealed record ResolvedScanSource(ScanSource Source, bool Duplex);
 ```
 
-`Resolve` contains no NAPS2 references and exactly implements the spec decision table.
-
-- [ ] **Step 4: Migrate `IScanAdapter` and Linux adapter**
-
-Linux discovery must:
-
-```text
-Driver.Sane device -> ScannerBackend.Sane
-NativeId = exact device.ID
-ScannerId = ScannerIdentity.Create(Sane, device.ID)
-GetCaps(device) -> flatbed/feeder/duplex booleans
-FeederPaper = Unknown for P0
-```
-
-Linux acquisition receives the resolved concrete source and maps:
-
-```csharp
-(ScanSource.Flatbed, false) => PaperSource.Flatbed
-(ScanSource.Feeder, false) => PaperSource.Feeder
-(ScanSource.Feeder, true) => PaperSource.Duplex
-```
-
-`ScanSource.Auto` must never reach the adapter; guard it with `ArgumentOutOfRangeException` because policy resolution belongs above the adapter.
-
-- [ ] **Step 5: Rewrite adapter contract tests and run GREEN**
-
-Tests must assert stable SANE ID derivation, source capabilities, no `ScannerDevice`, and exact source+duplex propagation.
-
-Run:
+- [ ] **Step 2: Run RED**
 
 ```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
-  --filter 'FullyQualifiedName~ScanSourcePolicyTests|FullyQualifiedName~ScanAdapterContractTests|FullyQualifiedName~LinuxScanAdapterTests|FullyQualifiedName~LinuxVirtualScanAdapterTests'
+dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter 'FullyQualifiedName~ScanSourcePolicyTests'
 ```
 
-Expected: PASS.
+- [ ] **Step 3: Implement pure policy with no NAPS2 references**
+
+Implement exactly the table above. `UNKNOWN` cannot select feeder on a dual-source endpoint.
+
+- [ ] **Step 4: Migrate Linux adapter**
+
+Successful SANE enumeration maps every unambiguous native device to:
+
+```text
+Backend=Sane
+NativeId=device.ID exact
+ScannerId=ScannerIdentity.Create(Sane, device.ID)
+Sources from ScanCaps.PaperSourceCaps
+FeederPaper=Unknown
+```
+
+Duplicate exact SANE IDs are dropped with `ambiguousNativeIdentity` warning. SANE enumeration exception -> empty scanners + `enumerationFailed` warning + `Unavailable=true`. Successful empty enumeration -> `Unavailable=false`. Per-device caps failure -> omit that device + `capabilitiesUnavailable` warning, but enumeration remains available.
+
+Linux `ScanAsync` receives only resolved `Flatbed`/`Feeder` and maps `(Feeder,true)` to NAPS2 `PaperSource.Duplex`; receiving `Auto` is an internal programming error and throws before acquisition.
+
+- [ ] **Step 5: Run shared/Linux GREEN**
+
+```bash
+dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter 'FullyQualifiedName~ScanSourcePolicyTests|FullyQualifiedName~ScanAdapterContractTests|FullyQualifiedName~LinuxScanAdapterTests|FullyQualifiedName~LinuxVirtualScanAdapterTests'
+```
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add webassist/src/WebAssistant/Scanning \
-        tests/core/ScanSourcePolicyTests.cs \
-        tests/core/ScanAdapterContractTests.cs \
-        tests/core/LinuxScanAdapterTests.cs \
-        tests/core/LinuxVirtualScanAdapterTests.cs \
-        contracts/webassistant-conformance-v0.3.json
+git add webassist/src/WebAssistant/Scanning tests/core/ScanSourcePolicyTests.cs tests/core/ScanAdapterContractTests.cs tests/core/LinuxScanAdapterTests.cs tests/core/LinuxVirtualScanAdapterTests.cs contracts/webassistant-conformance-v0.3.json
 git commit -m "feat: add deterministic scanner source policy"
 ```
 
 ---
 
-### Task 5: Replace WIA-first fallback with independent Windows WIA+TWAIN discovery
+### Task 5: Implement independently testable WIA+TWAIN Windows discovery
 
 **Files:**
 - Create: `webassist/src/WebAssistant/Scanning/Naps2ScanSession.cs`
@@ -647,139 +475,93 @@ git commit -m "feat: add deterministic scanner source policy"
 - Modify: `tests/core/WindowsScanAdapterTests.cs`
 - Modify: `contracts/webassistant-conformance-v0.3.json`
 
-**Interfaces:**
-- New injectable seam:
+**Injectable seam:**
 
 ```csharp
 internal interface INaps2ScanSession : IDisposable
 {
     Task<IReadOnlyList<ScanDevice>> GetDevicesAsync(Driver driver, CancellationToken cancellationToken);
     Task<ScanCaps> GetCapsAsync(ScanDevice device, CancellationToken cancellationToken);
-    Task<Stream> ScanPdfAsync(
-        Driver driver,
-        ScanDevice device,
-        PaperSource paperSource,
+    Task<Stream> ScanPdfAsync(Driver driver, ScanDevice device, PaperSource paperSource,
         CancellationToken cancellationToken);
 }
 ```
 
-Production `Naps2ScanSession` owns `ScanningContext`, `ScanController`, image disposal, and `PdfExporter` logic currently embedded in `WindowsScanAdapter`.
+Production `Naps2ScanSession` owns the existing GDI `ScanningContext`, `ScanController`, image disposal, and `PdfExporter`. `WindowsScanAdapter()` keeps the real Windows platform guard; `WindowsScanAdapter(INaps2ScanSession session)` is internal for off-Windows unit tests.
 
-- [ ] **Step 1: Write tests-only RED for union discovery and stable IDs**
+- [ ] **Step 1: Replace old preferred-driver tests with tests-only RED**
 
-Replace the old `SelectPreferredDriver` tests with a fake `INaps2ScanSession` and require:
+Use a fake session to prove:
 
 ```text
-WIA [wia-1] + TWAIN [twain-1] -> two endpoints
-both same display name -> still two endpoints with distinct scannerId/backend
-reversed enumeration order -> same scannerId values
-WIA enumeration throws + TWAIN succeeds -> HTTP/domain result usable with warning(wia, enumerationFailed)
-TWAIN throws + WIA succeeds -> usable with warning(twain, enumerationFailed)
-both throw -> ScannerDiscoveryResult.Unavailable == true
-duplicate exact TWAIN native ID -> no ambiguous endpoints + warning(twain, ambiguousNativeIdentity)
-capability read failure for one endpoint -> exclude that endpoint + warning(backend, capabilitiesUnavailable)
+WIA one + TWAIN one -> two endpoints
+same display name across WIA/TWAIN -> still distinct endpoints/IDs
+reordered raw devices -> identical stable ID set
+WIA throws + TWAIN succeeds -> usable result + warning(wia, enumerationFailed)
+TWAIN throws + WIA succeeds -> usable result + warning(twain, enumerationFailed)
+both throw -> Unavailable=true
+duplicate exact native ID in a backend -> drop ambiguous group + ambiguousNativeIdentity
+one device caps fails -> omit only that device + capabilitiesUnavailable
 ```
 
-A representative test:
-
-```csharp
-[Fact]
-public async Task Discovery_ReturnsWiaAndTwainUnionWithoutPhysicalDeduplication()
-{
-    using var session = FakeNaps2ScanSession.Create(
-        wia: [Device(Driver.Wia, "wia-native", "Same MFP")],
-        twain: [Device(Driver.Twain, "twain-native", "Same MFP")]);
-    using var adapter = new WindowsScanAdapter(session);
-
-    var result = await adapter.GetScannersAsync();
-
-    Assert.False(result.Unavailable);
-    Assert.Equal(2, result.Scanners.Count);
-    Assert.Contains(result.Scanners, x => x.Backend == ScannerBackend.Wia);
-    Assert.Contains(result.Scanners, x => x.Backend == ScannerBackend.Twain);
-    Assert.Equal(2, result.Scanners.Select(x => x.ScannerId).Distinct().Count());
-}
-```
-
-- [ ] **Step 2: Run and record RED**
+- [ ] **Step 2: Run RED**
 
 ```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
-  --filter 'FullyQualifiedName~WindowsScanAdapterTests'
+dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter 'FullyQualifiedName~WindowsScanAdapterTests'
 ```
 
-Expected: FAIL because current code uses `SelectPreferredDriver` and suppresses TWAIN after non-empty WIA.
+Expected: FAIL because current code uses `SelectPreferredDriver` and WIA suppresses TWAIN.
 
-- [ ] **Step 3: Extract `Naps2ScanSession` without changing behavior**
+- [ ] **Step 3: Extract NAPS2 scan/PDF mechanics without semantic change**
 
-Move the current `ScanningContext`/`ScanController`/PDF export mechanics into `Naps2ScanSession`. Keep the public production constructor:
+Move current Windows image collection/PDF export into `Naps2ScanSession.ScanPdfAsync` so orchestration can be tested with a fake session.
 
-```csharp
-internal WindowsScanAdapter()
+- [ ] **Step 4: Implement per-backend independent discovery**
+
+For WIA and TWAIN independently:
+
+```text
+GetDevicesAsync inside its own try/catch
+enumeration throw -> enumerationFailed + backendFailed
+success -> group by exact device.ID using StringComparer.Ordinal
+count>1 group -> drop group + ambiguousNativeIdentity
+single device -> GetCapsAsync
+caps throw -> omit endpoint + capabilitiesUnavailable
+caps success -> stable ID + source booleans + nullable paper map
 ```
 
-with Windows platform guard and GDI/Win32 worker setup, plus an internal test constructor:
+Map SDK `bool? FeederHasPaper` to `Present/Absent/Unknown`. `Unavailable=true` only if both WIA and TWAIN enumeration calls failed; successful empty backend is success.
 
-```csharp
-internal WindowsScanAdapter(INaps2ScanSession session)
+- [ ] **Step 5: Implement exact endpoint acquisition**
+
+Use `scanner.Backend` to enumerate only WIA or only TWAIN. Find `device.ID == scanner.NativeId` ordinal, recompute stable ID and require equality, then map:
+
+```text
+Flatbed,false -> PaperSource.Flatbed
+Feeder,false  -> PaperSource.Feeder
+Feeder,true   -> PaperSource.Duplex
 ```
 
-that does not require Windows and owns/disposes the injected session exactly once.
+Never fallback across backends.
 
-- [ ] **Step 4: Implement independent backend enumeration**
-
-For each of `Driver.Wia` and `Driver.Twain`:
-
-1. call `GetDevicesAsync` independently inside its own `try/catch`;
-2. if enumeration throws, add one `enumerationFailed` warning and mark that backend failed;
-3. group successful raw devices by exact `device.ID`; for groups with count > 1, drop the entire group and add `ambiguousNativeIdentity`;
-4. for each unambiguous device, call `GetCapsAsync`; if it fails, omit that endpoint and add `capabilitiesUnavailable`;
-5. map nullable `caps.PaperSourceCaps?.FeederHasPaper` to `Present/Absent/Unknown`;
-6. derive `ScannerIdentity.Create(backend, device.ID)`.
-
-Set `Unavailable=true` only when both WIA and TWAIN enumeration operations failed. Successful empty enumeration is not failure.
-
-- [ ] **Step 5: Implement exact acquisition resolution by endpoint backend/native ID**
-
-`ScanAsync(ScannerEndpoint scanner, ScanSource concreteSource, bool duplex, ...)` must:
-
-- reject backend other than WIA/TWAIN;
-- enumerate only `scanner.Backend`;
-- locate exact `device.ID == scanner.NativeId` using ordinal comparison;
-- recompute `ScannerIdentity.Create(scanner.Backend, device.ID)` and require exact equality with `scanner.ScannerId`;
-- map concrete source + duplex to NAPS2 `PaperSource`;
-- call `session.ScanPdfAsync`.
-
-No WIA→TWAIN or TWAIN→WIA fallback is permitted during acquisition.
-
-- [ ] **Step 6: Run Windows unit + virtual scanner tests GREEN**
+- [ ] **Step 6: Run unit + Windows virtual GREEN**
 
 ```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
-  --filter 'FullyQualifiedName~WindowsScanAdapterTests'
+dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter 'FullyQualifiedName~WindowsScanAdapterTests'
 ```
 
-Then on the Windows virtual-scanner job/environment:
-
-```powershell
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter "Category=WindowsVirtualScanner"
-```
-
-Expected: union/stable-ID unit tests PASS and real virtual TWAIN PDF acquisition PASS.
+On the Windows virtual scanner workflow also run `Category=WindowsVirtualScanner` and require PDF output from a returned `wa1-twain-*` endpoint.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add webassist/src/WebAssistant/Scanning/Naps2ScanSession.cs \
-        webassist/src/WebAssistant/Scanning/WindowsScanAdapter.cs \
-        tests/core/WindowsScanAdapterTests.cs \
-        contracts/webassistant-conformance-v0.3.json
+git add webassist/src/WebAssistant/Scanning/Naps2ScanSession.cs webassist/src/WebAssistant/Scanning/WindowsScanAdapter.cs tests/core/WindowsScanAdapterTests.cs contracts/webassistant-conformance-v0.3.json
 git commit -m "feat: enumerate Windows WIA and TWAIN independently"
 ```
 
 ---
 
-### Task 6: Replace source-specific HTTP routes with one strict JSON acquisition contract
+### Task 6: Replace old HTTP scan surface with strict JSON contract
 
 **Files:**
 - Create: `webassist/src/WebAssistant/Http/ScanRequest.cs`
@@ -790,78 +572,62 @@ git commit -m "feat: enumerate Windows WIA and TWAIN independently"
 - Modify: `tests/core/PlatformEndToEndTests.cs`
 - Modify: `contracts/webassistant-conformance-v0.3.json`
 
-**Interfaces:**
+**Wire DTO:**
 
 ```csharp
 internal sealed record ScanRequest(string? ScannerId, string? Source, ScanSettingsRequest? Settings);
 internal sealed record ScanSettingsRequest(bool? Duplex);
 ```
 
-Do not bind `scannerId` from query string in the new route.
+- [ ] **Step 1: Write tests-only RED for acquisition**
 
-- [ ] **Step 1: Write tests-only RED for the new wire contract**
-
-Replace old query/source-route tests with JSON requests using `StringContent`/`JsonContent` and require:
+Require:
 
 ```text
-POST /v1/scan {scannerId} -> source auto, duplex false
-POST /v1/scan {scannerId, source:flatbed} -> flatbed
-POST /v1/scan {scannerId, source:feeder, settings:{duplex:false}} -> feeder simplex
-POST /v1/scan {scannerId, source:feeder, settings:{duplex:true}} -> feeder duplex
+{scannerId} -> Auto,false
+{scannerId,source:flatbed} -> Flatbed,false
+{scannerId,source:feeder,settings:{duplex:false}} -> Feeder,false
+{scannerId,source:feeder,settings:{duplex:true}} -> Feeder,true
 missing/blank scannerId -> 400
-unknown/malformed wa1 scannerId -> malformed 400 or well-formed unresolved 404
-source=AUTO / glass / duplex / unknown -> 400
-source=auto + duplex=true -> 400
-source=flatbed + duplex=true -> 400
-unsupported explicit feeder/duplex -> 422
-concurrent acquisition -> 409
+malformed wa1 ID -> 400
+well-formed absent ID after successful target backend enumeration -> 404
+target backend enumerationFailed -> 503 even if another backend succeeded
+source=AUTO/glass/duplex/unknown -> 400
+auto+duplex / flatbed+duplex -> 400
+unsupported source/duplex -> 422
+second concurrent acquisition -> 409
 adapter acquisition failure -> 502
-successful acquisition -> raw application/pdf
-POST /v1/scan/feeder -> 404
-POST /v1/scan/duplex -> 404
+success -> raw application/pdf
+/v1/scan/feeder -> 404
+/v1/scan/duplex -> 404
 query-only scannerId with no JSON scannerId -> 400
 ```
 
-Update fake adapters to return `ScannerDiscoveryResult` and accept `ScannerEndpoint`.
+- [ ] **Step 2: Write tests-only RED for GET `/v1/scanners`**
 
-- [ ] **Step 2: Write tests-only RED for scanner-list envelope/partial failure**
-
-Require exact shape:
+Require envelope:
 
 ```json
 {
-  "scanners": [
-    {
-      "scannerId": "wa1-wia-...",
-      "name": "Scanner",
-      "backend": "wia",
-      "sources": { "flatbed": true, "feeder": true, "duplex": true }
-    }
-  ],
+  "scanners": [{
+    "scannerId": "wa1-wia-...",
+    "name": "Scanner",
+    "backend": "wia",
+    "sources": {"flatbed":true,"feeder":true,"duplex":true}
+  }],
   "warnings": []
 }
 ```
 
-And:
+`NativeId` and `FeederPaper` must never appear. Partial warning + usable result -> 200. Successful empty -> 200. `Unavailable=true` -> 503.
 
-```text
-Unavailable=false, one backend warning -> 200 + warning
-Unavailable=false, zero scanners -> 200 + empty scanners
-Unavailable=true -> 503
-```
-
-- [ ] **Step 3: Run and record RED**
+- [ ] **Step 3: Run RED**
 
 ```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
-  --filter 'FullyQualifiedName~HttpScanContractTests'
+dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter 'FullyQualifiedName~HttpScanContractTests'
 ```
 
-Expected: multiple focused failures because current API uses query `scannerId`, glass default, and three routes.
-
-- [ ] **Step 4: Implement strict request parsing**
-
-In `ScanCoordinator`, parse `request.Source` with exact ordinal values only:
+- [ ] **Step 4: Implement strict parsing before scanner resolution**
 
 ```csharp
 var source = request.Source switch
@@ -875,359 +641,162 @@ var source = request.Source switch
 var duplex = request.Settings?.Duplex ?? false;
 ```
 
-Validate `ScannerIdentity.TryParse` before adapter discovery. Missing/blank/malformed IDs return 400.
+Missing/blank ID -> 400. Call `ScannerIdentity.TryParse` and retain the parsed `targetBackend`; malformed -> 400.
 
-- [ ] **Step 5: Resolve current endpoint and source before acquisition**
+- [ ] **Step 5: Resolve discovery failures correctly**
 
-Coordinator sequence:
+Coordinator sequence after acquiring the existing concurrency gate:
 
 ```text
-acquisition gate
--> validate JSON/scannerId syntax
--> adapter.GetScannersAsync()
--> if discovery unavailable: 503
--> exact scannerId lookup
--> if absent: 404
--> ScanSourcePolicy.Resolve(endpoint, requestedSource, duplex)
--> validation exception: 400
--> unsupported capability: 422
--> adapter.ScanAsync(endpoint, resolved.Source, resolved.Duplex)
--> verify non-empty PDF
--> 200 application/pdf
+validate request/scannerId
+GetScannersAsync
+Unavailable -> 503
+lookup exact scannerId
+if absent AND warnings contain (targetBackend, enumerationFailed) -> 503
+if absent otherwise -> 404
+ScanSourcePolicy.Resolve
+ScanRequestValidationException -> 400
+UnsupportedScanCapabilityException -> 422
+adapter.ScanAsync
+non-empty PDF -> 200 application/pdf
+actual acquisition exception -> 502
 ```
 
-Keep current cancellation behavior and safe scanner ID/name logging.
+This rule prevents a partial WIA failure from falsely turning a persisted `wa1-wia-*` ID into 404 while TWAIN still works.
 
-- [ ] **Step 6: Replace scanner-list handler**
+- [ ] **Step 6: Serialize scanner list with explicit lowercase backend mapping**
 
-Serialize lowercase backend tokens using an explicit mapping function, not `Enum.ToString()`:
+Use explicit switch `Wia->"wia"`, `Twain->"twain"`, `Sane->"sane"`; warnings expose only `backend` and `code`.
 
-```csharp
-ScannerBackend.Wia => "wia"
-ScannerBackend.Twain => "twain"
-ScannerBackend.Sane => "sane"
-```
+- [ ] **Step 7: Replace `Program.cs` routes**
 
-Serialize warnings with lowercase backend + stable `Code`; never expose `NativeId` or `FeederPaper`.
+Keep only JSON `POST /v1/scan`; delete `/scan/feeder` and `/scan/duplex`; do not read scannerId from query string.
 
-- [ ] **Step 7: Replace routes in `Program.cs`**
-
-Keep only:
-
-```csharp
-api.MapPost("/scan", async (
-    ScanRequest request,
-    ScanCoordinator coordinator,
-    IServiceProvider services,
-    CancellationToken cancellationToken) =>
-{
-    return await coordinator.ExecuteAsync(
-        services.GetService<IScanAdapter>(),
-        request,
-        cancellationToken);
-});
-```
-
-Delete mappings for `/scan/feeder` and `/scan/duplex`. Do not add query compatibility aliases.
-
-- [ ] **Step 8: Run HTTP/E2E tests GREEN**
+- [ ] **Step 8: Run HTTP/E2E GREEN and commit**
 
 ```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
-  --filter 'FullyQualifiedName~HttpScanContractTests|FullyQualifiedName~PlatformEndToEndTests'
+dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter 'FullyQualifiedName~HttpScanContractTests|FullyQualifiedName~PlatformEndToEndTests'
 ```
 
-Expected: PASS.
-
-- [ ] **Step 9: Commit**
-
 ```bash
-git add webassist/src/WebAssistant/Http \
-        webassist/src/WebAssistant/Program.cs \
-        tests/core/HttpScanContractTests.cs \
-        tests/core/PlatformEndToEndTests.cs \
-        contracts/webassistant-conformance-v0.3.json
+git add webassist/src/WebAssistant/Http webassist/src/WebAssistant/Program.cs tests/core/HttpScanContractTests.cs tests/core/PlatformEndToEndTests.cs contracts/webassistant-conformance-v0.3.json
 git commit -m "feat: unify scanner acquisition HTTP API"
 ```
 
 ---
 
-### Task 7: Make documentation and executable conformance match the exact P0 API
+### Task 7: Synchronize docs and executable virtual-scanner consumers
 
 **Files:**
 - Modify: `webassist/docs/api.md`
 - Modify: `webassist/README.md`
-- Modify: `contracts/webassistant-conformance-v0.3.json`
 - Modify: `tests/core/HttpScanContractTests.cs`
 - Modify: `tests/core/DistributionContractCandidateTests.cs`
+- Modify: `tests/core/VirtualScannerWorkflowTests.cs`
+- Modify only if actual old calls exist: `.github/workflows/virtual-scanner.yml`, `tests/core/PlatformEndToEndTests.cs`
+- Modify: `contracts/webassistant-conformance-v0.3.json`
 
-**Interfaces:**
-- Produces the caller-facing contract used by the Triumf UI team.
+- [ ] **Step 1: Add docs/consumer RED assertions**
 
-- [ ] **Step 1: Add structural documentation assertions before editing docs**
+Require docs to contain `GET /v1/scanners`, `POST /v1/scan`, `scannerId`, `auto`, `flatbed`, `feeder`, `duplex`, `backend`, `sources`, and status codes `400/404/409/422/502/503`; reject old source routes.
 
-Require `api.md` to contain all of:
+Require virtual scanner consumers to GET scannerId then POST JSON to `/v1/scan`, never old routes.
 
-```text
-POST /v1/scan
-scannerId
-source
-"auto"
-"flatbed"
-"feeder"
-duplex
-GET /v1/scanners
-backend
-sources
-400
-404
-409
-422
-502
-503
-```
-
-and to contain neither `/v1/scan/feeder` nor `/v1/scan/duplex`.
-
-- [ ] **Step 2: Run documentation assertion RED**
+- [ ] **Step 2: Run RED**
 
 ```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
-  --filter 'FullyQualifiedName~HttpScanContractTests|FullyQualifiedName~DistributionContractCandidateTests'
+dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter 'FullyQualifiedName~HttpScanContractTests|FullyQualifiedName~DistributionContractCandidateTests|FullyQualifiedName~VirtualScannerWorkflowTests'
 ```
 
-Expected: FAIL against old API documentation.
+- [ ] **Step 3: Rewrite `api.md` with copy/pasteable examples**
 
-- [ ] **Step 3: Rewrite `api.md` to the actual wire contract**
-
-Document a copy/pasteable minimal request:
+Minimal:
 
 ```json
-{
-  "scannerId": "wa1-wia-..."
-}
+{"scannerId":"wa1-wia-..."}
 ```
 
-and full request:
+Full:
 
 ```json
-{
-  "scannerId": "wa1-wia-...",
-  "source": "feeder",
-  "settings": {
-    "duplex": true
-  }
-}
+{"scannerId":"wa1-wia-...","source":"feeder","settings":{"duplex":true}}
 ```
 
 Document UI mapping:
 
 ```text
-Авто               -> source=auto,    duplex=false
-Стекло             -> source=flatbed, duplex=false
-Лоток              -> source=feeder,  duplex=false
-Лоток двусторонний -> source=feeder,  duplex=true
+Авто               -> auto,false
+Стекло             -> flatbed,false
+Лоток              -> feeder,false
+Лоток двусторонний -> feeder,true
 ```
 
-Document that WIA and TWAIN endpoints may both represent the same physical MFP and must be treated as distinct persisted endpoints. Document that native IDs are private and scannerId may legitimately change after driver reinstallation/re-enumeration that changes the backend-native ID.
+Document WIA/TWAIN as distinct endpoints even for one physical MFP, scannerId persistence semantics, legitimate ID change after native driver re-enumeration, partial-backend warning behavior, and exact status-code meanings.
 
-Document `GET /v1/scanners` envelope and partial backend warnings exactly.
+- [ ] **Step 4: Update README and actual virtual scanner HTTP calls**
 
-- [ ] **Step 4: Align top-level product README**
+Remove WIA-first/fallback and old-route descriptions. Change only consumers proven to use the old API.
 
-Remove references implying WIA-first/TWAIN fallback or source-specific acquisition routes. Link to `docs/api.md` for the exact wire schema.
-
-- [ ] **Step 5: Run docs/contract/full core GREEN**
+- [ ] **Step 5: Run full core + Linux/Windows virtual scanner GREEN**
 
 ```bash
 dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release
 ```
 
-Expected: all core tests PASS.
+Require Linux SANE PDF and Windows TWAIN virtual PDF acceptance GREEN on exact head.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add webassist/docs/api.md webassist/README.md \
-        contracts/webassistant-conformance-v0.3.json \
-        tests/core/HttpScanContractTests.cs \
-        tests/core/DistributionContractCandidateTests.cs
+git add webassist/docs/api.md webassist/README.md tests/core/HttpScanContractTests.cs tests/core/DistributionContractCandidateTests.cs tests/core/VirtualScannerWorkflowTests.cs contracts/webassistant-conformance-v0.3.json .github/workflows/virtual-scanner.yml tests/core/PlatformEndToEndTests.cs
 git commit -m "docs: document unified scanner API"
 ```
 
----
-
-### Task 8: Update virtual scanner acceptance and prove no Linux/Windows regression
-
-**Files:**
-- Modify: `tests/core/VirtualScannerWorkflowTests.cs`
-- Modify when required by changed CLI/API calls: `.github/workflows/virtual-scanner.yml`
-- Modify when required: `tests/core/PlatformEndToEndTests.cs`
-- Do not modify installer/release workflows unless a failing test proves they consume the old scanner routes.
-
-**Interfaces:**
-- Produces automated executable evidence for real process startup + scanner enumeration/acquisition using the new IDs/API.
-
-- [ ] **Step 1: Add RED assertions to virtual scanner workflow tests**
-
-Require the workflow/acceptance logic to:
-
-```text
-GET /v1/scanners
-extract a returned scannerId
-POST /v1/scan with JSON body containing that scannerId and explicit source
-verify application/pdf
-never call /v1/scan/feeder or /v1/scan/duplex
-```
-
-For Windows TWAIN virtual scanner, also require returned `scannerId` starts `wa1-twain-`.
-
-- [ ] **Step 2: Run and record RED**
-
-```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release \
-  --filter 'FullyQualifiedName~VirtualScannerWorkflowTests'
-```
-
-Expected: FAIL if current workflow still uses old routes/query IDs.
-
-- [ ] **Step 3: Update only actual consumers of the old API**
-
-Change HTTP calls to JSON bodies. Do not introduce test-only product routes or fallback aliases.
-
-- [ ] **Step 4: Run full core, Linux virtual, and Windows virtual suites**
-
-Core:
-
-```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release
-```
-
-Linux virtual scanner workflow must prove SANE discovery + PDF remains GREEN. Windows virtual scanner workflow must prove TWAIN endpoint discovery + stable-format ID + PDF remains GREEN.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add tests/core/VirtualScannerWorkflowTests.cs \
-        tests/core/PlatformEndToEndTests.cs \
-        .github/workflows/virtual-scanner.yml
-git commit -m "test: exercise unified scanner API end to end"
-```
-
-If `.github/workflows/virtual-scanner.yml` or `PlatformEndToEndTests.cs` required no change, omit unchanged paths from the commit.
+Omit unchanged optional paths from `git add`.
 
 ---
 
-### Task 9: Perform the single product VERSION transition and final Draft verification
+### Task 8: Single VERSION transition, Ready acceptance, real reboot evidence, exact-head merge
 
 **Files:**
 - Modify: `webassist/VERSION`
-- Modify version-sensitive current-transition fixtures only if exact test failures prove they track current VERSION, especially `tests/core/ReleaseInfrastructureTests.cs`.
-- Do not alter historical evidence or staged `v0.3.21` Draft bytes.
+- Modify only if proven version-sensitive by failing tests: `tests/core/ReleaseInfrastructureTests.cs`
+- No product source changes after Ready head freeze.
 
-**Interfaces:**
-- Produces the #163 accepted-transition version, expected `0.3.22`.
+- [ ] **Step 1: Require pre-bump functional GREEN**
 
-- [ ] **Step 1: Confirm pre-bump Draft head is functionally GREEN**
+Run full core and inspect fresh Draft PR CI. Before VERSION change, repo-guard may fail only on monotonicity; read the actual log and stop if any other policy fails.
 
-Before touching VERSION:
+- [ ] **Step 2: Bump exactly once**
 
-```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release
-```
-
-Also require fresh Draft PR `ci` and scanner jobs GREEN on the exact source head. At this point repo-guard may fail only on product-version monotonicity; inspect the actual log rather than assuming.
-
-- [ ] **Step 2: Change VERSION exactly once**
-
-If live base still has `0.3.21`, replace the sole content of `webassist/VERSION` with:
+If base is still `0.3.21`, set `webassist/VERSION` exactly to:
 
 ```text
 0.3.22
 ```
 
-No other version bump is permitted in #163.
+Run core; update only fixtures whose failing assertions explicitly model current `Version/BaseVersion` to `0.3.22/0.3.21`. Never bulk-replace historical evidence.
 
-- [ ] **Step 3: Synchronize only proven current-version fixtures**
-
-Run full core. If a fixture such as `ReleaseInfrastructureTests.cs` fails because it intentionally models the current candidate transition, update its current `Version` / `BaseVersion` values to `0.3.22 / 0.3.21`. Do not bulk-replace historical `0.3.21` references.
-
-- [ ] **Step 4: Run full core and repo-guard on exact head**
-
-```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release
-```
-
-Expected: core GREEN and repo-guard GREEN after ChangeIntent scope is exact.
-
-- [ ] **Step 5: Commit final version transition**
+- [ ] **Step 3: Commit version transition and reach Draft GREEN**
 
 ```bash
 git add webassist/VERSION tests/core/ReleaseInfrastructureTests.cs
 git commit -m "release: advance WebAssistant to 0.3.22"
 ```
 
-Omit `ReleaseInfrastructureTests.cs` if it did not require an edit.
+Omit the fixture path if unchanged. Require exact-head core + repo-guard GREEN before Ready.
 
----
+- [ ] **Step 4: Final diff review**
 
-### Task 10: Ready acceptance, real Windows reboot evidence, exact-head merge, and handoff to #191
+Verify accepted v0.2, `repo-policy.json`, #191 installer-upgrade implementation, and #192 localization are untouched. Check no unresolved review threads and no accidental unrelated paths.
 
-**Files:**
-- No product source changes after the Ready candidate head is frozen.
-- GitHub issue/PR evidence only.
+- [ ] **Step 5: Mark the same head Ready and require full classifier matrix**
 
-**Interfaces:**
-- Consumes: exact Ready PR head for #163.
-- Produces: physical scanner evidence and an exact merge commit; does not publish a Release.
+Require fresh Ready runs for core, repo-guard, Linux scanner smoke/final, Windows scanner smoke/final, `ci-required`, and canonical installer build/lifecycle jobs selected by the change classifier. No source changes after these checks begin.
 
-- [ ] **Step 1: Final code/spec review before Ready**
+- [ ] **Step 6: Use exact Ready Windows installer for real identity evidence**
 
-Compare `main...HEAD` and verify the diff contains only #163 scope. Explicitly verify no changes to:
-
-```text
-contracts/webassistant-contract-v0.2.json
-contracts/webassistant-conformance-v0.2.json
-repo-policy.json
-Windows installer upgrade behavior (#191)
-installer localization (#192)
-```
-
-Check no unresolved PR review threads.
-
-- [ ] **Step 2: Mark the same head Ready and require the full matrix**
-
-Require fresh `ready_for_review` runs for:
-
-```text
-core
-repo-guard
-Linux scanner smoke/final
-Windows scanner smoke/final
-canonical Windows installer build/lifecycle when classifier requires it
-canonical Linux installer build/lifecycle when classifier requires it
-ci-required
-```
-
-No source commit is allowed merely to rerun a stale event snapshot; if PR metadata changed and repo-guard needs a new event, use the repository's established same-tree governance-only event strategy and verify tree identity.
-
-- [ ] **Step 3: Download the exact Ready Windows installer artifact for physical acceptance**
-
-Record:
-
-```text
-PR number
-exact head SHA
-VERSION 0.3.22
-artifact name
-artifact SHA-256/provenance
-```
-
-Do not rebuild locally for physical evidence.
-
-- [ ] **Step 4: Capture real Windows scanner IDs before reboot**
-
-On the target Windows machine with the exact Ready installer installed:
+Record exact PR/head/VERSION/artifact SHA/provenance. Install those bytes, then before reboot:
 
 ```powershell
 $before = Invoke-RestMethod http://127.0.0.1:17654/v1/scanners
@@ -1235,62 +804,37 @@ $before | ConvertTo-Json -Depth 8
 $before | ConvertTo-Json -Depth 8 | Set-Content .\scanners-before-reboot.json -Encoding UTF8
 ```
 
-Evidence must show at least one stable-format `wa1-*` ID. Where the target exposes both WIA and TWAIN for the same physical MFP, capture both endpoint entries and their distinct IDs.
+Require at least one `wa1-*`. If hardware exposes both WIA and TWAIN, capture both distinct endpoints.
 
-- [ ] **Step 5: Reboot Windows and prove identity stability**
+- [ ] **Step 7: Reboot Windows and compare IDs**
 
-After an actual OS reboot and service startup:
+After actual OS reboot/service startup:
 
 ```powershell
 $after = Invoke-RestMethod http://127.0.0.1:17654/v1/scanners
-$after | ConvertTo-Json -Depth 8
 $beforeJson = Get-Content .\scanners-before-reboot.json -Raw | ConvertFrom-Json
 $beforeIds = @($beforeJson.scanners | ForEach-Object scannerId | Sort-Object)
 $afterIds = @($after.scanners | ForEach-Object scannerId | Sort-Object)
 Compare-Object $beforeIds $afterIds
 ```
 
-Expected for unchanged installed backend endpoints: `Compare-Object` prints no differences.
+Expected for unchanged installed endpoints: no output. If IDs changed, do not merge; record raw before/after and investigate native identity.
 
-If IDs change, do not merge #163. Record the raw before/after endpoint data in #163 and investigate the native identity source.
-
-- [ ] **Step 6: Prove unified acquisition on the physical scanner**
-
-Choose one returned scanner ID and run:
+- [ ] **Step 8: Prove unified acquisition with the returned ID**
 
 ```powershell
 $scannerId = $after.scanners[0].scannerId
-$body = @{ scannerId = $scannerId; source = 'flatbed'; settings = @{ duplex = $false } } |
-    ConvertTo-Json -Depth 4
-Invoke-WebRequest http://127.0.0.1:17654/v1/scan \
-    -Method Post -ContentType 'application/json' -Body $body -OutFile .\scan.pdf
+$body = @{ scannerId = $scannerId; source = 'flatbed'; settings = @{ duplex = $false } } | ConvertTo-Json -Depth 4
+Invoke-WebRequest http://127.0.0.1:17654/v1/scan -Method Post -ContentType 'application/json' -Body $body -OutFile .\scan.pdf
 (Get-Item .\scan.pdf).Length
 ```
 
-On a feeder-capable MFP, also exercise the UI-relevant feeder simplex/duplex mode supported by the device. For auto on a dual-source device, capture one practical case with feeder paper present and one with no feeder paper when feasible; if the physical driver cannot report state, capture the returned capabilities/observed `UNKNOWN -> flatbed` behavior instead of claiming sensor support.
+On feeder-capable hardware also test the supported feeder mode. For auto on dual-source hardware, capture paper-present and paper-absent cases when feasible. If the driver cannot expose paper state, record `UNKNOWN -> flatbed`; never claim sensor support that was not observed.
 
-- [ ] **Step 7: Record physical evidence in #163**
+- [ ] **Step 9: Record evidence in #163 and merge exact head only**
 
-Comment with exact installer identity, head SHA, before/after IDs, reboot fact, backend union observation, acquisition result, and screenshots/log hashes where available. Do not mark a property as proven if the test hardware did not expose it.
+Comment exact installer identity, before/after IDs, reboot fact, observed WIA/TWAIN endpoints, source/acquisition results, and evidence hashes. Re-check PR head/base/mergeability and live main, then merge with expected head SHA. Require fresh post-merge core/scanner CI.
 
-- [ ] **Step 8: Merge only exact verified head**
+- [ ] **Step 10: Handoff to #191; do not publish Release**
 
-Immediately re-check PR head/base/mergeability and `main`. Merge with ordinary merge commit using expected head SHA. After merge, require fresh push CI/core/scanner checks on the merge commit.
-
-- [ ] **Step 9: Close #163 only after all acceptance items are actually proven**
-
-If real WIA+TWAIN union cannot be physically observed on available hardware, keep that acceptance item explicitly unproven even if automated fixtures are GREEN; do not fabricate evidence. The issue may remain open for that evidence while code is merged only if the project governance explicitly allows the outstanding physical-evidence gate.
-
-- [ ] **Step 10: Handoff to #191 without publishing v0.3.22**
-
-Update #160/#191 with:
-
-```text
-#163 merged main SHA
-VERSION 0.3.22
-scanner API exact shape
-physical evidence status
-next task = Windows in-place upgrade with active WebAssistant/NAPS2.Worker
-```
-
-Do not create a final PDF or publish a Release here. The next canonical Windows installer intended for delivery is produced only after #191 completes and advances VERSION again according to repository policy.
+Update #160/#191 with merged main SHA, VERSION, exact scanner API, and physical evidence status. The next delivery candidate is built only after #191 in-place upgrade work advances VERSION again. Do not finalize PDF or publish `v0.3.22` from #163.
