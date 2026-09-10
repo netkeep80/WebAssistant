@@ -162,9 +162,10 @@ fi
 
 cp -- "$version_file" "$package_root/VERSION"
 cp -- "$install_root/install.sh" "$package_root/install.sh"
+cp -- "$install_root/runtime-dependencies.sh" "$package_root/runtime-dependencies.sh"
 cp -- "$install_root/uninstall.sh" "$package_root/uninstall.sh"
 cp -- "$install_root/webassist.service" "$package_root/webassist.service"
-chmod +x -- "$package_root/install.sh" "$package_root/uninstall.sh"
+chmod +x -- "$package_root/install.sh" "$package_root/runtime-dependencies.sh" "$package_root/uninstall.sh"
 
 [[ -x "$app_directory/WebAssistant" ]] || {
     echo "В package отсутствует исполняемый файл WebAssistant." >&2
@@ -172,6 +173,10 @@ chmod +x -- "$package_root/install.sh" "$package_root/uninstall.sh"
 }
 [[ -f "$package_config_path" ]] || {
     echo "В package отсутствует appsettings.json." >&2
+    exit 1
+}
+[[ -f "$package_root/runtime-dependencies.sh" ]] || {
+    echo "В package отсутствует runtime-dependencies.sh." >&2
     exit 1
 }
 
