@@ -250,6 +250,55 @@ function Assert-NoFilesInUseEvidence {
     }
 }
 
+function Assert-UpgradePreflightBeforeMsi {
+    param(
+        [Parameter(Mandatory = $true)][string]$PrimaryLog,
+        [Parameter(Mandatory = $true)][string]$PreflightDiagnosticLog
+    )
+
+    if (-not (Test-Path -LiteralPath $PrimaryLog -PathType Leaf)) {
+        throw "Burn did not create expected upgrade log: $PrimaryLog"
+    }
+
+    $lines = @(Get-Content -LiteralPath $PrimaryLog)
+    $preflightAppliedIndex = -1
+    $msiApplyingIndex = -1
+
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        $line = [string]$lines[$index]
+        if ($preflightAppliedIndex -lt 0 -and
+            $line.Contains('Applied execute package: UpgradePreflight', [StringComparison]::OrdinalIgnoreCase) -and
+            $line.Contains('result: 0x0', [StringComparison]::OrdinalIgnoreCase)) {
+            $preflightAppliedIndex = $index
+        }
+        if ($msiApplyingIndex -lt 0 -and
+            $line.Contains('Applying execute package: WebAssistantMsi', [StringComparison]::OrdinalIgnoreCase)) {
+            $msiApplyingIndex = $index
+        }
+    }
+
+    if ($preflightAppliedIndex -lt 0) {
+        throw "Burn log has no successful Applied execute package: UpgradePreflight evidence."
+    }
+    if ($msiApplyingIndex -lt 0) {
+        throw "Burn log has no Applying execute package: WebAssistantMsi evidence."
+    }
+    if ($preflightAppliedIndex -ge $msiApplyingIndex) {
+        throw "UpgradePreflight did not complete successfully before WebAssistantMsi execution."
+    }
+
+    if (-not (Test-Path -LiteralPath $PreflightDiagnosticLog -PathType Leaf)) {
+        throw "UpgradePreflight diagnostic log is missing: $PreflightDiagnosticLog"
+    }
+    $preflightDiagnostic = Get-Content -LiteralPath $PreflightDiagnosticLog -Raw
+    if ($preflightDiagnostic -notmatch '(?m)^preflight-pass\s*$') {
+        throw "UpgradePreflight diagnostic log has no preflight-pass evidence."
+    }
+    if ($preflightDiagnostic -match '(?m)^preflight-fail:') {
+        throw "UpgradePreflight diagnostic log contains preflight-fail evidence."
+    }
+}
+
 function Assert-ProgramDataSentinels {
     foreach ($pair in @(
         @($logSentinel, $logSentinelContent),
@@ -348,6 +397,7 @@ $burnLog = Join-Path $env:RUNNER_TEMP 'webassistant-live-worker-upgrade.log'
 $repairLog = Join-Path $env:RUNNER_TEMP 'webassistant-same-version-repair.log'
 $downgradeLog = Join-Path $env:RUNNER_TEMP 'webassistant-downgrade-rejection.log'
 $uninstallLog = Join-Path $env:RUNNER_TEMP 'webassistant-candidate-uninstall.log'
+$preflightDiagnosticLog = Join-Path ([IO.Path]::GetTempPath()) 'WebAssistant-UpgradePreflight.log'
 
 try {
     Invoke-Bundle `
@@ -386,6 +436,9 @@ try {
     if (Test-Path -LiteralPath $burnLog) {
         Remove-Item -LiteralPath $burnLog -Force
     }
+    if (Test-Path -LiteralPath $preflightDiagnosticLog) {
+        Remove-Item -LiteralPath $preflightDiagnosticLog -Force
+    }
 
     # Critical reproduction: no Stop-Service and no historical uninstall before candidate execution.
     Invoke-Bundle `
@@ -395,6 +448,9 @@ try {
     $candidateInstalled = $true
     $historicalInstalled = $false
 
+    Assert-UpgradePreflightBeforeMsi `
+        -PrimaryLog $burnLog `
+        -PreflightDiagnosticLog $preflightDiagnosticLog
     Assert-NoFilesInUseEvidence -PrimaryLog $burnLog
     foreach ($capturedIdentity in $capturedHistoricalIdentities) {
         Assert-ProcessIdentityGone -Identity $capturedIdentity -Description 'Historical runtime process'
