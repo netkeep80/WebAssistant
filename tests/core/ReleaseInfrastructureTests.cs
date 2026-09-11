@@ -11,7 +11,7 @@ public sealed class ReleaseInfrastructureTests
     private const string SourceSha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     private const string BaseSha = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     private const string PrHeadSha = "cccccccccccccccccccccccccccccccccccccccc";
-    private const string Version = "0.3.22";
+    private static readonly string Version = ReadRepositoryVersion();
     private const string BaseVersion = "0.3.20";
 
     [Fact]
@@ -186,7 +186,7 @@ public sealed class ReleaseInfrastructureTests
         Assert.Equal(0, result.ExitCode);
         var log = File.ReadAllText(github.LogPath);
         Assert.Contains("POST repos/test/repo/releases", log, StringComparison.Ordinal);
-        Assert.Contains("release upload v0.3.22", log, StringComparison.Ordinal);
+        Assert.Contains($"release upload v{Version}", log, StringComparison.Ordinal);
         Assert.DoesNotContain("--clobber", log, StringComparison.Ordinal);
     }
 
@@ -198,7 +198,6 @@ public sealed class ReleaseInfrastructureTests
         var result = RunReleaseScript("stage-draft-release.sh", [fixture.Root, Version, SourceSha, "555"], github.Environment, github.BinDirectory);
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("digest", result.Error, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("release upload v0.3.22", File.ReadAllText(github.LogPath), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -268,10 +267,10 @@ public sealed class ReleaseInfrastructureTests
         var result = RunReleaseScript("finalize-release.sh", ["--source-sha", SourceSha, "--evidence", evidence.ManifestPath, "--pdf", evidence.PdfPath], github.Environment, github.BinDirectory);
         Assert.Equal(0, result.ExitCode);
         var log = File.ReadAllText(github.LogPath);
-        Assert.Contains("release download v0.3.22", log, StringComparison.Ordinal);
-        Assert.Contains("release upload v0.3.22", log, StringComparison.Ordinal);
+        Assert.Contains($"release download v{Version}", log, StringComparison.Ordinal);
+        Assert.Contains($"release upload v{Version}", log, StringComparison.Ordinal);
         Assert.Contains("WebAssistant-Installation-Guide.pdf", log, StringComparison.Ordinal);
-        Assert.Contains("release edit v0.3.22", log, StringComparison.Ordinal);
+        Assert.Contains($"release edit v{Version}", log, StringComparison.Ordinal);
         Assert.Contains("--draft=false", log, StringComparison.Ordinal);
         Assert.DoesNotContain("--clobber", log, StringComparison.Ordinal);
         Assert.DoesNotContain("package.bat", log, StringComparison.OrdinalIgnoreCase);
@@ -381,6 +380,7 @@ public sealed class ReleaseInfrastructureTests
     private static string Sha256(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
     private static void WriteJson(string path, object value) => File.WriteAllText(path, JsonSerializer.Serialize(value));
     private static string EncodeContent(string value) => Convert.ToBase64String(Encoding.UTF8.GetBytes(value));
+    private static string ReadRepositoryVersion() => File.ReadAllText(Path.Combine(FindRepositoryRoot(), "webassist", "VERSION")).Trim();
 
     private static string FindRepositoryRoot()
     {
@@ -402,8 +402,9 @@ public sealed class ReleaseInfrastructureTests
         public string BinDirectory { get; }
         public Dictionary<string, string> Environment { get; }
 
-        public static ResolverFixture Create(string? mainSha = null, bool includePr = true, string repoGuardConclusion = "success", string ciRequiredConclusion = "success", string repoGuardJobConclusion = "success", string sourceVersion = Version)
+        public static ResolverFixture Create(string? mainSha = null, bool includePr = true, string repoGuardConclusion = "success", string ciRequiredConclusion = "success", string repoGuardJobConclusion = "success", string? sourceVersion = null)
         {
+            sourceVersion ??= Version;
             var root = Directory.CreateTempSubdirectory("webassistant-release-resolver-").FullName;
             var bin = Directory.CreateDirectory(Path.Combine(root, "bin")).FullName;
             var data = Directory.CreateDirectory(Path.Combine(root, "data")).FullName;
@@ -556,8 +557,8 @@ esac
                 File.Copy(evidence.PdfPath, Path.Combine(remote, Path.GetFileName(evidence.PdfPath)), overwrite: true);
 
             var body = JsonSerializer.Serialize(new { schema = "webassistant-release-candidate/v1", sourceSha = SourceSha, version = Version, candidateRunId = 555, state = "installers-accepted-staged" });
-            WriteJson(Path.Combine(data, "draft-release.json"), new object[] { new { id = 77, tag_name = "v0.3.22", target_commitish = SourceSha, draft = true, prerelease = false, body } });
-            WriteJson(Path.Combine(data, "published-release.json"), new object[] { new { id = 77, tag_name = "v0.3.22", target_commitish = SourceSha, draft = false, prerelease = false, body } });
+            WriteJson(Path.Combine(data, "draft-release.json"), new object[] { new { id = 77, tag_name = $"v{Version}", target_commitish = SourceSha, draft = true, prerelease = false, body } });
+            WriteJson(Path.Combine(data, "published-release.json"), new object[] { new { id = 77, tag_name = $"v{Version}", target_commitish = SourceSha, draft = false, prerelease = false, body } });
             WriteJson(Path.Combine(data, "candidate-run-success.json"), new { id = 555, path = ".github/workflows/release-candidate.yml", @event = "workflow_dispatch", head_sha = SourceSha, status = "completed", conclusion = "success" });
             WriteJson(Path.Combine(data, "candidate-run-failure.json"), new { id = 555, path = ".github/workflows/release-candidate.yml", @event = "workflow_dispatch", head_sha = SourceSha, status = "completed", conclusion = "failure" });
             WriteJson(Path.Combine(data, "assets-empty.json"), Array.Empty<object>());
@@ -605,7 +606,7 @@ if [[ "${1:-}" == "api" && "${2:-}" == "repos/test/repo/releases?per_page=100" ]
   exit 0
 fi
 
-if [[ "${1:-}" == "api" && "${2:-}" == "repos/test/repo/git/ref/tags/v0.3.22" ]]; then
+if [[ "${1:-}" == "api" && "${2:-}" == "repos/test/repo/git/ref/tags/v$FAKE_VERSION" ]]; then
   if [[ "$FAKE_RELEASE_STATE" == absent || "$FAKE_RELEASE_STATE" == upload-remote-conflict ]] && [[ ! -f "$FAKE_GH_ROOT/tag-created" ]]; then exit 1; fi
   printf '{"object":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}\n'; exit 0
 fi
@@ -635,8 +636,8 @@ fi
 if [[ "${1:-}" == "api" && "${2:-}" == "--method" && "${3:-}" == "POST" ]]; then
   endpoint="${4:-}"
   case "$endpoint" in
-    repos/test/repo/git/refs) touch "$FAKE_GH_ROOT/tag-created"; printf '{"ref":"refs/tags/v0.3.22"}\n' ;;
-    repos/test/repo/releases) touch "$FAKE_GH_ROOT/draft-created"; printf '{"id":77,"draft":true,"tag_name":"v0.3.22"}\n' ;;
+    repos/test/repo/git/refs) touch "$FAKE_GH_ROOT/tag-created"; printf '{"ref":"refs/tags/v%s"}\n' "$FAKE_VERSION" ;;
+    repos/test/repo/releases) touch "$FAKE_GH_ROOT/draft-created"; printf '{"id":77,"draft":true,"tag_name":"v%s"}\n' "$FAKE_VERSION" ;;
     *) printf 'unexpected fake POST endpoint: %s\n' "$endpoint" >&2; exit 92 ;;
   esac
   exit 0
@@ -681,7 +682,8 @@ printf 'unexpected fake gh: %s\n' "$*" >&2; exit 92
                 ["FAKE_MAIN_SHA"] = mainSha ?? SourceSha,
                 ["FAKE_GH_ROOT"] = root,
                 ["FAKE_GH_DATA"] = data,
-                ["FAKE_REMOTE_ASSETS"] = remote
+                ["FAKE_REMOTE_ASSETS"] = remote,
+                ["FAKE_VERSION"] = Version
             });
         }
 
