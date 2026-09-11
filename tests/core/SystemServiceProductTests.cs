@@ -191,6 +191,8 @@ public sealed class SystemServiceProductTests
 
         var acceptanceText = File.ReadAllText(acceptance);
         Assert.Contains("/v1/scanners", acceptanceText, StringComparison.Ordinal);
+        Assert.Contains("/v1/scan", acceptanceText, StringComparison.Ordinal);
+        Assert.Contains("Invoke-ControlledScan", acceptanceText, StringComparison.Ordinal);
         Assert.Contains("NAPS2.Worker.exe", acceptanceText, StringComparison.Ordinal);
         Assert.Contains("ParentProcessId", acceptanceText, StringComparison.Ordinal);
         Assert.Contains("CreationDate", acceptanceText, StringComparison.Ordinal);
@@ -199,6 +201,10 @@ public sealed class SystemServiceProductTests
         Assert.Contains("capturedWorkers", acceptanceText, StringComparison.Ordinal);
         Assert.Contains("Assert-ProcessIdentityGone", acceptanceText, StringComparison.Ordinal);
         Assert.Contains("Assert-NoPackageWorkers", acceptanceText, StringComparison.Ordinal);
+
+        var acquisition = acceptanceText.IndexOf("Invoke-ControlledScan -ExpectedPort $Port", StringComparison.Ordinal);
+        var workerCapture = acceptanceText.IndexOf("Wait-CapturedPackageWorkers -ExpectedParentProcessId $serviceProcessId", StringComparison.Ordinal);
+        Assert.True(acquisition >= 0 && workerCapture > acquisition);
     }
 
     private static string FindRepositoryRoot()
