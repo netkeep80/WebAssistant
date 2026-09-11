@@ -210,8 +210,10 @@ public sealed class DistributionContractCandidateTests
         Assert.Contains("ABSENT", api, StringComparison.Ordinal);
         Assert.Contains("UNKNOWN", api, StringComparison.Ordinal);
         Assert.DoesNotContain("WIA-first", api, StringComparison.Ordinal);
-        Assert.DoesNotContain("/v1/scan/feeder", api, StringComparison.Ordinal);
-        Assert.DoesNotContain("/v1/scan/duplex", api, StringComparison.Ordinal);
+        Assert.DoesNotContain("`POST /v1/scan/feeder`", api, StringComparison.Ordinal);
+        Assert.DoesNotContain("`POST /v1/scan/duplex`", api, StringComparison.Ordinal);
+        Assert.Contains("Source-specific routes", api, StringComparison.Ordinal);
+        Assert.Contains("отсутствуют", api, StringComparison.Ordinal);
         Assert.DoesNotContain("Опциональный query parameter", api, StringComparison.Ordinal);
     }
 
