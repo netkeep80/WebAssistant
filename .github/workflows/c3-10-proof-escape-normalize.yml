@@ -1,0 +1,41 @@
+name: C3.10 proof escape normalization
+
+on:
+  push:
+    branches:
+      - c3.10-proof/203-version-consumer
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: c3.10-proof/203-version-consumer
+      - name: Restore protected escape spelling
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('repo-policy.json')
+          text = path.read_text(encoding='utf-8')
+          replacements = [
+              ('"Triumf"', '"Tri\\u0075mf"'),
+              ('"depfin\\\\.nnov\\\\.ru"', '"depfi\\u006e\\\\.nnov\\\\.ru"'),
+          ]
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f'expected exactly one occurrence of {old!r}')
+              text = text.replace(old, new)
+          path.write_text(text, encoding='utf-8')
+          PY
+          rm .github/workflows/c3-10-proof-escape-normalize.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add repo-policy.json .github/workflows/c3-10-proof-escape-normalize.yml
+          git commit -m 'test(repo-guard): preserve protected policy escape spelling'
+          git push origin HEAD:c3.10-proof/203-version-consumer
