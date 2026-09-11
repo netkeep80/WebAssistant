@@ -22,4 +22,20 @@ public sealed class WindowsUpgradeServiceIdentityTests
         Assert.Equal(configuredPath, identity.ImagePath);
         Assert.Equal(started, identity.StartTimeUtc);
     }
+
+    [Fact]
+    public void MatchesOpenProcessInstance_UsesCapturedCreationTimeAsPidReuseGuard()
+    {
+        var started = new DateTimeOffset(2026, 9, 11, 10, 0, 0, TimeSpan.Zero);
+        var expected = new ProcessIdentity(
+            ProcessId: 1308,
+            ParentProcessId: 777,
+            ImagePath: @"C:\Program Files\WebAssistant\WebAssistant.exe",
+            StartTimeUtc: started);
+
+        Assert.True(WindowsUpgradeEnvironment.MatchesOpenProcessInstance(expected, started));
+        Assert.False(WindowsUpgradeEnvironment.MatchesOpenProcessInstance(
+            expected,
+            started.AddTicks(1)));
+    }
 }
