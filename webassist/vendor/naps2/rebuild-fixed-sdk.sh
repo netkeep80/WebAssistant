@@ -237,6 +237,7 @@ dotnet pack "$project" \
 }
 
 python3 - "$package_path" <<'PY'
+import hashlib
 import os
 import pathlib
 import sys
@@ -252,6 +253,11 @@ with zipfile.ZipFile(package, "r") as source:
 names = [name for name, _, _ in entries]
 if len(names) != len(set(names)):
     raise SystemExit("refusing to canonicalize package with duplicate ZIP entry names")
+
+for name, is_directory, data in sorted(entries, key=lambda item: item[0]):
+    kind = "dir" if is_directory else "file"
+    digest = hashlib.sha256(data).hexdigest()
+    print(f"ENTRY_SHA256 {digest} {len(data)} {kind} {name}")
 
 try:
     with zipfile.ZipFile(
