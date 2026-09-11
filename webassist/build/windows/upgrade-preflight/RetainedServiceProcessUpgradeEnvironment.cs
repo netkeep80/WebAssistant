@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Text;
 using Microsoft.Win32.SafeHandles;
 
 namespace WebAssistant.UpgradePreflight;
@@ -155,12 +154,7 @@ internal sealed class RetainedServiceProcessUpgradeEnvironment : IUpgradeEnviron
             }
 
             var actualStartTimeUtc = DateTimeOffset.FromFileTime(creation.ToLong());
-            var actualPath = QueryProcessImagePath(handle, expected.ProcessId);
-            if (actualStartTimeUtc != expected.StartTimeUtc ||
-                !string.Equals(
-                    actualPath,
-                    Path.GetFullPath(expected.ImagePath),
-                    StringComparison.OrdinalIgnoreCase))
+            if (actualStartTimeUtc != expected.StartTimeUtc)
             {
                 throw new UpgradePreflightException(
                     "SCM WebAssistant process identity changed before the preflight retained its handle.");
@@ -174,19 +168,6 @@ internal sealed class RetainedServiceProcessUpgradeEnvironment : IUpgradeEnviron
             handle.Dispose();
             throw;
         }
-    }
-
-    private static string QueryProcessImagePath(SafeProcessHandle handle, int processId)
-    {
-        var capacity = 32768;
-        var path = new StringBuilder(capacity);
-        var size = capacity;
-        if (!QueryFullProcessImageName(handle, 0, path, ref size))
-        {
-            throw Win32Failure($"QueryFullProcessImageName(pid={processId})");
-        }
-
-        return Path.GetFullPath(path.ToString());
     }
 
     private void ReleaseRetainedServiceProcess()
@@ -235,14 +216,6 @@ internal sealed class RetainedServiceProcessUpgradeEnvironment : IUpgradeEnviron
         uint desiredAccess,
         [MarshalAs(UnmanagedType.Bool)] bool inheritHandle,
         uint processId);
-
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool QueryFullProcessImageName(
-        SafeProcessHandle process,
-        uint flags,
-        StringBuilder executableName,
-        ref int size);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
