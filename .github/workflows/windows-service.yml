@@ -14,6 +14,7 @@ on:
       - '.gitattributes'
       - 'webassist/.gitattributes'
       - 'tests/windows-service/**'
+      - 'tests/virtual-scanner/windows/install-twain-sample.ps1'
       - 'tests/core/SystemServiceProductTests.cs'
       - 'tests/core/WindowsScannerLifetimeTests.cs'
       - 'tests/core/WindowsScanAdapterTests.cs'
@@ -152,12 +153,17 @@ jobs:
           foreach ($requiredPath in @(
               'tests/windows-service/run-installer-acceptance.ps1',
               'tests/windows-service/run-service-acceptance.ps1',
-              'tests/windows-service/run-upgrade-acceptance.ps1'
+              'tests/windows-service/run-upgrade-acceptance.ps1',
+              'tests/virtual-scanner/windows/install-twain-sample.ps1'
           )) {
               if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
                   throw "Missing Windows acceptance harness: $requiredPath"
               }
           }
+
+      - name: Install official TWAIN sample source
+        shell: pwsh
+        run: tests/virtual-scanner/windows/install-twain-sample.ps1
 
       - name: Download exact producer artifact
         uses: actions/download-artifact@v4
