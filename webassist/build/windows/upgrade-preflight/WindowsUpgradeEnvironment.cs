@@ -275,6 +275,11 @@ internal sealed class WindowsUpgradeEnvironment : IUpgradeEnvironment
             configuredExecutablePath,
             startTimeUtc);
 
+    internal static bool MatchesOpenProcessInstance(
+        ProcessIdentity expected,
+        DateTimeOffset actualStartTimeUtc) =>
+        expected.StartTimeUtc == actualStartTimeUtc;
+
     internal static string ParseServiceExecutablePath(string commandLine)
     {
         if (string.IsNullOrWhiteSpace(commandLine))
@@ -528,12 +533,15 @@ internal sealed class WindowsUpgradeEnvironment : IUpgradeEnvironment
             throw Win32Failure($"OpenProcess(pid={expected.ProcessId})", error);
         }
 
-        var actual = ReadProcessIdentity(handle, expected.ProcessId, expected.ParentProcessId);
-        if (actual.StartTimeUtc != expected.StartTimeUtc ||
-            !string.Equals(
-                actual.ImagePath,
-                expected.ImagePath,
-                StringComparison.OrdinalIgnoreCase))
+        if (!GetProcessTimes(handle, out var creation, out _, out _, out _))
+        {
+            var error = Marshal.GetLastWin32Error();
+            handle.Dispose();
+            throw Win32Failure($"GetProcessTimes(pid={expected.ProcessId})", error);
+        }
+
+        var actualStartTimeUtc = DateTimeOffset.FromFileTime(creation.ToLong());
+        if (!MatchesOpenProcessInstance(expected, actualStartTimeUtc))
         {
             handle.Dispose();
             return null;
