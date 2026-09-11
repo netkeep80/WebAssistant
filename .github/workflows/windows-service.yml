@@ -29,6 +29,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build-windows-installer:
@@ -161,36 +162,14 @@ jobs:
           name: webassistant-windows-installer-${{ inputs.source_ref || github.sha }}
           path: ${{ runner.temp }}/webassistant-windows-artifacts
 
-      - name: Download immutable v0.3.21 draft-release evidence
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $root = Join-Path $env:RUNNER_TEMP 'webassistant-windows-historical'
-          if (Test-Path -LiteralPath $root) {
-              Remove-Item -LiteralPath $root -Recurse -Force
-          }
-          New-Item -Path $root -ItemType Directory -Force | Out-Null
-
-          $headers = @{
-              Authorization = "Bearer $env:GH_TOKEN"
-              Accept = 'application/octet-stream'
-              'X-GitHub-Api-Version' = '2022-11-28'
-          }
-          $assets = @(
-              @{ Id = 555125536; Name = 'WebAssistant-win-x64-0.3.21.exe' },
-              @{ Id = 555125537; Name = 'WebAssistant-win-x64-0.3.21.exe.sha256' },
-              @{ Id = 555125538; Name = 'WebAssistant-win-x64-0.3.21.exe.provenance.json' }
-          )
-          foreach ($asset in $assets) {
-              $uri = "https://api.github.com/repos/netkeep80/WebAssistant/releases/assets/$($asset.Id)"
-              $outFile = Join-Path $root $asset.Name
-              Invoke-WebRequest -Uri $uri -Headers $headers -OutFile $outFile
-              if (-not (Test-Path -LiteralPath $outFile -PathType Leaf)) {
-                  throw "Historical release asset download failed: $($asset.Name)"
-              }
-          }
+      - name: Download exact historical v0.3.21 workflow artifact
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 10155509111
+          github-token: ${{ github.token }}
+          repository: netkeep80/WebAssistant
+          run-id: 34485513571
+          path: ${{ runner.temp }}/webassistant-windows-historical
 
       - name: Verify and exercise exact Windows installer bytes
         shell: pwsh
@@ -243,7 +222,8 @@ jobs:
               Select-Object -First 1
           $historical = Join-Path $env:RUNNER_TEMP 'webassistant-windows-historical\WebAssistant-win-x64-0.3.21.exe'
 
-          foreach ($bundle in @($candidate.FullName, $historical)) {
+          $candidatePath = if ($candidate) { $candidate.FullName } else { $null }
+          foreach ($bundle in @($candidatePath, $historical)) {
               if ([string]::IsNullOrWhiteSpace($bundle) -or -not (Test-Path -LiteralPath $bundle -PathType Leaf)) {
                   continue
               }
@@ -258,7 +238,7 @@ jobs:
                   }
               }
               catch {
-                  Write-Warning "Exact bundle cleanup failed for $bundle: $($_.Exception.Message)"
+                  Write-Warning "Exact bundle cleanup failed for ${bundle}: $($_.Exception.Message)"
               }
           }
 
