@@ -188,6 +188,17 @@ public sealed class SystemServiceProductTests
         Assert.Contains("%~dp0", packageBatText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("dotnet --list-sdks", packageBatText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("winget install", packageBatText, StringComparison.OrdinalIgnoreCase);
+
+        var acceptanceText = File.ReadAllText(acceptance);
+        Assert.Contains("/v1/scanners", acceptanceText, StringComparison.Ordinal);
+        Assert.Contains("NAPS2.Worker.exe", acceptanceText, StringComparison.Ordinal);
+        Assert.Contains("ParentProcessId", acceptanceText, StringComparison.Ordinal);
+        Assert.Contains("CreationDate", acceptanceText, StringComparison.Ordinal);
+        Assert.Contains("Stop-Service -Name $serviceName", acceptanceText, StringComparison.Ordinal);
+        Assert.Contains("WaitForStatus", acceptanceText, StringComparison.Ordinal);
+        Assert.Contains("capturedWorkers", acceptanceText, StringComparison.Ordinal);
+        Assert.Contains("Assert-ProcessIdentityGone", acceptanceText, StringComparison.Ordinal);
+        Assert.Contains("Assert-NoPackageWorkers", acceptanceText, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()
