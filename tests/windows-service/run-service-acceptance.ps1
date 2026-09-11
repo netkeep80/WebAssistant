@@ -11,6 +11,7 @@ $serviceName = "WebAssistant"
 $installedConfigFile = Join-Path $InstallDirectory "appsettings.json"
 $logDirectory = Join-Path $env:ProgramData "WebAssistant\logs"
 $dataDirectory = Join-Path $env:ProgramData "WebAssistant\data"
+$installRoot = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd('\') + '\'
 
 function Wait-Health {
     param([int]$ExpectedPort)
@@ -26,6 +27,27 @@ function Wait-Health {
         Start-Sleep -Milliseconds 500
     }
     throw "WebAssistant health не стал доступен на $uri."
+}
+
+function Assert-ScannersEndpoint {
+    param([int]$ExpectedPort)
+
+    $uri = "http://127.0.0.1:$ExpectedPort/v1/scanners"
+    $response = Invoke-WebRequest -Uri $uri -TimeoutSec 15
+    if ($response.StatusCode -ne 200) {
+        throw "WebAssistant scanners endpoint вернул HTTP $($response.StatusCode)."
+    }
+
+    try {
+        $payload = $response.Content | ConvertFrom-Json
+    }
+    catch {
+        throw "WebAssistant scanners endpoint вернул некорректный JSON: $($_.Exception.Message)"
+    }
+
+    if ($null -eq $payload.scanners -or $null -eq $payload.warnings) {
+        throw "WebAssistant scanners endpoint не содержит canonical scanners/warnings shape."
+    }
 }
 
 function Assert-DailyLog {
@@ -69,6 +91,95 @@ function Wait-NoListener {
     throw "После остановки WebAssistant порт $ExpectedPort остаётся занят."
 }
 
+function ConvertTo-ProcessIdentity {
+    param([Parameter(Mandatory = $true)]$Process)
+
+    $imagePath = [string]$Process.ExecutablePath
+    if ([string]::IsNullOrWhiteSpace($imagePath)) {
+        throw "Не удалось получить ExecutablePath процесса PID=$($Process.ProcessId)."
+    }
+    if ($null -eq $Process.CreationDate) {
+        throw "Не удалось получить CreationDate процесса PID=$($Process.ProcessId)."
+    }
+
+    return [pscustomobject]@{
+        ProcessId = [int]$Process.ProcessId
+        ParentProcessId = [int]$Process.ParentProcessId
+        ImagePath = [IO.Path]::GetFullPath($imagePath)
+        CreationDate = ([datetime]$Process.CreationDate).ToUniversalTime()
+    }
+}
+
+function Get-ProcessIdentityById {
+    param([int]$ProcessId)
+
+    $process = Get-CimInstance Win32_Process -Filter "ProcessId=$ProcessId" -ErrorAction SilentlyContinue
+    if ($null -eq $process) {
+        return $null
+    }
+
+    return ConvertTo-ProcessIdentity -Process $process
+}
+
+function Test-SameProcessIdentityAlive {
+    param([Parameter(Mandatory = $true)]$Identity)
+
+    $current = Get-ProcessIdentityById -ProcessId $Identity.ProcessId
+    if ($null -eq $current) {
+        return $false
+    }
+
+    return `
+        $current.CreationDate.Ticks -eq $Identity.CreationDate.Ticks -and `
+        [string]::Equals($current.ImagePath, $Identity.ImagePath, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Assert-ProcessIdentityGone {
+    param(
+        [Parameter(Mandatory = $true)]$Identity,
+        [Parameter(Mandatory = $true)][string]$Description
+    )
+
+    if (Test-SameProcessIdentityAlive -Identity $Identity) {
+        throw "$Description всё ещё жив после SCM Stopped: PID=$($Identity.ProcessId), path=$($Identity.ImagePath), created=$($Identity.CreationDate.ToString('O'))."
+    }
+}
+
+function Get-PackageWorkers {
+    param([Nullable[int]]$ExpectedParentProcessId = $null)
+
+    $workers = @()
+    foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name='NAPS2.Worker.exe'" -ErrorAction SilentlyContinue)) {
+        $path = [string]$process.ExecutablePath
+        if ([string]::IsNullOrWhiteSpace($path)) {
+            continue
+        }
+
+        $fullPath = [IO.Path]::GetFullPath($path)
+        if (-not $fullPath.StartsWith($installRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+        if ($null -ne $ExpectedParentProcessId -and
+            [int]$process.ParentProcessId -ne $ExpectedParentProcessId.Value) {
+            continue
+        }
+
+        $workers += ConvertTo-ProcessIdentity -Process $process
+    }
+
+    return @($workers)
+}
+
+function Assert-NoPackageWorkers {
+    $workers = @(Get-PackageWorkers)
+    if ($workers.Count -ne 0) {
+        $description = ($workers | ForEach-Object {
+            "PID=$($_.ProcessId), parent=$($_.ParentProcessId), path=$($_.ImagePath), created=$($_.CreationDate.ToString('O'))"
+        }) -join '; '
+        throw "После SCM Stopped под install root остались package-owned NAPS2.Worker: $description"
+    }
+}
+
 $service = Get-Service -Name $serviceName -ErrorAction Stop
 if ($service.Status -ne [System.ServiceProcess.ServiceControllerStatus]::Running) {
     throw "После установки WebAssistant не находится в состоянии Running."
@@ -104,10 +215,40 @@ if (-not (Test-Path -LiteralPath $dataDirectory -PathType Container)) {
     throw "Не создан runtime data directory: $dataDirectory"
 }
 
+# Materialize the lazy Windows scanner subsystem. On a clean candidate installation
+# the worker may already have completed by the time discovery returns, so this harness
+# proves the universal post-stop condition. The mandatory live-worker case is exercised
+# by run-upgrade-acceptance.ps1 on the same candidate bytes.
+Assert-ScannersEndpoint -ExpectedPort $Port
+$serviceInfo = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
+$serviceProcessId = [int]$serviceInfo.ProcessId
+if ($serviceProcessId -le 0) {
+    throw "SCM не вернул PID работающей службы WebAssistant."
+}
+$capturedServiceProcess = Get-ProcessIdentityById -ProcessId $serviceProcessId
+if ($null -eq $capturedServiceProcess) {
+    throw "Не удалось захватить identity процесса службы WebAssistant PID=$serviceProcessId."
+}
+if (-not [string]::Equals(
+    $capturedServiceProcess.ImagePath,
+    [IO.Path]::GetFullPath($expectedExecutable),
+    [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Захваченный процесс службы указывает не на canonical WebAssistant.exe: $($capturedServiceProcess.ImagePath)"
+}
+
+$capturedWorkers = @(Get-PackageWorkers -ExpectedParentProcessId $serviceProcessId)
+Write-Host "clean_service_pre_stop_workers=$($capturedWorkers.Count)"
+
 Stop-Service -Name $serviceName
 (Get-Service -Name $serviceName).WaitForStatus(
     [System.ServiceProcess.ServiceControllerStatus]::Stopped,
     [TimeSpan]::FromSeconds(30))
+
+Assert-ProcessIdentityGone -Identity $capturedServiceProcess -Description "WebAssistant service process"
+foreach ($worker in $capturedWorkers) {
+    Assert-ProcessIdentityGone -Identity $worker -Description "Captured package-owned NAPS2.Worker"
+}
+Assert-NoPackageWorkers
 Wait-NoListener -ExpectedPort $Port
 
 Start-Service -Name $serviceName
@@ -115,6 +256,7 @@ Start-Service -Name $serviceName
     [System.ServiceProcess.ServiceControllerStatus]::Running,
     [TimeSpan]::FromSeconds(30))
 Wait-Health -ExpectedPort $Port
+Assert-ScannersEndpoint -ExpectedPort $Port
 Assert-DailyLog
 Assert-LoopbackOnly -ExpectedPort $Port
 
@@ -123,6 +265,7 @@ Restart-Service -Name $serviceName
     [System.ServiceProcess.ServiceControllerStatus]::Running,
     [TimeSpan]::FromSeconds(30))
 Wait-Health -ExpectedPort $Port
+Assert-ScannersEndpoint -ExpectedPort $Port
 Assert-LoopbackOnly -ExpectedPort $Port
 
-Write-Host "windows_installed_service_acceptance=PASS"
+Write-Host "windows_installed_service_acceptance=PASS captured_workers=$($capturedWorkers.Count)"

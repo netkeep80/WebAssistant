@@ -12,6 +12,7 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
 {
     private readonly ScanningContext scanningContext;
     private readonly ScanController controller;
+    private int disposed;
 
     internal WindowsScanAdapter()
     {
@@ -239,7 +240,15 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         _ => throw new ArgumentOutOfRangeException(nameof(source), source, null)
     };
 
-    public void Dispose() => scanningContext.Dispose();
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        {
+            return;
+        }
+
+        scanningContext.Dispose();
+    }
 }
 
 #pragma warning restore CA2252

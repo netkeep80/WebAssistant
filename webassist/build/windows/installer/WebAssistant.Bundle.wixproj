@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>Bundle</OutputType>
     <OutputName>WebAssistant.Bundle</OutputName>
-    <DefineConstants>$(DefineConstants);MsiPath=$(MsiPath);ProductVersion=$(ProductVersion)</DefineConstants>
+    <DefineConstants>$(DefineConstants);MsiPath=$(MsiPath);PreflightPath=$(PreflightPath);ProductVersion=$(ProductVersion)</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="Package.wxs" />

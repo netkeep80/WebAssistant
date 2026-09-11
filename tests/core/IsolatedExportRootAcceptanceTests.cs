@@ -10,6 +10,7 @@ public sealed class IsolatedExportRootAcceptanceTests
         var workflow = ReadRequired(".github/workflows/windows-service.yml");
         var lifecycle = ReadRequired("tests/windows-service/run-service-acceptance.ps1");
         var consumer = ReadRequired("tests/windows-service/run-installer-acceptance.ps1");
+        var upgradeConsumer = ReadRequired("tests/windows-service/run-upgrade-acceptance.ps1");
 
         Assert.Contains("build-windows-installer:", workflow, StringComparison.Ordinal);
         Assert.Contains("windows-installer-acceptance:", workflow, StringComparison.Ordinal);
@@ -22,6 +23,7 @@ public sealed class IsolatedExportRootAcceptanceTests
         Assert.Contains("actions/upload-artifact@v4", workflow, StringComparison.Ordinal);
         Assert.Contains("actions/download-artifact@v4", workflow, StringComparison.Ordinal);
         Assert.Contains("run-installer-acceptance.ps1", workflow, StringComparison.Ordinal);
+        Assert.Contains("run-upgrade-acceptance.ps1", workflow, StringComparison.Ordinal);
 
         Assert.DoesNotContain("-ProductRoot", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("[string]$ProductRoot", lifecycle, StringComparison.Ordinal);
@@ -33,6 +35,12 @@ public sealed class IsolatedExportRootAcceptanceTests
         Assert.DoesNotContain("dotnet publish", consumer, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("package.bat", consumer, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("package.ps1", consumer, StringComparison.OrdinalIgnoreCase);
+
+        Assert.DoesNotContain("dotnet publish", upgradeConsumer, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("package.bat", upgradeConsumer, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("package.ps1", upgradeConsumer, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("HistoricalArtifactPath", upgradeConsumer, StringComparison.Ordinal);
+        Assert.Contains("CandidateArtifactPath", upgradeConsumer, StringComparison.Ordinal);
     }
 
     [Fact]

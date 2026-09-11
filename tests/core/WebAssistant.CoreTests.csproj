@@ -21,5 +21,6 @@
 
   <ItemGroup>
     <ProjectReference Include="../../webassist/src/WebAssistant/WebAssistant.csproj" />
+    <ProjectReference Include="../../webassist/build/windows/upgrade-preflight/WebAssistant.UpgradePreflight.csproj" />
   </ItemGroup>
 </Project>

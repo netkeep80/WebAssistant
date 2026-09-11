@@ -14,7 +14,10 @@ on:
       - '.gitattributes'
       - 'webassist/.gitattributes'
       - 'tests/windows-service/**'
+      - 'tests/virtual-scanner/windows/install-twain-sample.ps1'
       - 'tests/core/SystemServiceProductTests.cs'
+      - 'tests/core/WindowsScannerLifetimeTests.cs'
+      - 'tests/core/WindowsScanAdapterTests.cs'
       - 'tests/core/IsolatedExportRootAcceptanceTests.cs'
       - 'tests/core/InstallerArtifactContractTests.cs'
       - 'tests/core/ConfigurationOwnershipTests.cs'
@@ -29,6 +32,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build-windows-installer:
@@ -69,6 +73,7 @@ jobs:
               'build/common/write-provenance.ps1',
               'build/windows/package.bat',
               'build/windows/package.ps1',
+              'build/windows/upgrade-preflight/WebAssistant.UpgradePreflight.csproj',
               'build/windows/installer/WebAssistant.Package.wixproj',
               'build/windows/installer/WebAssistant.Bundle.wixproj'
           )
@@ -134,7 +139,7 @@ jobs:
     name: Windows WiX installer lifecycle
     needs: build-windows-installer
     runs-on: windows-2025
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Checkout acceptance harness
         uses: actions/checkout@v6
@@ -147,18 +152,39 @@ jobs:
           $ErrorActionPreference = 'Stop'
           foreach ($requiredPath in @(
               'tests/windows-service/run-installer-acceptance.ps1',
-              'tests/windows-service/run-service-acceptance.ps1'
+              'tests/windows-service/run-service-acceptance.ps1',
+              'tests/windows-service/run-upgrade-acceptance.ps1',
+              'tests/virtual-scanner/windows/install-twain-sample.ps1'
           )) {
               if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
                   throw "Missing Windows acceptance harness: $requiredPath"
               }
           }
 
+      - name: Install official TWAIN sample source
+        shell: pwsh
+        run: tests/virtual-scanner/windows/install-twain-sample.ps1
+
       - name: Download exact producer artifact
         uses: actions/download-artifact@v4
         with:
           name: webassistant-windows-installer-${{ inputs.source_ref || github.sha }}
           path: ${{ runner.temp }}/webassistant-windows-artifacts
+
+      - name: Download exact historical v0.3.21 release assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'webassistant-windows-historical'
+          New-Item -Path $root -ItemType Directory -Force | Out-Null
+          $assets = @(
+              @{ Name = 'WebAssistant-win-x64-0.3.21.exe'; Url = 'https://github.com/netkeep80/WebAssistant/releases/download/v0.3.21/WebAssistant-win-x64-0.3.21.exe' },
+              @{ Name = 'WebAssistant-win-x64-0.3.21.exe.sha256'; Url = 'https://github.com/netkeep80/WebAssistant/releases/download/v0.3.21/WebAssistant-win-x64-0.3.21.exe.sha256' },
+              @{ Name = 'WebAssistant-win-x64-0.3.21.exe.provenance.json'; Url = 'https://github.com/netkeep80/WebAssistant/releases/download/v0.3.21/WebAssistant-win-x64-0.3.21.exe.provenance.json' }
+          )
+          foreach ($asset in $assets) {
+              Invoke-WebRequest -Uri $asset.Url -OutFile (Join-Path $root $asset.Name)
+          }
 
       - name: Verify and exercise exact Windows installer bytes
         shell: pwsh
@@ -177,39 +203,71 @@ jobs:
               -ProvenancePath "$artifact.provenance.json" `
               -Port 17654
 
+      - name: Reproduce live-worker historical upgrade
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidateRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'
+          $candidate = @(Get-ChildItem -LiteralPath $candidateRoot -Filter 'WebAssistant-win-x64-*.exe' -File)
+          if ($candidate.Count -ne 1) {
+              throw "Expected exactly one candidate Windows EXE; found $($candidate.Count)."
+          }
+
+          $historicalRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-historical'
+          $historical = Join-Path $historicalRoot 'WebAssistant-win-x64-0.3.21.exe'
+
+          .\tests\windows-service\run-upgrade-acceptance.ps1 `
+              -CandidateArtifactPath $candidate[0].FullName `
+              -CandidateSha256Path "$($candidate[0].FullName).sha256" `
+              -CandidateProvenancePath "$($candidate[0].FullName).provenance.json" `
+              -HistoricalArtifactPath $historical `
+              -HistoricalSha256Path "$historical.sha256" `
+              -HistoricalProvenancePath "$historical.provenance.json" `
+              -Port 17654
+
       - name: Emergency exact-bundle cleanup
         if: always()
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $artifactRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'
-          $artifact = Get-ChildItem -LiteralPath $artifactRoot -Filter 'WebAssistant-win-x64-*.exe' -File -ErrorAction SilentlyContinue |
-              Select-Object -First 1
+          Stop-Service -Name 'WebAssistant' -Force -ErrorAction SilentlyContinue
 
-          $installedEntry = Get-ItemProperty `
-              -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', `
-                    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' `
-              -ErrorAction SilentlyContinue |
-              Where-Object { $_.DisplayName -eq 'WebAssistant' } |
+          $candidateRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'
+          $candidate = Get-ChildItem -LiteralPath $candidateRoot -Filter 'WebAssistant-win-x64-*.exe' -File -ErrorAction SilentlyContinue |
               Select-Object -First 1
-          $service = Get-Service -Name 'WebAssistant' -ErrorAction SilentlyContinue
+          $historical = Join-Path $env:RUNNER_TEMP 'webassistant-windows-historical\WebAssistant-win-x64-0.3.21.exe'
 
-          if ($artifact -and ($installedEntry -or $service)) {
+          $candidatePath = if ($candidate) { $candidate.FullName } else { $null }
+          foreach ($bundle in @($candidatePath, $historical)) {
+              if ([string]::IsNullOrWhiteSpace($bundle) -or -not (Test-Path -LiteralPath $bundle -PathType Leaf)) {
+                  continue
+              }
               try {
                   $cleanup = Start-Process `
-                      -FilePath $artifact.FullName `
+                      -FilePath $bundle `
                       -ArgumentList @('/uninstall', '/quiet', '/norestart') `
                       -Wait `
                       -PassThru
                   if ($cleanup.ExitCode -ne 0) {
-                      Write-Warning "Exact bundle cleanup exited with $($cleanup.ExitCode)."
+                      Write-Warning "Exact bundle cleanup exited with $($cleanup.ExitCode): $bundle"
                   }
               }
               catch {
-                  Write-Warning "Exact bundle cleanup failed: $($_.Exception.Message)"
+                  Write-Warning "Exact bundle cleanup failed for ${bundle}: $($_.Exception.Message)"
               }
           }
 
-          if (Test-Path -LiteralPath $artifactRoot) {
-              Remove-Item -LiteralPath $artifactRoot -Recurse -Force -ErrorAction SilentlyContinue
+          foreach ($worker in @(Get-CimInstance Win32_Process -Filter "Name='NAPS2.Worker.exe'" -ErrorAction SilentlyContinue)) {
+              $path = [string]$worker.ExecutablePath
+              if ($path -and $path.StartsWith("$env:ProgramFiles\WebAssistant\", [StringComparison]::OrdinalIgnoreCase)) {
+                  Stop-Process -Id ([int]$worker.ProcessId) -Force -ErrorAction SilentlyContinue
+              }
+          }
+
+          foreach ($root in @(
+              (Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'),
+              (Join-Path $env:RUNNER_TEMP 'webassistant-windows-historical'))) {
+              if (Test-Path -LiteralPath $root) {
+                  Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+              }
           }

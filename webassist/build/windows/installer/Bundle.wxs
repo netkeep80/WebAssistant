@@ -15,6 +15,14 @@
     </BootstrapperApplication>
 
     <Chain>
+      <ExePackage
+          Id="UpgradePreflight"
+          SourceFile="$(var.PreflightPath)"
+          DetectCondition="0"
+          PerMachine="yes"
+          Permanent="yes"
+          Vital="yes"
+          RepairArguments="" />
       <MsiPackage
           Id="WebAssistantMsi"
           SourceFile="$(var.MsiPath)"

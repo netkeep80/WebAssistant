@@ -4,6 +4,8 @@
 
 Default listener: `http://127.0.0.1:17654`. Listener привязан только к loopback.
 
+Windows runtime lifecycle не меняет HTTP contract: scanner adapter остаётся lazy, а если scanner runtime был материализован, остановка службы завершает shutdown принадлежащих WebAssistant `NAPS2.Worker` до завершения service stop. Routes, request/response shapes и status semantics от этого не меняются.
+
 ## Health
 
 `GET /v1/health`

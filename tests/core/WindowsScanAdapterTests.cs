@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -219,6 +221,249 @@ public sealed class WindowsScanAdapterTests
 
         Assert.True(bytes.Length > 5);
         Assert.Equal("%PDF-", Encoding.ASCII.GetString(bytes, 0, 5));
+    }
+
+    [Fact]
+    [Trait("Category", "WindowsVirtualScanner")]
+    public async Task Dispose_TerminatesOnlyWorkersOwnedByThisAdapterProcess()
+    {
+        if (!OperatingSystem.IsWindows() ||
+            Environment.GetEnvironmentVariable("WEBASSISTANT_WINDOWS_VIRTUAL") != "1")
+        {
+            return;
+        }
+
+        var baseline = SnapshotOwnedWorkers()
+            .Select(WorkerKey.From)
+            .ToHashSet();
+        var adapter = new WindowsScanAdapter();
+        try
+        {
+            var discovery = await adapter.GetScannersAsync();
+            var scanner = Assert.Single(
+                discovery.Scanners,
+                x => x.Backend == ScannerBackend.Twain && x.Name.Contains(
+                    "TWAIN2 Software Scanner",
+                    StringComparison.OrdinalIgnoreCase));
+
+            await using (var pdf = await adapter.ScanAsync(scanner.Id, ScanSource.Glass))
+            {
+                using var sink = new MemoryStream();
+                await pdf.CopyToAsync(sink);
+            }
+
+            var ownedWorkers = await WaitForNewOwnedWorkersAsync(baseline, TimeSpan.FromSeconds(5));
+            Assert.NotEmpty(ownedWorkers);
+            Assert.All(ownedWorkers, worker =>
+            {
+                Assert.Equal(Environment.ProcessId, worker.ParentProcessId);
+                Assert.True(
+                    IsUnderDirectory(worker.ImagePath, AppContext.BaseDirectory),
+                    $"Worker path escaped package output: {worker.ImagePath}");
+            });
+
+            adapter.Dispose();
+            await WaitForWorkersToExitAsync(ownedWorkers, TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            adapter.Dispose();
+        }
+    }
+
+    private static async Task<IReadOnlyList<WorkerIdentity>> WaitForNewOwnedWorkersAsync(
+        HashSet<WorkerKey> baseline,
+        TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < timeout)
+        {
+            var workers = SnapshotOwnedWorkers()
+                .Where(worker => !baseline.Contains(WorkerKey.From(worker)))
+                .ToArray();
+            if (workers.Length > 0)
+            {
+                return workers;
+            }
+
+            await Task.Delay(100);
+        }
+
+        Assert.Fail("NAPS2 worker owned by the test process was not observed after acquisition.");
+        return Array.Empty<WorkerIdentity>();
+    }
+
+    private static async Task WaitForWorkersToExitAsync(
+        IReadOnlyList<WorkerIdentity> workers,
+        TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < timeout)
+        {
+            if (workers.All(worker => !IsSameProcessAlive(worker)))
+            {
+                return;
+            }
+
+            await Task.Delay(100);
+        }
+
+        var survivors = workers
+            .Where(IsSameProcessAlive)
+            .Select(worker => $"pid={worker.ProcessId}, path={worker.ImagePath}")
+            .ToArray();
+        Assert.Fail($"Owned NAPS2 workers survived adapter disposal: {string.Join("; ", survivors)}");
+    }
+
+    private static bool IsSameProcessAlive(WorkerIdentity identity)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(identity.ProcessId);
+            if (process.HasExited)
+            {
+                return false;
+            }
+
+            return process.StartTime.ToUniversalTime() == identity.StartTimeUtc;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    private static IReadOnlyList<WorkerIdentity> SnapshotOwnedWorkers()
+    {
+        var parents = SnapshotParentProcessIds();
+        var result = new List<WorkerIdentity>();
+        foreach (var process in Process.GetProcessesByName("NAPS2.Worker"))
+        {
+            using (process)
+            {
+                try
+                {
+                    if (!parents.TryGetValue(process.Id, out var parentProcessId) ||
+                        parentProcessId != Environment.ProcessId)
+                    {
+                        continue;
+                    }
+
+                    var imagePath = process.MainModule?.FileName;
+                    if (string.IsNullOrWhiteSpace(imagePath) ||
+                        !IsUnderDirectory(imagePath, AppContext.BaseDirectory))
+                    {
+                        continue;
+                    }
+
+                    result.Add(new WorkerIdentity(
+                        process.Id,
+                        parentProcessId,
+                        Path.GetFullPath(imagePath),
+                        process.StartTime.ToUniversalTime()));
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static Dictionary<int, int> SnapshotParentProcessIds()
+    {
+        var snapshot = CreateToolhelp32Snapshot(Th32csSnapProcess, 0);
+        if (snapshot == InvalidHandleValue)
+        {
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        try
+        {
+            var parents = new Dictionary<int, int>();
+            var entry = new ProcessEntry32 { Size = (uint)Marshal.SizeOf<ProcessEntry32>() };
+            if (!Process32First(snapshot, ref entry))
+            {
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            do
+            {
+                parents[(int)entry.ProcessId] = (int)entry.ParentProcessId;
+                entry.Size = (uint)Marshal.SizeOf<ProcessEntry32>();
+            }
+            while (Process32Next(snapshot, ref entry));
+
+            return parents;
+        }
+        finally
+        {
+            CloseHandle(snapshot);
+        }
+    }
+
+    private static bool IsUnderDirectory(string path, string directory)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var fullDirectory = Path.GetFullPath(directory)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
+            Path.DirectorySeparatorChar;
+        return fullPath.StartsWith(fullDirectory, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private const uint Th32csSnapProcess = 0x00000002;
+    private static readonly nint InvalidHandleValue = new(-1);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern nint CreateToolhelp32Snapshot(uint flags, uint processId);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool Process32First(nint snapshot, ref ProcessEntry32 entry);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool Process32Next(nint snapshot, ref ProcessEntry32 entry);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(nint handle);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct ProcessEntry32
+    {
+        public uint Size;
+        public uint Usage;
+        public uint ProcessId;
+        public UIntPtr DefaultHeapId;
+        public uint ModuleId;
+        public uint Threads;
+        public uint ParentProcessId;
+        public int PriorityClassBase;
+        public uint Flags;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string ExeFile;
+    }
+
+    private sealed record WorkerIdentity(
+        int ProcessId,
+        int ParentProcessId,
+        string ImagePath,
+        DateTime StartTimeUtc);
+
+    private sealed record WorkerKey(int ProcessId, DateTime StartTimeUtc)
+    {
+        internal static WorkerKey From(WorkerIdentity worker) =>
+            new(worker.ProcessId, worker.StartTimeUtc);
     }
 }
 

@@ -43,7 +43,12 @@ builder.Services.AddCors();
 
 if (OperatingSystem.IsWindows())
 {
-    builder.Services.AddSingleton<IScanAdapter>(_ => new WindowsScanAdapter());
+    builder.Services.AddSingleton<WindowsScanAdapterHolder>();
+    builder.Services.AddSingleton<IScanAdapter>(serviceProvider =>
+        serviceProvider.GetRequiredService<WindowsScanAdapterHolder>().GetOrCreate());
+    builder.Services.AddHostedService<WindowsScannerShutdownHostedService>();
+    builder.Services.Configure<HostOptions>(options =>
+        options.ShutdownTimeout = TimeSpan.FromSeconds(20));
 }
 else if (OperatingSystem.IsLinux())
 {
