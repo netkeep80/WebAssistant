@@ -10,9 +10,6 @@ permissions:
 
 jobs:
   build-fixed-sdk:
-    permissions:
-      contents: write
-      actions: read
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -45,87 +42,6 @@ jobs:
           echo "second=$second_sha"
           test "$first_sha" = "$second_sha"
           cmp --silent "$first" "$package"
-
-      - name: Bootstrap exact NAPS2 .3 repository cutover
-        if: contains(github.event.head_commit.message, 'bootstrap NAPS2 .3 repository cutover')
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          package='webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg'
-          expected_sha='e8abde3b7bd7e756eea714883c6e6ed79c6bb5f5052cd630b3dc763e45a50915'
-          previous='webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg'
-          previous_sha='2dbc6e96cf0d46a554318f3224561861e669dd09b60fc618319c53fed10dcc9f'
-
-          actual_sha="$(sha256sum "$package" | awk '{print $1}')"
-          actual_size="$(stat -c '%s' "$package")"
-          test "$actual_sha" = "$expected_sha"
-          test "$actual_size" -lt 1048576
-          test "$(sha256sum "$previous" | awk '{print $1}')" = "$previous_sha"
-          test "$(tr -d '\r\n' < webassist/VERSION)" = '0.3.24'
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          project = Path('webassist/src/WebAssistant/WebAssistant.csproj')
-          project_text = project.read_text(encoding='utf-8')
-          old = '    <PackageReference Include="WebAssistant.NAPS2.Sdk" Version="1.3.0-webassistant.2.450cba65" />'
-          new = '    <PackageReference Include="WebAssistant.NAPS2.Sdk" Version="1.3.0-webassistant.3.450cba65" />'
-          if project_text.count(old) != 1:
-              raise SystemExit('unexpected WebAssistant.csproj package reference layout')
-          project.write_text(project_text.replace(old, new), encoding='utf-8')
-
-          provenance = Path('webassist/vendor/naps2/README.md')
-          provenance.write_text('''# Fixed NAPS2 SDK provenance
-
-          WebAssistant vendors a repository-owned NAPS2 SDK package because the published `NAPS2.Sdk 1.3.0` predates fixes and lifecycle/capability data required by the product's direct scanner adapters.
-
-          Current committed package:
-
-          - ID: `WebAssistant.NAPS2.Sdk`
-          - version: `1.3.0-webassistant.3.450cba65`
-          - file: `../nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg`
-          - SHA-256: `e8abde3b7bd7e756eea714883c6e6ed79c6bb5f5052cd630b3dc763e45a50915`
-          - source repository: `https://github.com/cyanfish/naps2`
-          - exact source commit: `450cba65aaffe6387041050a573051a64cd80fe9`
-          - upstream baseline includes: `Sane: Fix handling of fixed-point WordList options`
-          - WebAssistant SDK delta: add nullable `PaperSourceCaps.FeederHasPaper`
-          - WIA mapping: read feeder-ready state when a feeder exists; unreadable state is `null`
-          - TWAIN mapping: read `CAP_FEEDERLOADED` when supported; unsupported or unreadable state is `null`
-          - worker lifecycle: idempotent shared worker stop task with bounded graceful stop and bounded forced termination
-          - factory lifecycle: track all owned workers and in-flight starts, reject publication after shutdown begins, and drain ownership through `ShutdownAsync()`
-          - scanning-context lifecycle: expose a shared `ShutdownAsync()` barrier and make `Dispose` wait for it
-
-          The `.3` package is built from that exact public upstream commit with only the package identity/version customization and the WebAssistant-owned feeder-state and worker-lifecycle deltas described above. No WebAssistant scanner policy is implemented inside NAPS2; `auto` source selection remains WebAssistant-owned.
-
-          The `.2` package remains immutable and is retained as the previous feeder-paper-state package. Its pinned SHA-256 remains `2dbc6e96cf0d46a554318f3224561861e669dd09b60fc618319c53fed10dcc9f`; it is never rebuilt, overwritten or substituted by the `.3` cutover.
-
-          ## Rebuild
-
-          Run from the `webassist` directory on a machine with Git, Python 3 and .NET SDK 10:
-
-          ```bash
-          ./vendor/naps2/rebuild-fixed-sdk.sh
-          ```
-
-          The rebuild script checks out the exact upstream commit, applies exact-layout fail-closed source edits, performs a project-only `net10.0` build with package generation disabled, and then runs `dotnet pack --no-build`. Build and pack use a stable compiler source mapping and omit debug-path output so random temporary checkout paths do not alter the SDK assembly.
-
-          After `dotnet pack`, the script rewrites the `.nupkg` canonically: entries are sorted, timestamps and ZIP attributes are fixed, extra fields/comments are removed, and entries use `ZIP_STORED`. The resulting package is byte-for-byte reproducible across repeated builds of the same exact inputs. The canonical `.3` bytes are 986644 bytes with SHA-256 `e8abde3b7bd7e756eea714883c6e6ed79c6bb5f5052cd630b3dc763e45a50915`.
-          ''', encoding='utf-8')
-          PY
-
-          git diff --check
-          git diff -- webassist/src/WebAssistant/WebAssistant.csproj webassist/vendor/naps2/README.md
-
-          remote_head="$(git ls-remote origin refs/heads/feat/191-windows-upgrade | awk '{print $1}')"
-          test "$remote_head" = "$GITHUB_SHA"
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- "$package" webassist/src/WebAssistant/WebAssistant.csproj webassist/vendor/naps2/README.md
-          git status --short
-          git commit -m 'fix: cut over to deterministic NAPS2 .3 package'
-          git push origin HEAD:refs/heads/feat/191-windows-upgrade
 
       - name: Upload rebuilt NAPS2 .3 package
         uses: actions/upload-artifact@v4
