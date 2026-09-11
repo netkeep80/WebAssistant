@@ -25,6 +25,7 @@ function Get-Sha256Hex {
 
 $productRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 $projectPath = Join-Path $productRoot "src/WebAssistant/WebAssistant.csproj"
+$preflightProject = Join-Path $productRoot "build/windows/upgrade-preflight/WebAssistant.UpgradePreflight.csproj"
 $sourceConfigPath = Join-Path $productRoot "src/WebAssistant/appsettings.json"
 $defaultConfigPath = Join-Path $productRoot "build/common/default-appsettings.json"
 $provenanceWriter = Join-Path $productRoot "build/common/write-provenance.ps1"
@@ -38,7 +39,8 @@ foreach ($requiredPath in @(
     $defaultConfigPath,
     $provenanceWriter,
     $packageProject,
-    $bundleProject)) {
+    $bundleProject,
+    $preflightProject)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "Отсутствует обязательный installer build input: $requiredPath"
     }
@@ -59,6 +61,7 @@ $artifactName = "WebAssistant-win-x64-$version.exe"
 $artifactPath = Join-Path $outputRoot $artifactName
 $stagingRoot = Join-Path $outputRoot (".webassistant-windows-stage-" + [Guid]::NewGuid().ToString("N"))
 $appDirectory = Join-Path $stagingRoot "app"
+$preflightOutput = Join-Path $stagingRoot "preflight"
 $msiOutput = Join-Path $stagingRoot "msi"
 $bundleOutput = Join-Path $stagingRoot "bundle"
 
@@ -68,10 +71,30 @@ foreach ($path in @($artifactPath, "$artifactPath.sha256", "$artifactPath.proven
     }
 }
 New-Item $appDirectory -ItemType Directory -Force | Out-Null
+New-Item $preflightOutput -ItemType Directory -Force | Out-Null
 New-Item $msiOutput -ItemType Directory -Force | Out-Null
 New-Item $bundleOutput -ItemType Directory -Force | Out-Null
 
 try {
+    & dotnet publish $preflightProject `
+        --configuration Release `
+        --runtime win-x64 `
+        --self-contained true `
+        "-p:PublishSingleFile=true" `
+        "-p:PublishTrimmed=true" `
+        --output $preflightOutput
+    if ($LASTEXITCODE -ne 0) {
+        throw "Не удалось собрать self-contained Windows UpgradePreflight."
+    }
+
+    $preflightCandidates = @(
+        Get-ChildItem -LiteralPath $preflightOutput -Filter "WebAssistant.UpgradePreflight.exe" -File -Recurse
+    )
+    if ($preflightCandidates.Count -ne 1) {
+        throw "Ожидался ровно один WebAssistant.UpgradePreflight.exe; найдено: $($preflightCandidates.Count)."
+    }
+    $preflightPath = $preflightCandidates[0].FullName
+
     & dotnet publish $projectPath `
         --configuration Release `
         --runtime win-x64 `
@@ -118,6 +141,7 @@ try {
     & dotnet build $bundleProject `
         --configuration Release `
         "-p:MsiPath=$msiPath" `
+        "-p:PreflightPath=$preflightPath" `
         "-p:ProductVersion=$version" `
         "-p:OutputPath=$bundleOutput"
     if ($LASTEXITCODE -ne 0) {
