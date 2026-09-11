@@ -198,6 +198,7 @@ public sealed class ReleaseInfrastructureTests
         var result = RunReleaseScript("stage-draft-release.sh", [fixture.Root, Version, SourceSha, "555"], github.Environment, github.BinDirectory);
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("digest", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains($"release upload v{Version}", File.ReadAllText(github.LogPath), StringComparison.Ordinal);
     }
 
     [Fact]
