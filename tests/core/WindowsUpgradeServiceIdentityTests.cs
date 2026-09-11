@@ -38,4 +38,40 @@ public sealed class WindowsUpgradeServiceIdentityTests
             expected,
             started.AddTicks(1)));
     }
+
+    [Fact]
+    public void RetainedServiceProcess_DoesNotRequeryImagePathAfterScmIdentityCapture()
+    {
+        var source = ReadRequired(
+            "webassist/build/windows/upgrade-preflight/RetainedServiceProcessUpgradeEnvironment.cs");
+
+        Assert.DoesNotContain("QueryFullProcessImageName", source, StringComparison.Ordinal);
+    }
+
+    private static string ReadRequired(string relativePath)
+    {
+        var path = Path.Combine(
+            FindRepositoryRoot(),
+            relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(path), $"Required file is missing: {relativePath}");
+        return File.ReadAllText(path);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (Directory.Exists(Path.Combine(directory.FullName, "webassist")) &&
+                Directory.Exists(Path.Combine(directory.FullName, "tests")) &&
+                File.Exists(Path.Combine(directory.FullName, "repo-policy.json")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Не найден корень репозитория WebAssistant.");
+    }
 }
