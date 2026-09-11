@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -79,39 +80,34 @@ api.MapGet("/scanners", async (
         cancellationToken);
 });
 api.MapPost("/scan", async (
-    string? scannerId,
+    HttpRequest request,
     ScanCoordinator coordinator,
     IServiceProvider services,
     CancellationToken cancellationToken) =>
 {
+    if (!request.HasJsonContentType())
+    {
+        return Results.Problem(
+            statusCode: StatusCodes.Status400BadRequest,
+            title: "Ожидается JSON-запрос сканирования");
+    }
+
+    ScanRequest? scanRequest;
+    try
+    {
+        scanRequest = await request.ReadFromJsonAsync<ScanRequest>(
+            cancellationToken: cancellationToken);
+    }
+    catch (JsonException)
+    {
+        return Results.Problem(
+            statusCode: StatusCodes.Status400BadRequest,
+            title: "Некорректный JSON-запрос сканирования");
+    }
+
     return await coordinator.ExecuteAsync(
         services.GetService<IScanAdapter>(),
-        scannerId,
-        ScanSource.Glass,
-        cancellationToken);
-});
-api.MapPost("/scan/feeder", async (
-    string? scannerId,
-    ScanCoordinator coordinator,
-    IServiceProvider services,
-    CancellationToken cancellationToken) =>
-{
-    return await coordinator.ExecuteAsync(
-        services.GetService<IScanAdapter>(),
-        scannerId,
-        ScanSource.Feeder,
-        cancellationToken);
-});
-api.MapPost("/scan/duplex", async (
-    string? scannerId,
-    ScanCoordinator coordinator,
-    IServiceProvider services,
-    CancellationToken cancellationToken) =>
-{
-    return await coordinator.ExecuteAsync(
-        services.GetService<IScanAdapter>(),
-        scannerId,
-        ScanSource.Duplex,
+        scanRequest,
         cancellationToken);
 });
 api.MapGet("/diag/info", (
