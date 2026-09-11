@@ -11,16 +11,17 @@ namespace WebAssistant.CoreTests;
 public sealed class DependencyOwnershipTests
 {
     private const string PackageId = "WebAssistant.NAPS2.Sdk";
-    private const string PackageVersion = "1.3.0-webassistant.2.450cba65";
-    private const string PackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg";
+    private const string PackageVersion = "1.3.0-webassistant.3.450cba65";
+    private const string PackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg";
+    private const string PreviousPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg";
     private const string UpstreamCommit = "450cba65aaffe6387041050a573051a64cd80fe9";
-    private const string ExpectedPackageSha256 = "2dbc6e96cf0d46a554318f3224561861e669dd09b60fc618319c53fed10dcc9f";
+    private const string PreviousPackageSha256 = "2dbc6e96cf0d46a554318f3224561861e669dd09b60fc618319c53fed10dcc9f";
     private const long MaxPackageBytes = 1024L * 1024L;
 
     [Fact]
-    public void FixedSdkPackage_IsPresentBoundedAndMatchesPinnedSha256()
+    public void FixedSdkPackage_IsPresentAndBounded()
     {
-        var packagePath = GetPackagePath();
+        var packagePath = GetPackagePath(PackageFile);
 
         Assert.True(File.Exists(packagePath), $"Не найден fixed SDK package: {packagePath}");
 
@@ -28,11 +29,18 @@ public sealed class DependencyOwnershipTests
         Assert.True(
             packageInfo.Length < MaxPackageBytes,
             $"Fixed SDK package вырос до {packageInfo.Length} байт при лимите {MaxPackageBytes - 1}.");
+    }
+
+    [Fact]
+    public void PreviousFixedSdkPackage_RemainsImmutableAndMatchesPinnedSha256()
+    {
+        var packagePath = GetPackagePath(PreviousPackageFile);
+        Assert.True(File.Exists(packagePath), $"Не найден immutable previous SDK package: {packagePath}");
 
         using var package = File.OpenRead(packagePath);
         var actualSha256 = Convert.ToHexString(SHA256.HashData(package)).ToLowerInvariant();
 
-        Assert.Equal(ExpectedPackageSha256, actualSha256);
+        Assert.Equal(PreviousPackageSha256, actualSha256);
     }
 
     [Fact]
@@ -67,7 +75,7 @@ public sealed class DependencyOwnershipTests
     [Fact]
     public void FixedSdkPackageNuspec_MatchesPinnedPackageIdentity()
     {
-        using var archive = ZipFile.OpenRead(GetPackagePath());
+        using var archive = ZipFile.OpenRead(GetPackagePath(PackageFile));
         var nuspecEntry = Assert.Single(archive.Entries, entry =>
             entry.FullName.EndsWith(".nuspec", StringComparison.OrdinalIgnoreCase));
 
@@ -94,6 +102,24 @@ public sealed class DependencyOwnershipTests
         Assert.Contains($"- version: `{PackageVersion}`", provenance, StringComparison.Ordinal);
         Assert.Contains($"- file: `../nuget/{PackageFile}`", provenance, StringComparison.Ordinal);
         Assert.Contains($"- exact source commit: `{UpstreamCommit}`", provenance, StringComparison.Ordinal);
+        Assert.Contains(".2 package remains immutable", provenance, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RebuildRecipe_ContainsDeterministicWorkerLifecyclePatchLineage()
+    {
+        var root = FindRepositoryRoot();
+        var rebuildPath = Path.Combine(root, "webassist", "vendor", "naps2", "rebuild-fixed-sdk.sh");
+        var rebuild = File.ReadAllText(rebuildPath);
+
+        Assert.Contains(PackageVersion, rebuild, StringComparison.Ordinal);
+        Assert.Contains("NAPS2.Sdk/Remoting/Worker/WorkerContext.cs", rebuild, StringComparison.Ordinal);
+        Assert.Contains("NAPS2.Sdk/Remoting/Worker/WorkerFactory.cs", rebuild, StringComparison.Ordinal);
+        Assert.Contains("NAPS2.Sdk/Remoting/Worker/IWorkerFactory.cs", rebuild, StringComparison.Ordinal);
+        Assert.Contains("NAPS2.Sdk/Scan/ScanningContext.cs", rebuild, StringComparison.Ordinal);
+        Assert.Contains("_stopTask", rebuild, StringComparison.Ordinal);
+        Assert.Contains("StopAllWorkersAsync", rebuild, StringComparison.Ordinal);
+        Assert.Contains("ShutdownAsync", rebuild, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -112,10 +138,10 @@ public sealed class DependencyOwnershipTests
             string.Equals(source.Attribute("value")?.Value, "vendor/nuget", StringComparison.Ordinal));
     }
 
-    private static string GetPackagePath()
+    private static string GetPackagePath(string packageFile)
     {
         var root = FindRepositoryRoot();
-        return Path.Combine(root, "webassist", "vendor", "nuget", PackageFile);
+        return Path.Combine(root, "webassist", "vendor", "nuget", packageFile);
     }
 
     private static string FindRepositoryRoot()
