@@ -2,11 +2,15 @@ namespace WebAssistant.UpgradePreflight;
 
 internal static class Program
 {
+    private const string DiagnosticFileName = "WebAssistant-UpgradePreflight.log";
+
     private static async Task<int> Main()
     {
         if (!OperatingSystem.IsWindows())
         {
-            Console.Error.WriteLine("preflight-fail reason=windows-only");
+            const string message = "preflight-fail reason=windows-only";
+            Console.Error.WriteLine(message);
+            TryWriteDiagnostic(message);
             return 1;
         }
 
@@ -18,18 +22,41 @@ internal static class Program
 
         try
         {
-            Console.WriteLine("preflight-start service=WebAssistant");
+            const string startMessage = "preflight-start service=WebAssistant";
+            Console.WriteLine(startMessage);
+            TryWriteDiagnostic(startMessage);
+
             using var environment = new RetainedServiceProcessUpgradeEnvironment();
             var orchestrator = new UpgradePreflightOrchestrator(environment, policy);
             await orchestrator.RunAsync(CancellationToken.None);
-            Console.WriteLine("preflight-pass");
+
+            const string passMessage = "preflight-pass";
+            Console.WriteLine(passMessage);
+            TryWriteDiagnostic(passMessage);
             return 0;
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine(
-                $"preflight-fail type={exception.GetType().Name} message={Sanitize(exception.Message)}");
+            var message =
+                $"preflight-fail type={exception.GetType().Name} message={Sanitize(exception.Message)}";
+            Console.Error.WriteLine(message);
+            TryWriteDiagnostic(message);
             return 1;
+        }
+    }
+
+    private static void TryWriteDiagnostic(string message)
+    {
+        try
+        {
+            var path = Path.Combine(Path.GetTempPath(), DiagnosticFileName);
+            File.AppendAllText(
+                path,
+                $"{DateTimeOffset.UtcNow:O} {Sanitize(message)}{Environment.NewLine}");
+        }
+        catch
+        {
+            // Diagnostics must never change upgrade behavior.
         }
     }
 
