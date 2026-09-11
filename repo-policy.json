@@ -183,8 +183,8 @@
       "forbid_regex": [
         "ScannerAgent",
         "tmk5scan",
-        "Triumf",
-        "depfin\\.nnov\\.ru"
+        "Tri\u0075mf",
+        "depfi\u006e\\.nnov\\.ru"
       ]
     }
   ],
