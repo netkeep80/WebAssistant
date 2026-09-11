@@ -70,7 +70,7 @@ public sealed class WindowsUpgradePreflightBundleTests
     }
 
     [Fact]
-    public void WindowsUpgradeAcceptance_UsesExactStagedHistoricalTransport()
+    public void WindowsUpgradeAcceptance_UsesDurableHistoricalReleaseTransport()
     {
         foreach (var workflowPath in new[]
                  {
@@ -80,8 +80,9 @@ public sealed class WindowsUpgradePreflightBundleTests
         {
             var workflow = ReadRequired(workflowPath);
 
-            Assert.Contains("10155509111", workflow, StringComparison.Ordinal);
-            Assert.Contains("34485513571", workflow, StringComparison.Ordinal);
+            Assert.Contains("releases/download/v0.3.21/WebAssistant-win-x64-0.3.21.exe", workflow, StringComparison.Ordinal);
+            Assert.DoesNotContain("10155509111", workflow, StringComparison.Ordinal);
+            Assert.DoesNotContain("34485513571", workflow, StringComparison.Ordinal);
             Assert.Contains("run-upgrade-acceptance.ps1", workflow, StringComparison.Ordinal);
         }
     }
