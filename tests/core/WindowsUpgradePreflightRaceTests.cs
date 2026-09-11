@@ -45,6 +45,26 @@ public sealed class WindowsUpgradePreflightRaceTests
         Assert.DoesNotContain(reusedParentWorker, environment.WaitedForExit);
     }
 
+    [Fact]
+    public async Task ServiceReportedStoppedButExactParentNeverExits_FailsClosedWithinBoundedConvergence()
+    {
+        var service = new ProcessIdentity(100, 4, ServicePath, T0);
+        var environment = new NeverExitingParentEnvironment(service, maxAliveChecks: 6);
+        var preflight = new UpgradePreflightOrchestrator(
+            environment,
+            new UpgradePreflightPolicy(
+                ServiceStopTimeout: TimeSpan.FromSeconds(3),
+                WorkerGraceTimeout: TimeSpan.FromSeconds(3),
+                PostTerminateTimeout: TimeSpan.FromSeconds(2),
+                PollInterval: TimeSpan.FromSeconds(1)));
+
+        var error = await Assert.ThrowsAsync<UpgradePreflightException>(
+            () => preflight.RunAsync(CancellationToken.None));
+
+        Assert.Contains("service process", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.InRange(environment.ServiceAliveChecks, 1, 6);
+    }
+
     private static UpgradePreflightOrchestrator CreatePreflight(ParentExitRaceEnvironment environment) =>
         new(
             environment,
@@ -108,7 +128,6 @@ public sealed class WindowsUpgradePreflightRaceTests
         public bool IsAlive(ProcessIdentity process) =>
             process == service ? false : alive.GetValueOrDefault(process);
 
-        // This becomes part of IUpgradeEnvironment in the GREEN implementation.
         public DateTimeOffset? GetExitTimeUtc(ProcessIdentity process) =>
             process == service ? serviceExitTimeUtc : null;
 
@@ -127,6 +146,59 @@ public sealed class WindowsUpgradePreflightRaceTests
         }
 
         public void Terminate(ProcessIdentity process) => Terminated.Add(process);
+
+        public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class NeverExitingParentEnvironment : IUpgradeEnvironment
+    {
+        private readonly ProcessIdentity service;
+        private readonly int maxAliveChecks;
+
+        internal NeverExitingParentEnvironment(ProcessIdentity service, int maxAliveChecks)
+        {
+            this.service = service;
+            this.maxAliveChecks = maxAliveChecks;
+        }
+
+        internal int ServiceAliveChecks { get; private set; }
+
+        public ServiceSnapshot? TryGetWebAssistantService() =>
+            new(ServicePath, ServiceState.Running, service);
+
+        public IReadOnlyList<ProcessIdentity> SnapshotProcesses() => [];
+
+        public Task RequestServiceStopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<bool> WaitForServiceStoppedAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            Task.FromResult(true);
+
+        public bool IsAlive(ProcessIdentity process)
+        {
+            if (process != service)
+            {
+                return false;
+            }
+
+            ServiceAliveChecks++;
+            if (ServiceAliveChecks > maxAliveChecks)
+            {
+                throw new InvalidOperationException(
+                    "Test guard: unbounded exact service-process convergence loop detected.");
+            }
+
+            return true;
+        }
+
+        public DateTimeOffset? GetExitTimeUtc(ProcessIdentity process) => null;
+
+        public Task<bool> WaitForExitAsync(
+            ProcessIdentity process,
+            TimeSpan timeout,
+            CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public void Terminate(ProcessIdentity process) =>
+            throw new InvalidOperationException("The preflight must never terminate the WebAssistant service process directly.");
 
         public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken) => Task.CompletedTask;
     }
