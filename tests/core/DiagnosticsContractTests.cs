@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -11,8 +12,8 @@ namespace WebAssistant.CoreTests;
 
 public sealed class DiagnosticsContractTests
 {
-    private static readonly byte[] SecretPdfBytes =
-        "%PDF-1.7\nDOCUMENT-SECRET-MARKER\n%%EOF"u8.ToArray();
+    private static readonly byte[] DocumentPdfBytes =
+        "%PDF-1.7\nDOCUMENT-CONTENT-MARKER\n%%EOF"u8.ToArray();
 
     [Fact]
     public async Task DiagnosticsInfo_ReturnsCurrentSafeRuntimeState()
@@ -64,42 +65,48 @@ public sealed class DiagnosticsContractTests
     [Fact]
     public async Task Scan_WritesDailyTechnicalLogWithoutDocumentContent()
     {
+        var scannerId = ScannerIdentity.Create(ScannerBackend.Sane, "diagnostics-scanner-1");
         var adapter = FakeScanAdapter.WithPdf(
-            [new ScannerDevice("scanner-1", "Сканер")],
-            SecretPdfBytes);
+            [new ScannerDevice(scannerId, "Сканер")],
+            DocumentPdfBytes);
         using var fixture = CreateFixture(adapter);
         using var client = fixture.Factory.CreateClient();
 
-        using var response = await client.PostAsync("/v1/scan", null);
+        using var response = await client.PostAsJsonAsync(
+            "/v1/scan",
+            new { scannerId, source = "flatbed" });
         _ = await response.Content.ReadAsByteArrayAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var log = await ReadTodayLogAsync(fixture.LogDirectory);
         Assert.Contains("POST /v1/scan", log);
-        Assert.Contains("scanner-1", log);
-        Assert.DoesNotContain("DOCUMENT-SECRET-MARKER", log);
-        Assert.DoesNotContain(Convert.ToBase64String(SecretPdfBytes), log);
+        Assert.Contains(scannerId, log);
+        Assert.DoesNotContain("DOCUMENT-CONTENT-MARKER", log);
+        Assert.DoesNotContain(Convert.ToBase64String(DocumentPdfBytes), log);
     }
 
     [Fact]
     public async Task ScannerFailure_WritesExceptionTypeMessageAndStackTrace()
     {
+        var scannerId = ScannerIdentity.Create(ScannerBackend.Sane, "diagnostics-scanner-1");
         var adapter = new FakeScanAdapter(
-            [new ScannerDevice("scanner-1", "Сканер")],
+            [new ScannerDevice(scannerId, "Сканер")],
             (_, _) => Task.FromException<Stream>(
                 new InvalidOperationException("scanner failure")));
         using var fixture = CreateFixture(adapter);
         using var client = fixture.Factory.CreateClient();
 
-        using var response = await client.PostAsync("/v1/scan", null);
+        using var response = await client.PostAsJsonAsync(
+            "/v1/scan",
+            new { scannerId, source = "flatbed" });
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
 
         var log = await ReadTodayLogAsync(fixture.LogDirectory);
         Assert.Contains("InvalidOperationException", log);
         Assert.Contains("scanner failure", log);
-        Assert.Contains("scanner-1", log);
+        Assert.Contains(scannerId, log);
     }
 
     private static async Task<string> ReadTodayLogAsync(string logDirectory)
