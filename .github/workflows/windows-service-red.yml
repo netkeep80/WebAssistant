@@ -9,6 +9,36 @@ permissions:
   actions: read
 
 jobs:
+  build-fixed-sdk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Rebuild exact NAPS2 .3 package
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd webassist
+          ./vendor/naps2/rebuild-fixed-sdk.sh
+          sha256sum vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg
+
+      - name: Upload rebuilt NAPS2 .3 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: webassistant-naps2-sdk-${{ github.sha }}
+          path: webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg
+          if-no-files-found: error
+          retention-days: 1
+
   build-candidate:
     uses: ./.github/workflows/build-installers.yml
     with:
