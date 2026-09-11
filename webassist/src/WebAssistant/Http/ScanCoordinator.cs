@@ -11,10 +11,51 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
 
     internal async Task<IResult> ExecuteAsync(
         IScanAdapter? adapter,
-        string? scannerId,
-        ScanSource source,
+        ScanRequest? request,
         CancellationToken cancellationToken)
     {
+        if (request is null || string.IsNullOrWhiteSpace(request.ScannerId))
+        {
+            logger.LogWarning("Не указан scannerId");
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Не указан scannerId");
+        }
+
+        var scannerId = request.ScannerId;
+        if (!ScannerIdentity.TryParse(scannerId, out var requestedBackend))
+        {
+            logger.LogWarning("Получен некорректный scannerId: {ScannerId}", SafeLogText(scannerId));
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Некорректный scannerId");
+        }
+
+        if (!TryParseRequestedSource(request.Source, out var requestedSource))
+        {
+            logger.LogWarning("Получен некорректный source");
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Некорректный source");
+        }
+
+        var duplex = request.Settings?.Duplex ?? false;
+        if (duplex && requestedSource is not RequestedScanSource.Feeder)
+        {
+            logger.LogWarning("Двустороннее сканирование запрошено не для source=feeder");
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Некорректное сочетание source и duplex");
+        }
+
+        if (adapter is null)
+        {
+            logger.LogError("Модуль сканирования недоступен для текущей платформы");
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Модуль сканирования недоступен");
+        }
+
         if (!await acquisitionGate.WaitAsync(0, cancellationToken))
         {
             logger.LogWarning("Операция сканирования отклонена: scanner resource занят");
@@ -29,62 +70,65 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
 
         try
         {
-            if (adapter is null)
+            var discovery = await adapter.GetScannersAsync(cancellationToken);
+            logger.LogInformation("Обнаружено сканеров: {ScannerCount}", discovery.Count);
+
+            if (!discovery.IsAvailable)
             {
-                logger.LogError("Модуль сканирования недоступен для текущей платформы");
+                logger.LogWarning("Обнаружение сканеров недоступно");
                 return Results.Problem(
                     statusCode: StatusCodes.Status503ServiceUnavailable,
-                    title: "Модуль сканирования недоступен");
+                    title: "Обнаружение сканеров недоступно");
             }
 
-            if (scannerId is not null && string.IsNullOrWhiteSpace(scannerId))
+            selected = discovery.FirstOrDefault(device =>
+                string.Equals(device.Id, scannerId, StringComparison.Ordinal));
+
+            if (selected is null)
             {
-                logger.LogWarning("Получен пустой scannerId");
-                return Results.Problem(
-                    statusCode: StatusCodes.Status400BadRequest,
-                    title: "Не указан scannerId");
-            }
+                var backendUnavailable = discovery.Warnings.Any(warning =>
+                    warning.Backend == requestedBackend &&
+                    string.Equals(warning.Code, "enumerationFailed", StringComparison.Ordinal));
 
-            var scanners = await adapter.GetScannersAsync(cancellationToken);
-            logger.LogInformation("Обнаружено сканеров: {ScannerCount}", scanners.Count);
+                logger.LogWarning(
+                    backendUnavailable
+                        ? "Backend запрошенного scannerId недоступен: {ScannerId}"
+                        : "Запрошенный scannerId не найден: {ScannerId}",
+                    SafeLogText(scannerId));
 
-            if (scannerId is not null)
-            {
-                selected = scanners.FirstOrDefault(device =>
-                    string.Equals(device.Id, scannerId, StringComparison.Ordinal));
-
-                if (selected is null)
-                {
-                    logger.LogWarning(
-                        "Запрошенный scannerId не найден: {ScannerId}",
-                        SafeLogText(scannerId));
-                    return Results.Problem(
+                return backendUnavailable
+                    ? Results.Problem(
+                        statusCode: StatusCodes.Status503ServiceUnavailable,
+                        title: "Backend сканера недоступен")
+                    : Results.Problem(
                         statusCode: StatusCodes.Status404NotFound,
                         title: "Сканер не найден");
-                }
             }
-            else
+
+            ScanSource source;
+            try
             {
-                if (scanners.Count == 0)
-                {
-                    logger.LogWarning("Сканеры не найдены");
-                    return Results.Problem(
-                        statusCode: StatusCodes.Status503ServiceUnavailable,
-                        title: "Сканеры не найдены");
-                }
-
-                if (scanners.Count > 1)
-                {
-                    logger.LogWarning(
-                        "Автоматический выбор запрещён: обнаружено сканеров {ScannerCount}",
-                        scanners.Count);
-                    return Results.Problem(
-                        statusCode: StatusCodes.Status409Conflict,
-                        title: "Необходим выбор сканера",
-                        detail: "Обнаружено несколько сканеров; автоматический выбор запрещён.");
-                }
-
-                selected = scanners[0];
+                source = ScanSourcePolicy.Resolve(
+                    requestedSource,
+                    duplex,
+                    selected.SupportsFlatbed,
+                    selected.SupportsFeeder,
+                    selected.SupportsDuplex,
+                    selected.FeederPaperState);
+            }
+            catch (ArgumentException exception)
+            {
+                logger.LogWarning(exception, "Некорректный запрос источника сканирования");
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Некорректные параметры сканирования");
+            }
+            catch (NotSupportedException exception)
+            {
+                logger.LogWarning(exception, "Запрошенный режим сканирования не поддерживается");
+                return Results.Problem(
+                    statusCode: StatusCodes.Status422UnprocessableEntity,
+                    title: "Режим сканирования не поддерживается");
             }
 
             var safeScannerId = SafeLogText(selected.Id);
@@ -121,7 +165,7 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
             logger.LogError(
                 exception,
                 "Ошибка сканирования scannerId={ScannerId}",
-                selected is null ? null : SafeLogText(selected.Id));
+                selected is null ? SafeLogText(scannerId) : SafeLogText(selected.Id));
             return Results.Problem(
                 statusCode: StatusCodes.Status502BadGateway,
                 title: "Ошибка сканирования");
@@ -130,6 +174,28 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
         {
             Volatile.Write(ref busy, 0);
             acquisitionGate.Release();
+        }
+    }
+
+    private static bool TryParseRequestedSource(
+        string? value,
+        out RequestedScanSource source)
+    {
+        switch (value)
+        {
+            case null:
+            case "auto":
+                source = RequestedScanSource.Auto;
+                return true;
+            case "flatbed":
+                source = RequestedScanSource.Flatbed;
+                return true;
+            case "feeder":
+                source = RequestedScanSource.Feeder;
+                return true;
+            default:
+                source = default;
+                return false;
         }
     }
 

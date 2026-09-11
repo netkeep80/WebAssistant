@@ -24,12 +24,30 @@ internal sealed class LinuxScanAdapter : IScanAdapter, IDisposable
         controller = new ScanController(scanningContext);
     }
 
-    public async Task<IReadOnlyList<ScannerDevice>> GetScannersAsync(CancellationToken cancellationToken = default)
+    public async Task<ScannerDiscoveryResult> GetScannersAsync(
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var devices = await controller.GetDeviceList(Driver.Sane);
         cancellationToken.ThrowIfCancellationRequested();
-        return devices.Select(device => new ScannerDevice(device.ID, device.Name)).ToArray();
+
+        var scanners = new List<ScannerDevice>(devices.Count);
+        foreach (var device in devices)
+        {
+            var caps = await controller.GetCaps(device, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            var paperSourceCaps = caps.PaperSourceCaps;
+            scanners.Add(new ScannerDevice(
+                ScannerIdentity.Create(ScannerBackend.Sane, device.ID),
+                device.Name,
+                ScannerBackend.Sane,
+                paperSourceCaps?.SupportsFlatbed ?? false,
+                paperSourceCaps?.SupportsFeeder ?? false,
+                paperSourceCaps?.SupportsDuplex ?? false,
+                MapFeederPaperState(paperSourceCaps?.FeederHasPaper)));
+        }
+
+        return new ScannerDiscoveryResult(scanners);
     }
 
     public Task<Stream> ScanAsync(string scannerId, CancellationToken cancellationToken = default) =>
@@ -43,17 +61,34 @@ internal sealed class LinuxScanAdapter : IScanAdapter, IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(scannerId);
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (!ScannerIdentity.TryParse(scannerId, out var backend) || backend != ScannerBackend.Sane)
+        {
+            throw new InvalidOperationException(
+                $"ScannerId '{scannerId}' не принадлежит SANE backend.");
+        }
+
         var devices = await controller.GetDeviceList(Driver.Sane);
         cancellationToken.ThrowIfCancellationRequested();
-        var device = devices.SingleOrDefault(candidate =>
-            string.Equals(candidate.ID, scannerId, StringComparison.Ordinal));
+        var matches = devices
+            .Where(candidate => string.Equals(
+                ScannerIdentity.Create(ScannerBackend.Sane, candidate.ID),
+                scannerId,
+                StringComparison.Ordinal))
+            .ToArray();
 
-        if (device is null)
+        if (matches.Length == 0)
         {
             throw new InvalidOperationException($"Сканер с идентификатором '{scannerId}' не найден.");
         }
 
-        var caps = await controller.GetCaps(device);
+        if (matches.Length > 1)
+        {
+            throw new InvalidOperationException(
+                $"ScannerId '{scannerId}' неоднозначен внутри SANE backend.");
+        }
+
+        var device = matches[0];
+        var caps = await controller.GetCaps(device, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         EnsureSourceSupported(caps.PaperSourceCaps, source);
 
@@ -118,6 +153,13 @@ internal sealed class LinuxScanAdapter : IScanAdapter, IDisposable
             }
         }
     }
+
+    private static FeederPaperState MapFeederPaperState(bool? feederHasPaper) => feederHasPaper switch
+    {
+        true => FeederPaperState.Present,
+        false => FeederPaperState.Absent,
+        null => FeederPaperState.Unknown
+    };
 
     private static void EnsureSourceSupported(PaperSourceCaps? paperSourceCaps, ScanSource source)
     {

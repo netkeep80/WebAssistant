@@ -9,6 +9,27 @@ public sealed class DistributionContractCandidateTests
     private const string BaselineConformancePath = "contracts/webassistant-conformance-v0.2.json";
     private const string CandidateContractPath = "contracts/webassistant-contract-v0.3.json";
     private const string CandidateConformancePath = "contracts/webassistant-conformance-v0.3.json";
+    private const string PatchedSdkPath = "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg";
+    private const string SupersededSdkPath = "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.1.450cba65.nupkg";
+
+    private static readonly HashSet<string> SupersededRequirementIds =
+    [
+        "WA-SCAN-001",
+        "WA-SCAN-002"
+    ];
+
+    private static readonly HashSet<string> SupersededVectorIds =
+    [
+        "WA-C-SCANNER-HTTP-001"
+    ];
+
+    private static readonly string[] ScannerVectorIds =
+    [
+        "WA-C-SCANNER-DISCOVERY-001",
+        "WA-C-SCANNER-HTTP-001",
+        "WA-C-SCANNER-AUTO-001",
+        "WA-C-SCANNER-STATELESS-001"
+    ];
 
     private static readonly string[] DistributionRequirementIds =
     [
@@ -37,7 +58,7 @@ public sealed class DistributionContractCandidateTests
     ];
 
     [Fact]
-    public void DistributionCandidate_PreservesV02AndAddsOnlyCandidateDistributionAuthority()
+    public void DistributionCandidate_PreservesV02ExceptExplicitScannerSupersession()
     {
         var root = FindRepositoryRoot();
 
@@ -65,8 +86,12 @@ public sealed class DistributionContractCandidateTests
             RequiredString(candidateConformance.RootElement, "contract"));
 
         AssertCurrentAuthorityRemainsV02(policy.RootElement);
-        AssertBaselineRequirementsArePreserved(baselineContract.RootElement, candidateContract.RootElement);
-        AssertBaselineVectorsArePreserved(baselineConformance.RootElement, candidateConformance.RootElement);
+        AssertBaselineRequirementsArePreservedExceptExplicitSupersession(
+            baselineContract.RootElement,
+            candidateContract.RootElement);
+        AssertBaselineVectorsArePreservedExceptExplicitSupersession(
+            baselineConformance.RootElement,
+            candidateConformance.RootElement);
 
         var candidateRequirementIds = candidateContract.RootElement
             .GetProperty("requirements")
@@ -101,6 +126,97 @@ public sealed class DistributionContractCandidateTests
             "Candidate conformance graph invalid:\n" + string.Join("\n", graphErrors));
     }
 
+    [Fact]
+    public void CandidateScannerContract_AuthorizesUnifiedStableAutoModel()
+    {
+        var root = FindRepositoryRoot();
+        using var candidateContract = ReadJson(root, CandidateContractPath);
+        var statements = candidateContract.RootElement
+            .GetProperty("requirements")
+            .EnumerateArray()
+            .Select(requirement => RequiredString(requirement, "statement"))
+            .ToArray();
+
+        Assert.Contains(statements, statement =>
+            statement.Contains("WIA", StringComparison.Ordinal) &&
+            statement.Contains("TWAIN", StringComparison.Ordinal) &&
+            statement.Contains("scannerId", StringComparison.Ordinal));
+
+        Assert.Contains(statements, statement =>
+            statement.Contains("POST /v1/scan", StringComparison.Ordinal) &&
+            statement.Contains("source", StringComparison.Ordinal) &&
+            statement.Contains("duplex", StringComparison.Ordinal));
+
+        Assert.Contains(statements, statement =>
+            statement.Contains("PRESENT", StringComparison.Ordinal) &&
+            statement.Contains("ABSENT", StringComparison.Ordinal) &&
+            statement.Contains("UNKNOWN", StringComparison.Ordinal));
+
+        Assert.DoesNotContain(statements, statement =>
+            statement.Contains("/v1/scan/feeder", StringComparison.Ordinal) ||
+            statement.Contains("/v1/scan/duplex", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CandidateScannerConformance_TracksPatchedSdkAndCurrentVectors()
+    {
+        var root = FindRepositoryRoot();
+        using var candidateConformance = ReadJson(root, CandidateConformancePath);
+
+        var requiredPaths = ReadStringArray(candidateConformance.RootElement, "requiredRepositoryPaths")
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Contains(PatchedSdkPath, requiredPaths);
+        Assert.DoesNotContain(SupersededSdkPath, requiredPaths);
+        Assert.Contains("tests/core/ScannerIdentityTests.cs", requiredPaths);
+        Assert.Contains("tests/core/ScanSourcePolicyTests.cs", requiredPaths);
+        Assert.Contains("tests/core/LinuxVirtualScanAdapterTests.cs", requiredPaths);
+        Assert.Contains("tests/core/ServicePanelScannerApiTests.cs", requiredPaths);
+
+        var vectors = candidateConformance.RootElement
+            .GetProperty("vectors")
+            .EnumerateArray()
+            .ToDictionary(vector => RequiredString(vector, "id"), StringComparer.Ordinal);
+
+        foreach (var vectorId in ScannerVectorIds)
+        {
+            Assert.Contains(vectorId, vectors.Keys);
+        }
+
+        Assert.Contains("WIA", RequiredString(vectors["WA-C-SCANNER-DISCOVERY-001"], "assertion"), StringComparison.Ordinal);
+        Assert.Contains("TWAIN", RequiredString(vectors["WA-C-SCANNER-DISCOVERY-001"], "assertion"), StringComparison.Ordinal);
+        Assert.Contains("POST /v1/scan", RequiredString(vectors["WA-C-SCANNER-HTTP-001"], "assertion"), StringComparison.Ordinal);
+        Assert.Contains("PRESENT", RequiredString(vectors["WA-C-SCANNER-AUTO-001"], "assertion"), StringComparison.Ordinal);
+        Assert.Contains("UNKNOWN", RequiredString(vectors["WA-C-SCANNER-AUTO-001"], "assertion"), StringComparison.Ordinal);
+        Assert.Contains("scannerId", RequiredString(vectors["WA-C-SCANNER-STATELESS-001"], "assertion"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CandidateApiDocumentation_DescribesUnifiedScannerModel()
+    {
+        var root = FindRepositoryRoot();
+        var api = File.ReadAllText(ToFullPath(root, "webassist/docs/api.md"));
+
+        Assert.Contains("GET /v1/scanners", api, StringComparison.Ordinal);
+        Assert.Contains("scannerId", api, StringComparison.Ordinal);
+        Assert.Contains("warnings", api, StringComparison.Ordinal);
+        Assert.Contains("WIA", api, StringComparison.Ordinal);
+        Assert.Contains("TWAIN", api, StringComparison.Ordinal);
+        Assert.Contains("POST /v1/scan", api, StringComparison.Ordinal);
+        Assert.Contains("auto", api, StringComparison.Ordinal);
+        Assert.Contains("flatbed", api, StringComparison.Ordinal);
+        Assert.Contains("feeder", api, StringComparison.Ordinal);
+        Assert.Contains("duplex", api, StringComparison.Ordinal);
+        Assert.Contains("PRESENT", api, StringComparison.Ordinal);
+        Assert.Contains("ABSENT", api, StringComparison.Ordinal);
+        Assert.Contains("UNKNOWN", api, StringComparison.Ordinal);
+        Assert.DoesNotContain("WIA-first", api, StringComparison.Ordinal);
+        Assert.DoesNotContain("`POST /v1/scan/feeder`", api, StringComparison.Ordinal);
+        Assert.DoesNotContain("`POST /v1/scan/duplex`", api, StringComparison.Ordinal);
+        Assert.Contains("Source-specific routes", api, StringComparison.Ordinal);
+        Assert.Contains("отсутствуют", api, StringComparison.Ordinal);
+        Assert.DoesNotContain("Опциональный query parameter", api, StringComparison.Ordinal);
+    }
+
     private static void AssertCurrentAuthorityRemainsV02(JsonElement policy)
     {
         var current = policy
@@ -115,7 +231,9 @@ public sealed class DistributionContractCandidateTests
             RequiredString(current.GetProperty("conformance"), "path"));
     }
 
-    private static void AssertBaselineRequirementsArePreserved(JsonElement baseline, JsonElement candidate)
+    private static void AssertBaselineRequirementsArePreservedExceptExplicitSupersession(
+        JsonElement baseline,
+        JsonElement candidate)
     {
         var candidateRequirements = candidate
             .GetProperty("requirements")
@@ -131,12 +249,20 @@ public sealed class DistributionContractCandidateTests
         {
             var id = RequiredString(baselineRequirement, "id");
             Assert.True(candidateRequirements.TryGetValue(id, out var candidateRequirement), $"Candidate потерял requirement {id}");
+
+            if (SupersededRequirementIds.Contains(id))
+            {
+                continue;
+            }
+
             Assert.Equal(RequiredString(baselineRequirement, "kind"), candidateRequirement.Kind);
             Assert.Equal(RequiredString(baselineRequirement, "statement"), candidateRequirement.Statement);
         }
     }
 
-    private static void AssertBaselineVectorsArePreserved(JsonElement baseline, JsonElement candidate)
+    private static void AssertBaselineVectorsArePreservedExceptExplicitSupersession(
+        JsonElement baseline,
+        JsonElement candidate)
     {
         var candidateVectors = candidate
             .GetProperty("vectors")
@@ -152,6 +278,12 @@ public sealed class DistributionContractCandidateTests
         {
             var id = RequiredString(baselineVector, "id");
             Assert.True(candidateVectors.TryGetValue(id, out var candidateVector), $"Candidate потерял conformance vector {id}");
+
+            if (SupersededVectorIds.Contains(id))
+            {
+                continue;
+            }
+
             Assert.Equal(RequiredString(baselineVector, "assertion"), candidateVector.Assertion);
             Assert.Equal(ReadStringArray(baselineVector, "requirements"), candidateVector.Requirements);
         }

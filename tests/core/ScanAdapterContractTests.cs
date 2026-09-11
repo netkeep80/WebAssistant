@@ -55,11 +55,11 @@ public sealed class ScanAdapterContractTests
     {
         public string? LastScannerId { get; private set; }
 
-        public Task<IReadOnlyList<ScannerDevice>> GetScannersAsync(
+        public Task<ScannerDiscoveryResult> GetScannersAsync(
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(scanners);
+            return Task.FromResult(new ScannerDiscoveryResult(scanners));
         }
 
         public Task<Stream> ScanAsync(

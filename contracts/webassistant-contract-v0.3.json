@@ -59,12 +59,12 @@
     {
       "id": "WA-SCAN-001",
       "kind": "required",
-      "statement": "Scanner capability перечисляет устройства, использует детерминированный scannerId selection и при успешном acquisition возвращает один raw application/pdf response."
+      "statement": "GET /v1/scanners возвращает устройства с детерминированным persistent scannerId; на Windows WIA и TWAIN перечисляются независимо и оба backend входят в единый список доступных scanner endpoints. Успешный acquisition возвращает один raw application/pdf response."
     },
     {
       "id": "WA-SCAN-002",
       "kind": "required",
-      "statement": "POST /v1/scan, /v1/scan/feeder и /v1/scan/duplex передают соответственно glass, feeder и duplex source без скрытого fallback на другой source."
+      "statement": "POST /v1/scan является единственным scanner acquisition route. JSON request требует scannerId; source имеет значения auto, flatbed или feeder и по умолчанию равен auto; settings.duplex является отдельным boolean и по умолчанию false; source-specific routes отсутствуют. Автовыбор использует состояние бумаги PRESENT, ABSENT или UNKNOWN: для dual-source PRESENT выбирает feeder, ABSENT и UNKNOWN выбирают flatbed, UNKNOWN никогда не трактуется как PRESENT; явно заданный source не имеет скрытого fallback. WebAssistant не хранит mutable scanner profile или выбранные scannerId/source/settings: эти настройки принадлежат вызывающему приложению и передаются в запросе."
     },
     {
       "id": "WA-SCAN-003",

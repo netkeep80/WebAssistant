@@ -22,8 +22,8 @@ public sealed class LinuxVirtualScanAdapterTests
             .ToHashSet(StringComparer.Ordinal);
 
         using var adapter = new LinuxScanAdapter();
-        var devices = await adapter.GetScannersAsync();
-        var virtualDevices = devices
+        var discovery = await adapter.GetScannersAsync();
+        var virtualDevices = discovery.Scanners
             .Where(device => device.Name.Contains(
                 "frontend-tester",
                 StringComparison.OrdinalIgnoreCase))
@@ -32,14 +32,17 @@ public sealed class LinuxVirtualScanAdapterTests
         Assert.NotEmpty(virtualDevices);
         Assert.All(
             virtualDevices,
-            device => Assert.StartsWith("test:", device.Id, StringComparison.Ordinal));
+            device => Assert.StartsWith("wa1-sane-", device.Id, StringComparison.Ordinal));
         Assert.Equal(
             virtualDevices.Length,
             virtualDevices.Select(device => device.Id).Distinct(StringComparer.Ordinal).Count());
 
         var scanner = Assert.Single(
             virtualDevices,
-            device => string.Equals(device.Id, "test:0", StringComparison.Ordinal));
+            device => string.Equals(
+                device.Id,
+                ScannerIdentity.Create(ScannerBackend.Sane, "test:0"),
+                StringComparison.Ordinal));
 
         await using var pdf = await adapter.ScanAsync(scanner.Id, ScanSource.Glass);
         using var buffer = new MemoryStream();

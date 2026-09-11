@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -83,12 +84,11 @@ public sealed class PlatformEndToEndTests
         Assert.Equal(HttpStatusCode.OK, health.StatusCode);
 
         var scannerId = await GetFirstScannerIdAsync(client);
-        var scanPath = "/v1/scan?scannerId=" + Uri.EscapeDataString(scannerId);
 
-        using var first = await client.PostAsync(scanPath, null);
+        using var first = await client.PostAsJsonAsync("/v1/scan", new { scannerId });
         await AssertPdfAsync(first);
 
-        using var repeat = await client.PostAsync(scanPath, null);
+        using var repeat = await client.PostAsJsonAsync("/v1/scan", new { scannerId });
         await AssertPdfAsync(repeat);
     }
 
@@ -152,9 +152,7 @@ public sealed class PlatformEndToEndTests
             var scanResponseTask = page.WaitForResponseAsync(
                 response =>
                     response.Request.Method == "POST" &&
-                    response.Url.StartsWith(
-                        BrowserBaseUrl + "v1/scan?scannerId=",
-                        StringComparison.Ordinal),
+                    response.Url == BrowserBaseUrl + "v1/scan",
                 new PageWaitForResponseOptions { Timeout = 90_000 });
 
             await page.Locator("#scan-button").ClickAsync();
@@ -201,11 +199,7 @@ public sealed class PlatformEndToEndTests
 
             Assert.Contains(observedRequests, url => url == BrowserBaseUrl + "v1/diag/info");
             Assert.Contains(observedRequests, url => url == BrowserBaseUrl + "v1/scanners");
-            Assert.Contains(
-                observedRequests,
-                url => url.StartsWith(
-                    BrowserBaseUrl + "v1/scan?scannerId=",
-                    StringComparison.Ordinal));
+            Assert.Contains(observedRequests, url => url == BrowserBaseUrl + "v1/scan");
         }
         finally
         {
@@ -221,10 +215,10 @@ public sealed class PlatformEndToEndTests
 
         var body = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(body);
-        var scanners = document.RootElement.EnumerateArray().ToArray();
+        var scanners = document.RootElement.GetProperty("scanners").EnumerateArray().ToArray();
         Assert.NotEmpty(scanners);
 
-        var scannerId = scanners[0].GetProperty("id").GetString();
+        var scannerId = scanners[0].GetProperty("scannerId").GetString();
         Assert.False(string.IsNullOrWhiteSpace(scannerId));
         return scannerId!;
     }

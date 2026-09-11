@@ -26,7 +26,7 @@
     "webassist/install/linux/uninstall.sh",
     "webassist/install/windows/install.bat",
     "webassist/install/windows/install.ps1",
-    "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.1.450cba65.nupkg",
+    "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg",
     "tests/core/BaselineContractTests.cs",
     "tests/core/PackagingLayoutTests.cs",
     "tests/core/ProductAutonomyTests.cs",
@@ -43,8 +43,12 @@
     "tests/core/HttpScanContractTests.cs",
     "tests/core/PlatformEndToEndTests.cs",
     "tests/core/ScanAdapterContractTests.cs",
+    "tests/core/ScannerIdentityTests.cs",
+    "tests/core/ScanSourcePolicyTests.cs",
     "tests/core/LinuxScanAdapterTests.cs",
+    "tests/core/LinuxVirtualScanAdapterTests.cs",
     "tests/core/WindowsScanAdapterTests.cs",
+    "tests/core/ServicePanelScannerApiTests.cs",
     ".github/workflows/virtual-scanner.yml",
     "webassist/src/WebAssistant/Http/ScannerEndpointHandlers.cs",
     "webassist/src/WebAssistant/Http/ScanCoordinator.cs",
@@ -116,11 +120,32 @@
       "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/PlatformEndToEndTests.cs", "webassist/docs/api.md"]
     },
     {
+      "id": "WA-C-SCANNER-DISCOVERY-001",
+      "kind": "positive",
+      "assertion": "GET /v1/scanners возвращает нормализованные scanner endpoints со stable scannerId и capabilities; на Windows WIA и TWAIN перечисляются независимо, partial backend failures видимы через warnings, а неоднозначная native identity отклоняется fail-closed.",
+      "requirements": ["WA-SCAN-001"],
+      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/ScannerIdentityTests.cs", "tests/core/LinuxScanAdapterTests.cs", "tests/core/LinuxVirtualScanAdapterTests.cs", "tests/core/WindowsScanAdapterTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
+    },
+    {
       "id": "WA-C-SCANNER-HTTP-001",
       "kind": "positive",
-      "assertion": "Scanner HTTP flow детерминированно выбирает устройство, передаёт exact source, сериализует physical acquisition и возвращает PDF либо явную ошибку.",
-      "requirements": ["WA-SCAN-001", "WA-SCAN-002", "WA-SCAN-003"],
-      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/ScanAdapterContractTests.cs", "tests/core/LinuxScanAdapterTests.cs", "tests/core/WindowsScanAdapterTests.cs", ".github/workflows/virtual-scanner.yml"]
+      "assertion": "POST /v1/scan является единственным acquisition route, принимает JSON с обязательным stable scannerId, exact source auto|flatbed|feeder и отдельным settings.duplex, применяет явные 400/404/409/422/502/503 outcomes и возвращает raw application/pdf при успехе.",
+      "requirements": ["WA-SCAN-001", "WA-SCAN-002", "WA-SCAN-003", "WA-TRANSPORT-001"],
+      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/PlatformEndToEndTests.cs", "tests/core/ServicePanelScannerApiTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
+    },
+    {
+      "id": "WA-C-SCANNER-AUTO-001",
+      "kind": "positive",
+      "assertion": "WebAssistant-owned auto policy выбирает feeder только при PRESENT; для dual-source ABSENT и UNKNOWN выбирают flatbed, UNKNOWN не считается PRESENT, explicit source не имеет fallback, а unsupported source/duplex отклоняется до acquisition.",
+      "requirements": ["WA-SCAN-002"],
+      "evidence": ["tests/core/ScanSourcePolicyTests.cs", "tests/core/HttpScanContractTests.cs", "tests/core/WindowsScanAdapterTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
+    },
+    {
+      "id": "WA-C-SCANNER-STATELESS-001",
+      "kind": "negative",
+      "assertion": "scannerId детерминированно выводится из backend и exact native identity и может сохраняться caller'ом между restart/reboot; WebAssistant не хранит mutable scanner profile, выбранный scannerId, source или settings и при acquisition заново разрешает endpoint stateless.",
+      "requirements": ["WA-SCAN-001", "WA-SCAN-002"],
+      "evidence": ["tests/core/ScannerIdentityTests.cs", "tests/core/WindowsScanAdapterTests.cs", "tests/core/LinuxScanAdapterTests.cs", "tests/core/HttpScanContractTests.cs", "webassist/docs/api.md"]
     },
     {
       "id": "WA-C-MULTIPAGE-001",
