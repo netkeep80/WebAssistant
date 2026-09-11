@@ -23,13 +23,25 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Rebuild exact NAPS2 .3 package
+      - name: Rebuild exact NAPS2 .3 package reproducibly
         shell: bash
         run: |
           set -euo pipefail
           cd webassist
+          package='vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg'
+          first="$RUNNER_TEMP/WebAssistant.NAPS2.Sdk.first.nupkg"
+
           ./vendor/naps2/rebuild-fixed-sdk.sh
-          sha256sum vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg
+          first_sha="$(sha256sum "$package" | awk '{print $1}')"
+          cp -- "$package" "$first"
+
+          ./vendor/naps2/rebuild-fixed-sdk.sh
+          second_sha="$(sha256sum "$package" | awk '{print $1}')"
+
+          echo "first=$first_sha"
+          echo "second=$second_sha"
+          test "$first_sha" = "$second_sha"
+          cmp --silent "$first" "$package"
 
       - name: Upload rebuilt NAPS2 .3 package
         uses: actions/upload-artifact@v4
