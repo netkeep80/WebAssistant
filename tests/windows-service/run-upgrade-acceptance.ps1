@@ -31,6 +31,13 @@ $historicalSourceSha = "77a5c66c431c746d2be2f283640c7951730911eb"
 $historicalArtifactName = "WebAssistant-win-x64-0.3.21.exe"
 $historicalSha256 = "68fe8a0145721c13f14dad4a4d3fea333c9ccb240b036d8869aa2152af7b7271"
 $installDirectoryFull = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd('\')
+$programDataRoot = Join-Path $env:ProgramData "WebAssistant"
+$logDirectory = Join-Path $programDataRoot "logs"
+$dataDirectory = Join-Path $programDataRoot "data"
+$logSentinel = Join-Path $logDirectory "upgrade-preserve-log.sentinel"
+$dataSentinel = Join-Path $dataDirectory "upgrade-preserve-data.sentinel"
+$logSentinelContent = "webassistant-upgrade-log-state"
+$dataSentinelContent = "webassistant-upgrade-data-state"
 
 function Assert-ArtifactEvidence {
     param(
@@ -147,6 +154,19 @@ function Wait-Health {
     throw "WebAssistant health did not become available on $uri."
 }
 
+function Invoke-Scanners {
+    param([int]$ExpectedPort)
+
+    $response = Invoke-WebRequest `
+        -Uri "http://127.0.0.1:$ExpectedPort/v1/scanners" `
+        -TimeoutSec 15 `
+        -SkipHttpErrorCheck
+    if ($response.StatusCode -notin @(200, 503)) {
+        throw "Unexpected /v1/scanners status: $($response.StatusCode)."
+    }
+    return $response
+}
+
 function Get-PackageOwnedWorkers {
     param([int]$ParentProcessId)
 
@@ -172,6 +192,117 @@ function Wait-PackageOwnedWorker {
         Start-Sleep -Milliseconds 250
     }
     throw "GET /v1/scanners did not materialize a package-owned NAPS2.Worker for service pid $ParentProcessId."
+}
+
+function Get-ProcessIdentity {
+    param([int]$ProcessId)
+
+    $process = Get-Process -Id $ProcessId -ErrorAction Stop
+    return [pscustomobject]@{
+        ProcessId = $ProcessId
+        StartTimeUtc = $process.StartTime.ToUniversalTime()
+    }
+}
+
+function Assert-ProcessIdentityGone {
+    param(
+        [Parameter(Mandatory = $true)]$Identity,
+        [Parameter(Mandatory = $true)][string]$Description
+    )
+
+    $process = Get-Process -Id ([int]$Identity.ProcessId) -ErrorAction SilentlyContinue
+    if (-not $process) {
+        return
+    }
+
+    $startTimeUtc = $process.StartTime.ToUniversalTime()
+    if ($startTimeUtc -eq $Identity.StartTimeUtc) {
+        throw "$Description pid=$($Identity.ProcessId) survived when its exact process identity had to be gone."
+    }
+}
+
+function Assert-NoFilesInUseEvidence {
+    param([Parameter(Mandatory = $true)][string]$PrimaryLog)
+
+    if (-not (Test-Path -LiteralPath $PrimaryLog -PathType Leaf)) {
+        throw "Burn did not create expected log: $PrimaryLog"
+    }
+
+    $directory = Split-Path -Parent $PrimaryLog
+    $prefix = [IO.Path]::GetFileName($PrimaryLog)
+    $logs = @(Get-ChildItem -LiteralPath $directory -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
+
+    $matches = @()
+    foreach ($log in $logs) {
+        $matches += @(Select-String `
+            -LiteralPath $log.FullName `
+            -Pattern 'FilesInUse|MsiRMFilesInUse' `
+            -CaseSensitive:$false `
+            -ErrorAction SilentlyContinue)
+    }
+
+    if ($matches.Count -gt 0) {
+        $evidence = @($matches | Select-Object -First 10 | ForEach-Object {
+            "$($_.Path):$($_.LineNumber): $($_.Line.Trim())"
+        }) -join [Environment]::NewLine
+        throw "Installer emitted Files In Use evidence:`n$evidence"
+    }
+}
+
+function Assert-ProgramDataSentinels {
+    foreach ($pair in @(
+        @($logSentinel, $logSentinelContent),
+        @($dataSentinel, $dataSentinelContent))) {
+        $path = [string]$pair[0]
+        $expected = [string]$pair[1]
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "ProgramData preservation sentinel disappeared: $path"
+        }
+        if ((Get-Content -LiteralPath $path -Raw).Trim() -ne $expected) {
+            throw "ProgramData preservation sentinel changed: $path"
+        }
+    }
+}
+
+function Assert-CandidateInstalled {
+    param(
+        [Parameter(Mandatory = $true)][string]$ExpectedVersion,
+        [int]$ExpectedPort
+    )
+
+    $entries = @(Get-WebAssistantBundleEntries | Where-Object {
+        [string]$_.DisplayVersion -eq $ExpectedVersion
+    })
+    if ($entries.Count -ne 1) {
+        $versions = @((Get-WebAssistantBundleEntries | ForEach-Object { [string]$_.DisplayVersion })) -join ', '
+        throw "Expected exactly one WebAssistant Installed Apps entry at $ExpectedVersion; found $($entries.Count), versions=[$versions]."
+    }
+
+    $installedExe = Join-Path $installDirectoryFull 'WebAssistant.exe'
+    if (-not (Test-Path -LiteralPath $installedExe -PathType Leaf)) {
+        throw "Installed WebAssistant.exe is missing after candidate operation."
+    }
+    $installedVersion = (Get-Item -LiteralPath $installedExe).VersionInfo.ProductVersion
+    if ([string]::IsNullOrWhiteSpace($installedVersion) -or
+        -not $installedVersion.StartsWith($ExpectedVersion, [StringComparison]::Ordinal)) {
+        throw "Installed executable version '$installedVersion' does not match candidate $ExpectedVersion."
+    }
+
+    (Get-Service -Name $serviceName).WaitForStatus(
+        [System.ServiceProcess.ServiceControllerStatus]::Running,
+        [TimeSpan]::FromSeconds(30))
+    Wait-Health -ExpectedPort $ExpectedPort
+}
+
+function Wait-ServiceAbsent {
+    for ($attempt = 0; $attempt -lt 60; $attempt++) {
+        if (-not (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) {
+            return
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    throw "WebAssistant service remained registered after uninstall."
 }
 
 $candidate = Assert-ArtifactEvidence `
@@ -211,9 +342,12 @@ if ((Get-WebAssistantBundleEntries).Count -ne 0) {
 
 $historicalInstalled = $false
 $candidateInstalled = $false
-$capturedWorkerPids = @()
-$oldServicePid = 0
+$capturedHistoricalIdentities = @()
+$capturedCandidateIdentities = @()
 $burnLog = Join-Path $env:RUNNER_TEMP 'webassistant-live-worker-upgrade.log'
+$repairLog = Join-Path $env:RUNNER_TEMP 'webassistant-same-version-repair.log'
+$downgradeLog = Join-Path $env:RUNNER_TEMP 'webassistant-downgrade-rejection.log'
+$uninstallLog = Join-Path $env:RUNNER_TEMP 'webassistant-candidate-uninstall.log'
 
 try {
     Invoke-Bundle `
@@ -227,13 +361,14 @@ try {
         [TimeSpan]::FromSeconds(30))
     Wait-Health -ExpectedPort $Port
 
-    $scannerResponse = Invoke-WebRequest `
-        -Uri "http://127.0.0.1:$Port/v1/scanners" `
-        -TimeoutSec 15 `
-        -SkipHttpErrorCheck
-    if ($scannerResponse.StatusCode -notin @(200, 503)) {
-        throw "Unexpected historical /v1/scanners status: $($scannerResponse.StatusCode)."
+    if (-not (Test-Path -LiteralPath $logDirectory -PathType Container) -or
+        -not (Test-Path -LiteralPath $dataDirectory -PathType Container)) {
+        throw "Historical runtime did not create ProgramData logs/data directories."
     }
+    Set-Content -LiteralPath $logSentinel -Value $logSentinelContent -NoNewline
+    Set-Content -LiteralPath $dataSentinel -Value $dataSentinelContent -NoNewline
+
+    Invoke-Scanners -ExpectedPort $Port | Out-Null
 
     $serviceInfo = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
     $oldServicePid = [int]$serviceInfo.ProcessId
@@ -241,9 +376,12 @@ try {
         throw "Historical WebAssistant service has no running process id."
     }
 
+    $capturedHistoricalIdentities += Get-ProcessIdentity -ProcessId $oldServicePid
     $ownedWorkers = @(Wait-PackageOwnedWorker -ParentProcessId $oldServicePid)
-    $capturedWorkerPids = @($ownedWorkers | ForEach-Object { [int]$_.ProcessId })
-    Write-Host "historical_service_pid=$oldServicePid owned_worker_pids=$($capturedWorkerPids -join ',')"
+    foreach ($worker in $ownedWorkers) {
+        $capturedHistoricalIdentities += Get-ProcessIdentity -ProcessId ([int]$worker.ProcessId)
+    }
+    Write-Host "historical_service_pid=$oldServicePid owned_worker_pids=$(@($ownedWorkers | ForEach-Object { [int]$_.ProcessId }) -join ',')"
 
     if (Test-Path -LiteralPath $burnLog) {
         Remove-Item -LiteralPath $burnLog -Force
@@ -257,35 +395,111 @@ try {
     $candidateInstalled = $true
     $historicalInstalled = $false
 
-    foreach ($processId in @($oldServicePid) + $capturedWorkerPids) {
-        if (Get-Process -Id $processId -ErrorAction SilentlyContinue) {
-            throw "Old runtime process pid=$processId survived successful candidate upgrade."
-        }
+    Assert-NoFilesInUseEvidence -PrimaryLog $burnLog
+    foreach ($capturedIdentity in $capturedHistoricalIdentities) {
+        Assert-ProcessIdentityGone -Identity $capturedIdentity -Description 'Historical runtime process'
     }
+    Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
+    Assert-ProgramDataSentinels
 
-    $entries = @(Get-WebAssistantBundleEntries | Where-Object {
-        [string]$_.DisplayVersion -eq $candidate.Version
+    # Candidate runtime shutdown invariant: once SCM reports stopped, no worker owned by that service instance may remain.
+    Invoke-Scanners -ExpectedPort $Port | Out-Null
+    $candidateServiceInfo = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
+    $candidateServicePid = [int]$candidateServiceInfo.ProcessId
+    if ($candidateServicePid -le 0) {
+        throw "Candidate WebAssistant service has no running process id."
+    }
+    $candidateWorkers = @(Wait-PackageOwnedWorker -ParentProcessId $candidateServicePid)
+    $candidateServiceIdentity = Get-ProcessIdentity -ProcessId $candidateServicePid
+    $candidateWorkerIdentities = @($candidateWorkers | ForEach-Object {
+        Get-ProcessIdentity -ProcessId ([int]$_.ProcessId)
     })
-    if ($entries.Count -ne 1) {
-        throw "Expected exactly one WebAssistant Installed Apps entry at $($candidate.Version); found $($entries.Count)."
-    }
+    $capturedCandidateIdentities += $candidateServiceIdentity
+    $capturedCandidateIdentities += $candidateWorkerIdentities
 
-    $installedExe = Join-Path $installDirectoryFull 'WebAssistant.exe'
-    $installedVersion = (Get-Item -LiteralPath $installedExe).VersionInfo.ProductVersion
-    if ([string]::IsNullOrWhiteSpace($installedVersion) -or
-        -not $installedVersion.StartsWith($candidate.Version, [StringComparison]::Ordinal)) {
-        throw "Installed executable version '$installedVersion' does not match candidate $($candidate.Version)."
-    }
-
+    Stop-Service -Name $serviceName
     (Get-Service -Name $serviceName).WaitForStatus(
-        [System.ServiceProcess.ServiceControllerStatus]::Running,
+        [System.ServiceProcess.ServiceControllerStatus]::Stopped,
         [TimeSpan]::FromSeconds(30))
-    Wait-Health -ExpectedPort $Port
+    Assert-ProcessIdentityGone -Identity $candidateServiceIdentity -Description 'Candidate service process after Stop-Service'
+    foreach ($workerIdentity in $candidateWorkerIdentities) {
+        Assert-ProcessIdentityGone -Identity $workerIdentity -Description 'Candidate NAPS2.Worker after Stop-Service'
+    }
+
+    Start-Service -Name $serviceName
+    Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
+    Invoke-Scanners -ExpectedPort $Port | Out-Null
+
+    Restart-Service -Name $serviceName
+    Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
+    Invoke-Scanners -ExpectedPort $Port | Out-Null
+    Assert-ProgramDataSentinels
+
+    # Same-version behavior is canonical Burn maintenance/repair, with the service running and scanner worker materialized.
+    $repairServiceInfo = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
+    $repairServicePid = [int]$repairServiceInfo.ProcessId
+    Wait-PackageOwnedWorker -ParentProcessId $repairServicePid | Out-Null
+    if (Test-Path -LiteralPath $repairLog) {
+        Remove-Item -LiteralPath $repairLog -Force
+    }
+    Invoke-Bundle `
+        -Executable $candidate.Path `
+        -Arguments @('/repair', '/quiet', '/norestart', '/log', $repairLog) `
+        -Operation "same-version repair $($candidate.Version)" | Out-Null
+    Assert-NoFilesInUseEvidence -PrimaryLog $repairLog
+    Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
+    Invoke-Scanners -ExpectedPort $Port | Out-Null
+    Assert-ProgramDataSentinels
+
+    # Downgrade must be rejected and leave the candidate intact.
+    if (Test-Path -LiteralPath $downgradeLog) {
+        Remove-Item -LiteralPath $downgradeLog -Force
+    }
+    $downgradeExitCode = Invoke-Bundle `
+        -Executable $historical.Path `
+        -Arguments @('/quiet', '/norestart', '/log', $downgradeLog) `
+        -Operation "downgrade $($candidate.Version) -> $historicalVersion" `
+        -AllowFailure
+    if ($downgradeExitCode -eq 0) {
+        throw "Historical $historicalVersion installer did not reject downgrade from candidate $($candidate.Version)."
+    }
+    Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
+    Invoke-Scanners -ExpectedPort $Port | Out-Null
+    Assert-ProgramDataSentinels
 
     $finalCandidateSha = (Get-FileHash -LiteralPath $candidate.Path -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($finalCandidateSha -ne $candidate.Sha256) {
         throw "Candidate artifact bytes changed during upgrade acceptance."
     }
+
+    # Uninstall the candidate from a live scanner state, then prove product removal and ProgramData preservation.
+    $uninstallServiceInfo = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
+    $uninstallServicePid = [int]$uninstallServiceInfo.ProcessId
+    $uninstallWorkers = @(Wait-PackageOwnedWorker -ParentProcessId $uninstallServicePid)
+    $uninstallWorkerIdentities = @($uninstallWorkers | ForEach-Object {
+        Get-ProcessIdentity -ProcessId ([int]$_.ProcessId)
+    })
+
+    if (Test-Path -LiteralPath $uninstallLog) {
+        Remove-Item -LiteralPath $uninstallLog -Force
+    }
+    Invoke-Bundle `
+        -Executable $candidate.Path `
+        -Arguments @('/uninstall', '/quiet', '/norestart', '/log', $uninstallLog) `
+        -Operation 'candidate uninstall' | Out-Null
+    $candidateInstalled = $false
+
+    Wait-ServiceAbsent
+    if (Test-Path -LiteralPath $installDirectoryFull) {
+        throw "Program Files WebAssistant payload remained after candidate uninstall."
+    }
+    if ((Get-WebAssistantBundleEntries).Count -ne 0) {
+        throw "WebAssistant Installed Apps entry remained after candidate uninstall."
+    }
+    foreach ($workerIdentity in $uninstallWorkerIdentities) {
+        Assert-ProcessIdentityGone -Identity $workerIdentity -Description 'Candidate NAPS2.Worker after uninstall'
+    }
+    Assert-ProgramDataSentinels
 
     Write-Host "windows_live_worker_upgrade_acceptance=PASS from=$historicalVersion to=$($candidate.Version)"
 }
@@ -301,11 +515,10 @@ finally {
     }
     elseif ($historicalInstalled) {
         Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
-        foreach ($worker in @(Get-CimInstance Win32_Process -Filter "Name='NAPS2.Worker.exe'" -ErrorAction SilentlyContinue)) {
-            $path = [string]$worker.ExecutablePath
-            if (-not [string]::IsNullOrWhiteSpace($path) -and
-                [IO.Path]::GetFullPath($path).StartsWith("$installDirectoryFull\", [StringComparison]::OrdinalIgnoreCase)) {
-                Stop-Process -Id ([int]$worker.ProcessId) -Force -ErrorAction SilentlyContinue
+        foreach ($capturedIdentity in $capturedHistoricalIdentities) {
+            $process = Get-Process -Id ([int]$capturedIdentity.ProcessId) -ErrorAction SilentlyContinue
+            if ($process -and $process.StartTime.ToUniversalTime() -eq $capturedIdentity.StartTimeUtc) {
+                Stop-Process -Id ([int]$capturedIdentity.ProcessId) -Force -ErrorAction SilentlyContinue
             }
         }
         Invoke-Bundle `
