@@ -1,4 +1,7 @@
+using NAPS2.Scan.Exceptions;
 using WebAssistant.Scanning;
+
+#pragma warning disable CA2252
 
 namespace WebAssistant.Http;
 
@@ -139,7 +142,22 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
                 safeScannerName,
                 source);
 
-            var pdf = await adapter.ScanAsync(selected.Id, source, cancellationToken);
+            Stream pdf;
+            try
+            {
+                pdf = await adapter.ScanAsync(selected.Id, source, cancellationToken);
+            }
+            catch (DeviceFeederEmptyException) when (
+                requestedSource == RequestedScanSource.Auto &&
+                source == ScanSource.Feeder &&
+                selected.SupportsFlatbed)
+            {
+                logger.LogInformation(
+                    "Автовыбор feeder оказался пустым; повторное сканирование со стекла scannerId={ScannerId} scannerName={ScannerName}",
+                    safeScannerId,
+                    safeScannerName);
+                pdf = await adapter.ScanAsync(selected.Id, ScanSource.Glass, cancellationToken);
+            }
 
             if (!pdf.CanRead || (pdf.CanSeek && pdf.Length == 0))
             {

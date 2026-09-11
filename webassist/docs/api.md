@@ -103,7 +103,9 @@ Source-specific routes `/v1/scan/feeder` и `/v1/scan/duplex` отсутству
 
 Если доступен только feeder, `auto` использует feeder. Если доступен только flatbed, `auto` использует flatbed. Если подходящего source нет, запрос отклоняется до physical acquisition.
 
-Явно заданный `flatbed` или `feeder` не имеет скрытого fallback на другой source.
+Состояние бумаги является snapshot capability, а не гарантией успешной последующей подачи. Если `auto` выбрал feeder для endpoint с доступным flatbed, но реальная попытка acquisition завершилась именно `DeviceFeederEmptyException`, WebAssistant один раз повторяет acquisition со стекла. Другие ошибки feeder не вызывают такого fallback.
+
+Явно заданный `flatbed` или `feeder` не имеет скрытого fallback на другой source. В частности, `source=feeder` при пустом ADF возвращает ошибку acquisition и не переключается на flatbed.
 
 ### Duplex
 
