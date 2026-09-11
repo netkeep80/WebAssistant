@@ -55,9 +55,10 @@ internal sealed class WindowsUpgradeEnvironment : IUpgradeEnvironment
         if (status.ProcessId != 0)
         {
             var parentPid = FindParentProcessId(status.ProcessId);
-            process = TryReadProcessIdentity(
+            process = TryReadServiceProcessIdentity(
                 checked((int)status.ProcessId),
                 parentPid,
+                configuredExecutable,
                 allowInaccessible: false);
         }
 
@@ -263,6 +264,17 @@ internal sealed class WindowsUpgradeEnvironment : IUpgradeEnvironment
             WorkerExecutableName,
             StringComparison.OrdinalIgnoreCase);
 
+    internal static ProcessIdentity CreateServiceProcessIdentity(
+        int processId,
+        int parentProcessId,
+        string configuredExecutablePath,
+        DateTimeOffset startTimeUtc) =>
+        new(
+            processId,
+            parentProcessId,
+            configuredExecutablePath,
+            startTimeUtc);
+
     internal static string ParseServiceExecutablePath(string commandLine)
     {
         if (string.IsNullOrWhiteSpace(commandLine))
@@ -414,6 +426,39 @@ internal sealed class WindowsUpgradeEnvironment : IUpgradeEnvironment
 
         throw new UpgradePreflightException(
             $"SCM reported WebAssistant pid={processId}, but it is absent from the process snapshot.");
+    }
+
+    private static ProcessIdentity? TryReadServiceProcessIdentity(
+        int processId,
+        int parentProcessId,
+        string configuredExecutablePath,
+        bool allowInaccessible)
+    {
+        using var handle = OpenProcess(
+            ProcessQueryLimitedInformation | Synchronize,
+            false,
+            checked((uint)processId));
+        if (handle.IsInvalid)
+        {
+            var error = Marshal.GetLastWin32Error();
+            if (error == ErrorInvalidParameter || (allowInaccessible && error == ErrorAccessDenied))
+            {
+                return null;
+            }
+
+            throw Win32Failure($"OpenProcess(pid={processId})", error);
+        }
+
+        if (!GetProcessTimes(handle, out var creation, out _, out _, out _))
+        {
+            throw Win32Failure($"GetProcessTimes(pid={processId})");
+        }
+
+        return CreateServiceProcessIdentity(
+            processId,
+            parentProcessId,
+            configuredExecutablePath,
+            DateTimeOffset.FromFileTime(creation.ToLong()));
     }
 
     private static ProcessIdentity? TryReadProcessIdentity(
