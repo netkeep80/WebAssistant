@@ -48,6 +48,50 @@ function Assert-ScannersEndpoint {
     if ($null -eq $payload.scanners -or $null -eq $payload.warnings) {
         throw "WebAssistant scanners endpoint не содержит canonical scanners/warnings shape."
     }
+
+    return $payload
+}
+
+function Invoke-ControlledScan {
+    param(
+        [int]$ExpectedPort,
+        [Parameter(Mandatory = $true)]$ScannersPayload
+    )
+
+    $scanners = @($ScannersPayload.scanners)
+    $scanner = $scanners |
+        Where-Object { [string]$_.name -like '*TWAIN2 Software Scanner*' } |
+        Select-Object -First 1
+    if ($null -eq $scanner) {
+        $available = @($scanners | ForEach-Object { "name=$([string]$_.name), id=$([string]$_.scannerId)" }) -join '; '
+        throw "Для controlled service acquisition не найден TWAIN2 Software Scanner. Доступные scanners: $available"
+    }
+
+    $scannerId = [string]$scanner.scannerId
+    if ([string]::IsNullOrWhiteSpace($scannerId)) {
+        throw "TWAIN2 Software Scanner не содержит canonical scannerId."
+    }
+
+    $body = @{
+        scannerId = $scannerId
+        source = 'flatbed'
+        settings = @{
+            duplex = $false
+        }
+    } | ConvertTo-Json -Depth 4 -Compress
+
+    $uri = "http://127.0.0.1:$ExpectedPort/v1/scan"
+    $response = Invoke-WebRequest `
+        -Uri $uri `
+        -Method Post `
+        -ContentType 'application/json' `
+        -Body $body `
+        -TimeoutSec 90
+    if ($response.StatusCode -ne 200) {
+        throw "Controlled WebAssistant scan вернул HTTP $($response.StatusCode)."
+    }
+
+    Write-Host "controlled_scan=PASS scanner_id=$scannerId"
 }
 
 function Assert-DailyLog {
@@ -181,7 +225,7 @@ function Wait-CapturedPackageWorkers {
         Start-Sleep -Milliseconds 100
     }
 
-    throw "После GET /v1/scanners не появился package-owned NAPS2.Worker с ParentProcessId=$ExpectedParentProcessId."
+    throw "После controlled /v1/scan не появился package-owned NAPS2.Worker с ParentProcessId=$ExpectedParentProcessId."
 }
 
 function Assert-NoPackageWorkers {
@@ -229,8 +273,9 @@ if (-not (Test-Path -LiteralPath $dataDirectory -PathType Container)) {
     throw "Не создан runtime data directory: $dataDirectory"
 }
 
-# Materialize the lazy Windows scanner subsystem before testing service shutdown.
-Assert-ScannersEndpoint -ExpectedPort $Port
+# Discovery materializes the lazy Windows adapter. A controlled acquisition is
+# required to materialize the package-owned NAPS2 worker whose shutdown we prove.
+$scannersPayload = Assert-ScannersEndpoint -ExpectedPort $Port
 $serviceInfo = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
 $serviceProcessId = [int]$serviceInfo.ProcessId
 if ($serviceProcessId -le 0) {
@@ -247,6 +292,7 @@ if (-not [string]::Equals(
     throw "Захваченный процесс службы указывает не на canonical WebAssistant.exe: $($capturedServiceProcess.ImagePath)"
 }
 
+Invoke-ControlledScan -ExpectedPort $Port -ScannersPayload $scannersPayload
 $capturedWorkers = @(Wait-CapturedPackageWorkers -ExpectedParentProcessId $serviceProcessId)
 if ($capturedWorkers.Count -eq 0) {
     throw "Не захвачен ни один package-owned NAPS2.Worker перед Stop-Service."
@@ -276,7 +322,7 @@ Start-Service -Name $serviceName
     [System.ServiceProcess.ServiceControllerStatus]::Running,
     [TimeSpan]::FromSeconds(30))
 Wait-Health -ExpectedPort $Port
-Assert-ScannersEndpoint -ExpectedPort $Port
+Assert-ScannersEndpoint -ExpectedPort $Port | Out-Null
 Assert-DailyLog
 Assert-LoopbackOnly -ExpectedPort $Port
 
@@ -285,7 +331,7 @@ Restart-Service -Name $serviceName
     [System.ServiceProcess.ServiceControllerStatus]::Running,
     [TimeSpan]::FromSeconds(30))
 Wait-Health -ExpectedPort $Port
-Assert-ScannersEndpoint -ExpectedPort $Port
+Assert-ScannersEndpoint -ExpectedPort $Port | Out-Null
 Assert-LoopbackOnly -ExpectedPort $Port
 
 Write-Host "windows_installed_service_acceptance=PASS captured_workers=$($capturedWorkers.Count)"
