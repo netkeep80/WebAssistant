@@ -21,7 +21,7 @@ jobs:
 
       - name: Run repo-guard
         id: repo_guard
-        uses: netkeep80/repo-guard@92432809fcddc290080beb51ba151e13a5761869
+        uses: netkeep80/repo-guard@e5b9063c9d1c9e05404ec32b78ca005c278839ce
         with:
           mode: check-pr
           enforcement: blocking
