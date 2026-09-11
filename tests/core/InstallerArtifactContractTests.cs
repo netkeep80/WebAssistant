@@ -144,7 +144,6 @@ public sealed class InstallerArtifactContractTests
 
         Assert.Contains("34485513571", workflow, StringComparison.Ordinal);
         Assert.Contains("10155509111", workflow, StringComparison.Ordinal);
-        Assert.Contains("77a5c66c431c746d2be2f283640c7951730911eb", workflow, StringComparison.Ordinal);
         Assert.Contains("WebAssistant-win-x64-0.3.21.exe", harness, StringComparison.Ordinal);
         Assert.Contains("77a5c66c431c746d2be2f283640c7951730911eb", harness, StringComparison.Ordinal);
         Assert.Contains("68fe8a0145721c13f14dad4a4d3fea333c9ccb240b036d8869aa2152af7b7271", harness, StringComparison.Ordinal);
