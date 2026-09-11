@@ -95,6 +95,7 @@ public sealed class SystemServiceProductTests
         var uninstallBatch = Path.Combine(product, "install", "windows", "uninstall.bat");
         var documentation = Path.Combine(product, "docs", "windows-service.md");
         var acceptance = Path.Combine(root, "tests", "windows-service", "run-service-acceptance.ps1");
+        var upgradeAcceptance = Path.Combine(root, "tests", "windows-service", "run-upgrade-acceptance.ps1");
         var workflow = Path.Combine(root, ".github", "workflows", "windows-service.yml");
 
         Assert.True(File.Exists(packageScript));
@@ -112,6 +113,7 @@ public sealed class SystemServiceProductTests
         Assert.True(File.Exists(uninstallBatch));
         Assert.True(File.Exists(documentation));
         Assert.True(File.Exists(acceptance));
+        Assert.True(File.Exists(upgradeAcceptance));
         Assert.True(File.Exists(workflow));
 
         var project = XDocument.Load(projectPath);
@@ -191,20 +193,22 @@ public sealed class SystemServiceProductTests
 
         var acceptanceText = File.ReadAllText(acceptance);
         Assert.Contains("/v1/scanners", acceptanceText, StringComparison.Ordinal);
-        Assert.Contains("/v1/scan", acceptanceText, StringComparison.Ordinal);
-        Assert.Contains("Invoke-ControlledScan", acceptanceText, StringComparison.Ordinal);
         Assert.Contains("NAPS2.Worker.exe", acceptanceText, StringComparison.Ordinal);
         Assert.Contains("ParentProcessId", acceptanceText, StringComparison.Ordinal);
         Assert.Contains("CreationDate", acceptanceText, StringComparison.Ordinal);
         Assert.Contains("Stop-Service -Name $serviceName", acceptanceText, StringComparison.Ordinal);
         Assert.Contains("WaitForStatus", acceptanceText, StringComparison.Ordinal);
-        Assert.Contains("capturedWorkers", acceptanceText, StringComparison.Ordinal);
         Assert.Contains("Assert-ProcessIdentityGone", acceptanceText, StringComparison.Ordinal);
         Assert.Contains("Assert-NoPackageWorkers", acceptanceText, StringComparison.Ordinal);
 
-        var acquisition = acceptanceText.IndexOf("Invoke-ControlledScan -ExpectedPort $Port", StringComparison.Ordinal);
-        var workerCapture = acceptanceText.IndexOf("Wait-CapturedPackageWorkers -ExpectedParentProcessId $serviceProcessId", StringComparison.Ordinal);
-        Assert.True(acquisition >= 0 && workerCapture > acquisition);
+        var upgradeText = File.ReadAllText(upgradeAcceptance);
+        Assert.Contains("$candidateWorkers = @(Wait-PackageOwnedWorker -ParentProcessId $candidateServicePid)", upgradeText, StringComparison.Ordinal);
+        Assert.Contains("$candidateWorkerIdentities", upgradeText, StringComparison.Ordinal);
+        Assert.Contains("Candidate NAPS2.Worker after Stop-Service", upgradeText, StringComparison.Ordinal);
+
+        var workerCapture = upgradeText.IndexOf("$candidateWorkers = @(Wait-PackageOwnedWorker -ParentProcessId $candidateServicePid)", StringComparison.Ordinal);
+        var workerStop = upgradeText.IndexOf("Stop-Service -Name $serviceName", workerCapture, StringComparison.Ordinal);
+        Assert.True(workerCapture >= 0 && workerStop > workerCapture);
     }
 
     private static string FindRepositoryRoot()

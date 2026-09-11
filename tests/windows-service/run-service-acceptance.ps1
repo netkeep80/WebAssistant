@@ -48,87 +48,6 @@ function Assert-ScannersEndpoint {
     if ($null -eq $payload.scanners -or $null -eq $payload.warnings) {
         throw "WebAssistant scanners endpoint не содержит canonical scanners/warnings shape."
     }
-
-    return $payload
-}
-
-function Invoke-ControlledScan {
-    param(
-        [int]$ExpectedPort,
-        [Parameter(Mandatory = $true)]$ScannersPayload
-    )
-
-    $scanners = @($ScannersPayload.scanners)
-    $scanner = $scanners |
-        Where-Object { [string]$_.name -like '*TWAIN2 Software Scanner*' } |
-        Select-Object -First 1
-    if ($null -eq $scanner) {
-        $available = @($scanners | ForEach-Object { "name=$([string]$_.name), id=$([string]$_.scannerId)" }) -join '; '
-        throw "Для controlled service acquisition не найден TWAIN2 Software Scanner. Доступные scanners: $available"
-    }
-
-    $scannerId = [string]$scanner.scannerId
-    if ([string]::IsNullOrWhiteSpace($scannerId)) {
-        throw "TWAIN2 Software Scanner не содержит canonical scannerId."
-    }
-
-    $body = @{
-        scannerId = $scannerId
-        source = 'flatbed'
-        settings = @{
-            duplex = $false
-        }
-    } | ConvertTo-Json -Depth 4 -Compress
-
-    $client = [System.Net.Http.HttpClient]::new()
-    $client.Timeout = [TimeSpan]::FromSeconds(90)
-    $content = [System.Net.Http.StringContent]::new(
-        $body,
-        [Text.Encoding]::UTF8,
-        'application/json')
-    $uri = "http://127.0.0.1:$ExpectedPort/v1/scan"
-    $task = $client.PostAsync($uri, $content)
-
-    Write-Host "controlled_scan=STARTED scanner_id=$scannerId"
-    return [pscustomobject]@{
-        Client = $client
-        Content = $content
-        Task = $task
-        ScannerId = $scannerId
-    }
-}
-
-function Complete-ControlledScan {
-    param([Parameter(Mandatory = $true)]$Scan)
-
-    try {
-        try {
-            if (-not $Scan.Task.Wait([TimeSpan]::FromSeconds(30))) {
-                throw "Controlled scan HTTP task не завершился после остановки службы."
-            }
-        }
-        catch [AggregateException] {
-            Write-Host "controlled_scan=INTERRUPTED scanner_id=$($Scan.ScannerId)"
-            return
-        }
-
-        if ($Scan.Task.IsFaulted -or $Scan.Task.IsCanceled) {
-            Write-Host "controlled_scan=INTERRUPTED scanner_id=$($Scan.ScannerId)"
-            return
-        }
-
-        $response = $Scan.Task.Result
-        try {
-            Write-Host "controlled_scan=COMPLETED status=$([int]$response.StatusCode) scanner_id=$($Scan.ScannerId)"
-        }
-        finally {
-            $response.Dispose()
-        }
-    }
-    finally {
-        $Scan.Content.Dispose()
-        $Scan.Client.Dispose()
-    }
 }
 
 function Assert-DailyLog {
@@ -251,29 +170,6 @@ function Get-PackageWorkers {
     return @($workers)
 }
 
-function Wait-CapturedPackageWorkers {
-    param(
-        [int]$ExpectedParentProcessId,
-        [Parameter(Mandatory = $true)]$ActiveScanTask
-    )
-
-    for ($attempt = 0; $attempt -lt 100; $attempt++) {
-        $workers = @(Get-PackageWorkers -ExpectedParentProcessId $ExpectedParentProcessId)
-        if ($workers.Count -gt 0) {
-            if ($ActiveScanTask.IsCompleted) {
-                throw "Controlled scan завершился раньше, чем worker ownership удалось доказать in-flight."
-            }
-            return $workers
-        }
-        if ($ActiveScanTask.IsCompleted) {
-            throw "Controlled scan завершился до появления наблюдаемого package-owned NAPS2.Worker."
-        }
-        Start-Sleep -Milliseconds 50
-    }
-
-    throw "Во время controlled /v1/scan не появился package-owned NAPS2.Worker с ParentProcessId=$ExpectedParentProcessId."
-}
-
 function Assert-NoPackageWorkers {
     $workers = @(Get-PackageWorkers)
     if ($workers.Count -ne 0) {
@@ -319,9 +215,11 @@ if (-not (Test-Path -LiteralPath $dataDirectory -PathType Container)) {
     throw "Не создан runtime data directory: $dataDirectory"
 }
 
-# Discovery materializes the lazy Windows adapter. The acquisition remains in flight
-# while we capture the exact worker identity and issue SCM Stop.
-$scannersPayload = Assert-ScannersEndpoint -ExpectedPort $Port
+# Materialize the lazy Windows scanner subsystem. On a clean candidate installation
+# the worker may already have completed by the time discovery returns, so this harness
+# proves the universal post-stop condition. The mandatory live-worker case is exercised
+# by run-upgrade-acceptance.ps1 on the same candidate bytes.
+Assert-ScannersEndpoint -ExpectedPort $Port
 $serviceInfo = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
 $serviceProcessId = [int]$serviceInfo.ProcessId
 if ($serviceProcessId -le 0) {
@@ -338,49 +236,27 @@ if (-not [string]::Equals(
     throw "Захваченный процесс службы указывает не на canonical WebAssistant.exe: $($capturedServiceProcess.ImagePath)"
 }
 
-$controlledScan = Invoke-ControlledScan -ExpectedPort $Port -ScannersPayload $scannersPayload
-$capturedWorkers = @()
-try {
-    $capturedWorkers = @(Wait-CapturedPackageWorkers `
-        -ExpectedParentProcessId $serviceProcessId `
-        -ActiveScanTask $controlledScan.Task)
-    if ($capturedWorkers.Count -eq 0) {
-        throw "Не захвачен ни один package-owned NAPS2.Worker во время активного scan."
-    }
-    foreach ($worker in $capturedWorkers) {
-        if ($worker.ParentProcessId -ne $serviceProcessId) {
-            throw "Worker ownership mismatch: PID=$($worker.ProcessId), parent=$($worker.ParentProcessId), expected=$serviceProcessId."
-        }
-    }
-    if ($controlledScan.Task.IsCompleted) {
-        throw "Controlled scan уже завершился до Stop-Service; in-flight shutdown proof недействителен."
-    }
+$capturedWorkers = @(Get-PackageWorkers -ExpectedParentProcessId $serviceProcessId)
+Write-Host "clean_service_pre_stop_workers=$($capturedWorkers.Count)"
 
-    Write-Host "captured_inflight_worker_pids=$(@($capturedWorkers | ForEach-Object { $_.ProcessId }) -join ',')"
-    Stop-Service -Name $serviceName
-    (Get-Service -Name $serviceName).WaitForStatus(
-        [System.ServiceProcess.ServiceControllerStatus]::Stopped,
-        [TimeSpan]::FromSeconds(30))
+Stop-Service -Name $serviceName
+(Get-Service -Name $serviceName).WaitForStatus(
+    [System.ServiceProcess.ServiceControllerStatus]::Stopped,
+    [TimeSpan]::FromSeconds(30))
 
-    # Strong invariant: once SCM reports Stopped, exact captured process identities and
-    # all package-owned workers under the install root must already be gone.
-    Assert-ProcessIdentityGone -Identity $capturedServiceProcess -Description "WebAssistant service process"
-    foreach ($worker in $capturedWorkers) {
-        Assert-ProcessIdentityGone -Identity $worker -Description "Captured package-owned NAPS2.Worker"
-    }
-    Assert-NoPackageWorkers
-    Wait-NoListener -ExpectedPort $Port
+Assert-ProcessIdentityGone -Identity $capturedServiceProcess -Description "WebAssistant service process"
+foreach ($worker in $capturedWorkers) {
+    Assert-ProcessIdentityGone -Identity $worker -Description "Captured package-owned NAPS2.Worker"
 }
-finally {
-    Complete-ControlledScan -Scan $controlledScan
-}
+Assert-NoPackageWorkers
+Wait-NoListener -ExpectedPort $Port
 
 Start-Service -Name $serviceName
 (Get-Service -Name $serviceName).WaitForStatus(
     [System.ServiceProcess.ServiceControllerStatus]::Running,
     [TimeSpan]::FromSeconds(30))
 Wait-Health -ExpectedPort $Port
-Assert-ScannersEndpoint -ExpectedPort $Port | Out-Null
+Assert-ScannersEndpoint -ExpectedPort $Port
 Assert-DailyLog
 Assert-LoopbackOnly -ExpectedPort $Port
 
@@ -389,7 +265,7 @@ Restart-Service -Name $serviceName
     [System.ServiceProcess.ServiceControllerStatus]::Running,
     [TimeSpan]::FromSeconds(30))
 Wait-Health -ExpectedPort $Port
-Assert-ScannersEndpoint -ExpectedPort $Port | Out-Null
+Assert-ScannersEndpoint -ExpectedPort $Port
 Assert-LoopbackOnly -ExpectedPort $Port
 
 Write-Host "windows_installed_service_acceptance=PASS captured_workers=$($capturedWorkers.Count)"
