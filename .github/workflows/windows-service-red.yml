@@ -68,6 +68,10 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
+      - name: Install official TWAIN sample source
+        shell: pwsh
+        run: tests/virtual-scanner/windows/install-twain-sample.ps1
+
       - name: Download exact candidate artifact
         uses: actions/download-artifact@v4
         with:
