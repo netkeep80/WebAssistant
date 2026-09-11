@@ -139,6 +139,7 @@ jobs:
               'build/common/write-provenance.ps1',
               'build/windows/package.bat',
               'build/windows/package.ps1',
+              'build/windows/upgrade-preflight/WebAssistant.UpgradePreflight.csproj',
               'build/windows/installer/WebAssistant.Package.wixproj',
               'build/windows/installer/WebAssistant.Bundle.wixproj'
           )
