@@ -150,6 +150,18 @@ public sealed class InstallerArtifactContractTests
         Assert.Contains("/v1/scanners", harness, StringComparison.Ordinal);
         Assert.Contains("NAPS2.Worker.exe", harness, StringComparison.Ordinal);
 
+        Assert.Contains("FilesInUse", harness, StringComparison.Ordinal);
+        Assert.Contains("MsiRMFilesInUse", harness, StringComparison.Ordinal);
+        Assert.Contains("/repair", harness, StringComparison.Ordinal);
+        Assert.Contains("downgrade", harness, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Stop-Service", harness, StringComparison.Ordinal);
+        Assert.Contains("WaitForStatus", harness, StringComparison.Ordinal);
+        Assert.Contains("ProgramData", harness, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("upgrade-preserve-log.sentinel", harness, StringComparison.Ordinal);
+        Assert.Contains("upgrade-preserve-data.sentinel", harness, StringComparison.Ordinal);
+        Assert.Contains("Candidate NAPS2.Worker after Stop-Service", harness, StringComparison.Ordinal);
+        Assert.Contains("Candidate NAPS2.Worker after uninstall", harness, StringComparison.Ordinal);
+
         Assert.DoesNotContain("dotnet publish", harness, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("package.bat", harness, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("package.ps1", harness, StringComparison.OrdinalIgnoreCase);
