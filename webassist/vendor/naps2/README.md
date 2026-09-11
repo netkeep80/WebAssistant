@@ -20,7 +20,7 @@ Current committed package:
 
 The `.3` package is built from that exact public upstream commit with only the package identity/version customization and the WebAssistant-owned feeder-state and worker-lifecycle deltas described above. No WebAssistant scanner policy is implemented inside NAPS2; `auto` source selection remains WebAssistant-owned.
 
-The `.2` package remains immutable and is retained as the previous feeder-paper-state package. Its pinned SHA-256 remains `2dbc6e96cf0d46a554318f3224561861e669dd09b60fc618319c53fed10dcc9f`; it is never rebuilt, overwritten or substituted by the `.3` cutover.
+The .2 package remains immutable and is retained as the previous feeder-paper-state package. Its pinned SHA-256 remains `2dbc6e96cf0d46a554318f3224561861e669dd09b60fc618319c53fed10dcc9f`; it is never rebuilt, overwritten or substituted by the `.3` cutover.
 
 ## Rebuild
 
