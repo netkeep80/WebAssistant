@@ -1,6 +1,8 @@
 using NAPS2.Scan.Exceptions;
 using WebAssistant.Scanning;
 
+#pragma warning disable CA2252
+
 namespace WebAssistant.Http;
 
 internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
