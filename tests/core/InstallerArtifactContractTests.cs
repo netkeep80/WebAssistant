@@ -152,6 +152,10 @@ public sealed class InstallerArtifactContractTests
 
         Assert.Contains("FilesInUse", harness, StringComparison.Ordinal);
         Assert.Contains("MsiRMFilesInUse", harness, StringComparison.Ordinal);
+        Assert.Contains("Assert-UpgradePreflightBeforeMsi", harness, StringComparison.Ordinal);
+        Assert.Contains("Applied execute package: UpgradePreflight", harness, StringComparison.Ordinal);
+        Assert.Contains("Applying execute package: WebAssistantMsi", harness, StringComparison.Ordinal);
+        Assert.Contains("preflight-pass", harness, StringComparison.Ordinal);
         Assert.Contains("/repair", harness, StringComparison.Ordinal);
         Assert.Contains("downgrade", harness, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Stop-Service", harness, StringComparison.Ordinal);
