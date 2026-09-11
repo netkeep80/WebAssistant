@@ -32,15 +32,36 @@ jobs:
           name: webassistant-windows-installer-${{ github.sha }}
           path: ${{ runner.temp }}/webassistant-windows-artifacts
 
-      - name: Download exact historical v0.3.21 artifact
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: 10155509111
-          github-token: ${{ github.token }}
-          repository: netkeep80/WebAssistant
-          run-id: 34485513571
-          path: ${{ runner.temp }}/webassistant-windows-historical
-          merge-multiple: true
+      - name: Download exact historical v0.3.21 release assets
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $historicalRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-historical'
+          New-Item -Path $historicalRoot -ItemType Directory -Force | Out-Null
+
+          $headers = @{
+              Accept = 'application/octet-stream'
+              Authorization = "Bearer $env:GITHUB_TOKEN"
+              'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $assets = [ordered]@{
+              'WebAssistant-win-x64-0.3.21.exe' = 555125536
+              'WebAssistant-win-x64-0.3.21.exe.sha256' = 555125537
+              'WebAssistant-win-x64-0.3.21.exe.provenance.json' = 555125538
+          }
+
+          foreach ($entry in $assets.GetEnumerator()) {
+              $target = Join-Path $historicalRoot $entry.Key
+              Invoke-WebRequest `
+                  -Uri "https://api.github.com/repos/netkeep80/WebAssistant/releases/assets/$($entry.Value)" `
+                  -Headers $headers `
+                  -OutFile $target
+              if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+                  throw "Historical release asset download did not create $target"
+              }
+          }
 
       - name: Diagnose live-worker historical upgrade
         shell: pwsh
