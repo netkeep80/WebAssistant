@@ -24,7 +24,6 @@ param(
     [string]$InstallDirectory = "$env:ProgramFiles\WebAssistant"
 )
 
-Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $serviceName = "WebAssistant"
 $historicalVersion = "0.3.21"
