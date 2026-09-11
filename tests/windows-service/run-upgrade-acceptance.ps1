@@ -291,10 +291,10 @@ function Assert-UpgradePreflightBeforeMsi {
         throw "UpgradePreflight diagnostic log is missing: $PreflightDiagnosticLog"
     }
     $preflightDiagnostic = Get-Content -LiteralPath $PreflightDiagnosticLog -Raw
-    if ($preflightDiagnostic -notmatch '(?m)^preflight-pass\s*$') {
+    if ($preflightDiagnostic -notmatch '(?m)^\S+\s+preflight-pass\s*$') {
         throw "UpgradePreflight diagnostic log has no preflight-pass evidence."
     }
-    if ($preflightDiagnostic -match '(?m)^preflight-fail:') {
+    if ($preflightDiagnostic -match '(?m)^\S+\s+preflight-fail:') {
         throw "UpgradePreflight diagnostic log contains preflight-fail evidence."
     }
 }
