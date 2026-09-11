@@ -137,11 +137,37 @@ public sealed class InstallerArtifactContractTests
     }
 
     [Fact]
+    public void WindowsUpgradeAcceptance_PinsImmutableHistoricalInstallerEvidence()
+    {
+        var workflow = ReadRequired(".github/workflows/windows-service.yml");
+        var harness = ReadRequired("tests/windows-service/run-upgrade-acceptance.ps1");
+
+        Assert.Contains("555125536", workflow, StringComparison.Ordinal);
+        Assert.Contains("555125537", workflow, StringComparison.Ordinal);
+        Assert.Contains("555125538", workflow, StringComparison.Ordinal);
+        Assert.Contains("WebAssistant-win-x64-0.3.21.exe", workflow, StringComparison.Ordinal);
+
+        Assert.Contains("WebAssistant-win-x64-0.3.21.exe", harness, StringComparison.Ordinal);
+        Assert.Contains("77a5c66c431c746d2be2f283640c7951730911eb", harness, StringComparison.Ordinal);
+        Assert.Contains("68fe8a0145721c13f14dad4a4d3fea333c9ccb240b036d8869aa2152af7b7271", harness, StringComparison.Ordinal);
+        Assert.Contains("/v1/scanners", harness, StringComparison.Ordinal);
+        Assert.Contains("NAPS2.Worker.exe", harness, StringComparison.Ordinal);
+
+        Assert.DoesNotContain("dotnet publish", harness, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("package.bat", harness, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("package.ps1", harness, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void InstallerAcceptanceConsumers_NeverRebuildOrRewriteAcceptedPayload()
     {
         AssertImmutableConsumer(
             "tests/windows-service/run-installer-acceptance.ps1",
             new[] { "dotnet publish", "package.bat", "package.ps1", "Set-Content", "Add-Content", "Out-File" });
+
+        AssertImmutableConsumer(
+            "tests/windows-service/run-upgrade-acceptance.ps1",
+            new[] { "dotnet publish", "package.bat", "package.ps1" });
 
         AssertImmutableConsumer(
             "tests/linux-systemd/run-installer-acceptance.sh",

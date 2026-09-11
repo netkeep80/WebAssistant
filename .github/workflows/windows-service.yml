@@ -134,7 +134,7 @@ jobs:
     name: Windows WiX installer lifecycle
     needs: build-windows-installer
     runs-on: windows-2025
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Checkout acceptance harness
         uses: actions/checkout@v6
@@ -147,7 +147,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           foreach ($requiredPath in @(
               'tests/windows-service/run-installer-acceptance.ps1',
-              'tests/windows-service/run-service-acceptance.ps1'
+              'tests/windows-service/run-service-acceptance.ps1',
+              'tests/windows-service/run-upgrade-acceptance.ps1'
           )) {
               if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
                   throw "Missing Windows acceptance harness: $requiredPath"
@@ -159,6 +160,37 @@ jobs:
         with:
           name: webassistant-windows-installer-${{ inputs.source_ref || github.sha }}
           path: ${{ runner.temp }}/webassistant-windows-artifacts
+
+      - name: Download immutable v0.3.21 draft-release evidence
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'webassistant-windows-historical'
+          if (Test-Path -LiteralPath $root) {
+              Remove-Item -LiteralPath $root -Recurse -Force
+          }
+          New-Item -Path $root -ItemType Directory -Force | Out-Null
+
+          $headers = @{
+              Authorization = "Bearer $env:GH_TOKEN"
+              Accept = 'application/octet-stream'
+              'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $assets = @(
+              @{ Id = 555125536; Name = 'WebAssistant-win-x64-0.3.21.exe' },
+              @{ Id = 555125537; Name = 'WebAssistant-win-x64-0.3.21.exe.sha256' },
+              @{ Id = 555125538; Name = 'WebAssistant-win-x64-0.3.21.exe.provenance.json' }
+          )
+          foreach ($asset in $assets) {
+              $uri = "https://api.github.com/repos/netkeep80/WebAssistant/releases/assets/$($asset.Id)"
+              $outFile = Join-Path $root $asset.Name
+              Invoke-WebRequest -Uri $uri -Headers $headers -OutFile $outFile
+              if (-not (Test-Path -LiteralPath $outFile -PathType Leaf)) {
+                  throw "Historical release asset download failed: $($asset.Name)"
+              }
+          }
 
       - name: Verify and exercise exact Windows installer bytes
         shell: pwsh
@@ -177,39 +209,70 @@ jobs:
               -ProvenancePath "$artifact.provenance.json" `
               -Port 17654
 
+      - name: Reproduce live-worker historical upgrade
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidateRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'
+          $candidate = @(Get-ChildItem -LiteralPath $candidateRoot -Filter 'WebAssistant-win-x64-*.exe' -File)
+          if ($candidate.Count -ne 1) {
+              throw "Expected exactly one candidate Windows EXE; found $($candidate.Count)."
+          }
+
+          $historicalRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-historical'
+          $historical = Join-Path $historicalRoot 'WebAssistant-win-x64-0.3.21.exe'
+
+          .\tests\windows-service\run-upgrade-acceptance.ps1 `
+              -CandidateArtifactPath $candidate[0].FullName `
+              -CandidateSha256Path "$($candidate[0].FullName).sha256" `
+              -CandidateProvenancePath "$($candidate[0].FullName).provenance.json" `
+              -HistoricalArtifactPath $historical `
+              -HistoricalSha256Path "$historical.sha256" `
+              -HistoricalProvenancePath "$historical.provenance.json" `
+              -Port 17654
+
       - name: Emergency exact-bundle cleanup
         if: always()
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $artifactRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'
-          $artifact = Get-ChildItem -LiteralPath $artifactRoot -Filter 'WebAssistant-win-x64-*.exe' -File -ErrorAction SilentlyContinue |
-              Select-Object -First 1
+          Stop-Service -Name 'WebAssistant' -Force -ErrorAction SilentlyContinue
 
-          $installedEntry = Get-ItemProperty `
-              -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', `
-                    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' `
-              -ErrorAction SilentlyContinue |
-              Where-Object { $_.DisplayName -eq 'WebAssistant' } |
+          $candidateRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'
+          $candidate = Get-ChildItem -LiteralPath $candidateRoot -Filter 'WebAssistant-win-x64-*.exe' -File -ErrorAction SilentlyContinue |
               Select-Object -First 1
-          $service = Get-Service -Name 'WebAssistant' -ErrorAction SilentlyContinue
+          $historical = Join-Path $env:RUNNER_TEMP 'webassistant-windows-historical\WebAssistant-win-x64-0.3.21.exe'
 
-          if ($artifact -and ($installedEntry -or $service)) {
+          foreach ($bundle in @($candidate.FullName, $historical)) {
+              if ([string]::IsNullOrWhiteSpace($bundle) -or -not (Test-Path -LiteralPath $bundle -PathType Leaf)) {
+                  continue
+              }
               try {
                   $cleanup = Start-Process `
-                      -FilePath $artifact.FullName `
+                      -FilePath $bundle `
                       -ArgumentList @('/uninstall', '/quiet', '/norestart') `
                       -Wait `
                       -PassThru
                   if ($cleanup.ExitCode -ne 0) {
-                      Write-Warning "Exact bundle cleanup exited with $($cleanup.ExitCode)."
+                      Write-Warning "Exact bundle cleanup exited with $($cleanup.ExitCode): $bundle"
                   }
               }
               catch {
-                  Write-Warning "Exact bundle cleanup failed: $($_.Exception.Message)"
+                  Write-Warning "Exact bundle cleanup failed for $bundle: $($_.Exception.Message)"
               }
           }
 
-          if (Test-Path -LiteralPath $artifactRoot) {
-              Remove-Item -LiteralPath $artifactRoot -Recurse -Force -ErrorAction SilentlyContinue
+          foreach ($worker in @(Get-CimInstance Win32_Process -Filter "Name='NAPS2.Worker.exe'" -ErrorAction SilentlyContinue)) {
+              $path = [string]$worker.ExecutablePath
+              if ($path -and $path.StartsWith("$env:ProgramFiles\WebAssistant\", [StringComparison]::OrdinalIgnoreCase)) {
+                  Stop-Process -Id ([int]$worker.ProcessId) -Force -ErrorAction SilentlyContinue
+              }
+          }
+
+          foreach ($root in @(
+              (Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'),
+              (Join-Path $env:RUNNER_TEMP 'webassistant-windows-historical'))) {
+              if (Test-Path -LiteralPath $root) {
+                  Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+              }
           }
