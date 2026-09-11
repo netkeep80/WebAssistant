@@ -100,15 +100,20 @@ jobs:
           name: webassistant-windows-installer-${{ inputs.source_ref }}
           path: ${{ runner.temp }}/webassistant-windows-artifacts
 
-      - name: Download exact historical v0.3.21 staging artifact
-        uses: actions/download-artifact@v4
-        with:
-          artifact-ids: 10155509111
-          github-token: ${{ github.token }}
-          repository: netkeep80/WebAssistant
-          run-id: 34485513571
-          path: ${{ runner.temp }}/webassistant-windows-historical
-          merge-multiple: true
+      - name: Download exact historical v0.3.21 release assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'webassistant-windows-historical'
+          New-Item -Path $root -ItemType Directory -Force | Out-Null
+          $assets = @(
+              @{ Name = 'WebAssistant-win-x64-0.3.21.exe'; Url = 'https://github.com/netkeep80/WebAssistant/releases/download/v0.3.21/WebAssistant-win-x64-0.3.21.exe' },
+              @{ Name = 'WebAssistant-win-x64-0.3.21.exe.sha256'; Url = 'https://github.com/netkeep80/WebAssistant/releases/download/v0.3.21/WebAssistant-win-x64-0.3.21.exe.sha256' },
+              @{ Name = 'WebAssistant-win-x64-0.3.21.exe.provenance.json'; Url = 'https://github.com/netkeep80/WebAssistant/releases/download/v0.3.21/WebAssistant-win-x64-0.3.21.exe.provenance.json' }
+          )
+          foreach ($asset in $assets) {
+              Invoke-WebRequest -Uri $asset.Url -OutFile (Join-Path $root $asset.Name)
+          }
 
       - name: Verify and exercise exact Windows installer bytes
         shell: pwsh
