@@ -223,7 +223,9 @@ dotnet build "$project" \
     --configuration Release \
     --property:TargetFrameworks=net10.0 \
     --property:GeneratePackageOnBuild=false \
-    --property:PathMap="$path_map"
+    --property:PathMap="$path_map" \
+    --property:DebugType=None \
+    --property:DebugSymbols=false
 
 dotnet pack "$project" \
     --configuration Release \
