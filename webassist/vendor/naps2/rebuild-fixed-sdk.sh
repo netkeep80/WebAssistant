@@ -214,13 +214,16 @@ replace_exact(
 PY
 
 project="$work_dir/NAPS2.Sdk/NAPS2.Sdk.csproj"
+package_path="$output_dir/$PACKAGE_FILE"
+path_map="$work_dir=/src/naps2"
 mkdir -p -- "$output_dir"
-rm -f -- "$output_dir/$PACKAGE_FILE"
+rm -f -- "$package_path"
 
 dotnet build "$project" \
     --configuration Release \
     --property:TargetFrameworks=net10.0 \
-    --property:GeneratePackageOnBuild=false
+    --property:GeneratePackageOnBuild=false \
+    --property:PathMap="$path_map"
 
 dotnet pack "$project" \
     --configuration Release \
@@ -228,9 +231,55 @@ dotnet pack "$project" \
     --property:TargetFrameworks=net10.0 \
     --property:PackageOutputPath="$output_dir"
 
-[[ -f "$output_dir/$PACKAGE_FILE" ]] || {
-    echo "Expected package was not produced: $output_dir/$PACKAGE_FILE" >&2
+[[ -f "$package_path" ]] || {
+    echo "Expected package was not produced: $package_path" >&2
     exit 1
 }
 
-echo "Rebuilt: $output_dir/$PACKAGE_FILE"
+python3 - "$package_path" <<'PY'
+import os
+import pathlib
+import sys
+import zipfile
+
+package = pathlib.Path(sys.argv[1])
+temporary = package.with_name(package.name + ".canonical.tmp")
+fixed_timestamp = (1980, 1, 1, 0, 0, 0)
+
+with zipfile.ZipFile(package, "r") as source:
+    entries = [(entry.filename, entry.is_dir(), source.read(entry)) for entry in source.infolist()]
+
+names = [name for name, _, _ in entries]
+if len(names) != len(set(names)):
+    raise SystemExit("refusing to canonicalize package with duplicate ZIP entry names")
+
+try:
+    with zipfile.ZipFile(
+        temporary,
+        "w",
+        compression=zipfile.ZIP_STORED,
+        allowZip64=False,
+    ) as target:
+        target.comment = b""
+        for name, is_directory, data in sorted(entries, key=lambda item: item[0]):
+            info = zipfile.ZipInfo(name, date_time=fixed_timestamp)
+            info.compress_type = zipfile.ZIP_STORED
+            info.create_system = 3
+            info.create_version = 20
+            info.extract_version = 20
+            info.internal_attr = 0
+            info.external_attr = (
+                ((0o40755 << 16) | 0x10)
+                if is_directory
+                else (0o100644 << 16)
+            )
+            info.extra = b""
+            info.comment = b""
+            target.writestr(info, data)
+
+    os.replace(temporary, package)
+finally:
+    temporary.unlink(missing_ok=True)
+PY
+
+echo "Rebuilt: $package_path"
