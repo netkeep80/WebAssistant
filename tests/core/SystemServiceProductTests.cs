@@ -127,6 +127,16 @@ public sealed class SystemServiceProductTests
         Assert.Contains("AddWindowsService", program, StringComparison.Ordinal);
         Assert.Contains("ServiceName = \"WebAssistant\"", program, StringComparison.Ordinal);
 
+        var windowsBlockStart = program.IndexOf("if (OperatingSystem.IsWindows())", StringComparison.Ordinal);
+        var linuxBlockStart = program.IndexOf("else if (OperatingSystem.IsLinux())", StringComparison.Ordinal);
+        Assert.True(windowsBlockStart >= 0 && linuxBlockStart > windowsBlockStart);
+        var windowsRegistrationBlock = program[windowsBlockStart..linuxBlockStart];
+        Assert.Contains("AddSingleton<WindowsScanAdapterHolder>()", windowsRegistrationBlock, StringComparison.Ordinal);
+        Assert.Contains("GetRequiredService<WindowsScanAdapterHolder>().GetOrCreate()", windowsRegistrationBlock, StringComparison.Ordinal);
+        Assert.Contains("AddHostedService<WindowsScannerShutdownHostedService>()", windowsRegistrationBlock, StringComparison.Ordinal);
+        Assert.Contains("Configure<HostOptions>", windowsRegistrationBlock, StringComparison.Ordinal);
+        Assert.Contains("ShutdownTimeout = TimeSpan.FromSeconds(20)", windowsRegistrationBlock, StringComparison.Ordinal);
+
         var packageText = File.ReadAllText(packageScript);
         Assert.Contains("win-x64", packageText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("--self-contained true", packageText, StringComparison.OrdinalIgnoreCase);
@@ -190,6 +200,7 @@ public sealed class SystemServiceProductTests
             {
                 return directory.FullName;
             }
+
             directory = directory.Parent;
         }
 
