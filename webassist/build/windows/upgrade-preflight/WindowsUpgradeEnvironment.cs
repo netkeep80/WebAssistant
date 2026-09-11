@@ -8,6 +8,7 @@ namespace WebAssistant.UpgradePreflight;
 internal sealed class WindowsUpgradeEnvironment : IUpgradeEnvironment
 {
     private const string ServiceName = "WebAssistant";
+    private const string WorkerExecutableName = "NAPS2.Worker.exe";
 
     private const uint ScManagerConnect = 0x0001;
     private const uint ServiceQueryConfig = 0x0001;
@@ -88,7 +89,8 @@ internal sealed class WindowsUpgradeEnvironment : IUpgradeEnvironment
 
         do
         {
-            if (entry.ProcessId is > 0 and <= int.MaxValue)
+            if (entry.ProcessId is > 0 and <= int.MaxValue &&
+                IsWorkerSnapshotCandidate(entry.ExeFile))
             {
                 var identity = TryReadProcessIdentity(
                     checked((int)entry.ProcessId),
@@ -254,6 +256,12 @@ internal sealed class WindowsUpgradeEnvironment : IUpgradeEnvironment
         delay <= TimeSpan.Zero
             ? Task.CompletedTask
             : Task.Delay(delay, cancellationToken);
+
+    internal static bool IsWorkerSnapshotCandidate(string executableName) =>
+        string.Equals(
+            executableName,
+            WorkerExecutableName,
+            StringComparison.OrdinalIgnoreCase);
 
     internal static string ParseServiceExecutablePath(string commandLine)
     {
