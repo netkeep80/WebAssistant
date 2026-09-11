@@ -14,6 +14,7 @@
     .grid { display: grid; gap: 16px; grid-template-columns: 1fr; width: 100%; }
     .card { width: 100%; box-sizing: border-box; border: 1px solid color-mix(in srgb, CanvasText 22%, transparent); border-radius: 10px; padding: 16px; }
     .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    label { display: flex; gap: 6px; align-items: center; }
     select, input, button { font: inherit; padding: 8px 10px; }
     select, input { min-width: 180px; }
     button { cursor: pointer; }
@@ -31,26 +32,269 @@
   <main>
     <header><h1>WebAssistant</h1><p class="muted">Локальная диагностическая панель</p></header>
     <div class="grid">
-      <section class="card"><h2>Состояние службы</h2><p id="service-state">Проверка…</p><dl id="runtime-details" hidden><dt>Версия</dt><dd id="runtime-version">—</dd><dt>ОС</dt><dd id="runtime-os">—</dd><dt>Адрес</dt><dd id="runtime-listen">—</dd><dt>API</dt><dd id="runtime-api">—</dd><dt>Сканирование</dt><dd id="runtime-scan-state">—</dd></dl></section>
-      <section class="card"><h2>Сканер</h2><div class="row"><select id="scanner-select" disabled><option value="">Поиск сканеров…</option></select><button id="refresh-scanners" type="button">Обновить</button></div><p id="scanner-status" class="muted"></p><div class="row"><button id="scan-button" type="button" disabled>Сканировать автоматически</button><button id="scan-feeder" type="button" disabled>Сканировать из ADF</button><button id="scan-duplex" type="button" disabled>Двустороннее из ADF</button></div><p id="scan-status"></p><div id="pdf-result" hidden><div class="row"><a id="pdf-download" download="scan.pdf">Сохранить PDF</a><a id="pdf-open" target="_blank" rel="noopener">Открыть PDF</a></div><object id="pdf-preview" type="application/pdf"></object></div></section>
-      <section class="card"><h2>Журнал WebAssistant</h2><div class="row"><input id="log-date" type="date"><button id="read-log" type="button">Показать журнал</button></div><pre id="log-output">Выберите дату.</pre></section>
+      <section class="card">
+        <h2>Состояние службы</h2>
+        <p id="service-state">Проверка…</p>
+        <dl id="runtime-details" hidden>
+          <dt>Версия</dt><dd id="runtime-version">—</dd>
+          <dt>ОС</dt><dd id="runtime-os">—</dd>
+          <dt>Адрес</dt><dd id="runtime-listen">—</dd>
+          <dt>API</dt><dd id="runtime-api">—</dd>
+          <dt>Сканирование</dt><dd id="runtime-scan-state">—</dd>
+        </dl>
+      </section>
+
+      <section class="card">
+        <h2>Сканер</h2>
+        <div class="row">
+          <select id="scanner-select" disabled><option value="">Поиск сканеров…</option></select>
+          <button id="refresh-scanners" type="button">Обновить</button>
+          <button id="scanner-info" type="button" disabled>Информация о сканере</button>
+        </div>
+        <p id="scanner-status" class="muted"></p>
+        <div class="row">
+          <label>Режим <select id="scanner-mode" disabled><option value="">—</option></select></label>
+        </div>
+        <div id="scanner-settings-controls" class="row"></div>
+        <div class="row"><button id="scan-button" type="button" disabled>Сканировать</button></div>
+        <p id="scan-status"></p>
+        <pre id="scanner-info-output" hidden></pre>
+        <div id="pdf-result" hidden>
+          <div class="row">
+            <a id="pdf-download" download="scan.pdf">Сохранить PDF</a>
+            <a id="pdf-open" target="_blank" rel="noopener">Открыть PDF</a>
+          </div>
+          <object id="pdf-preview" type="application/pdf"></object>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Журнал WebAssistant</h2>
+        <div class="row"><input id="log-date" type="date"><button id="read-log" type="button">Показать журнал</button></div>
+        <pre id="log-output">Выберите дату.</pre>
+      </section>
     </div>
   </main>
   <script>
     "use strict";
-    const endpoints=Object.freeze({info:"/v1/diag/info",scanners:"/v1/scanners",scan:"/v1/scan",logs:"/v1/diag/logs"});
-    const serviceState=document.getElementById("service-state"),runtimeDetails=document.getElementById("runtime-details"),scannerSelect=document.getElementById("scanner-select"),scannerStatus=document.getElementById("scanner-status"),scanButton=document.getElementById("scan-button"),scanFeederButton=document.getElementById("scan-feeder"),scanDuplexButton=document.getElementById("scan-duplex"),scanButtons=[scanButton,scanFeederButton,scanDuplexButton],scanStatus=document.getElementById("scan-status"),logDate=document.getElementById("log-date"),logOutput=document.getElementById("log-output"),pdfResult=document.getElementById("pdf-result"),pdfPreview=document.getElementById("pdf-preview"),pdfDownload=document.getElementById("pdf-download"),pdfOpen=document.getElementById("pdf-open");
+
+    const endpoints=Object.freeze({
+      info:"/v1/diag/info",
+      scanners:"/v1/scanners",
+      scan:"/v1/scan",
+      logs:"/v1/diag/logs",
+      settingsSchema:"/v1/scanner-settings/schema"
+    });
+    const scannerSettingsEndpoint=scannerId=>`/v1/scanners/${encodeURIComponent(scannerId)}/settings`;
+
+    const serviceState=document.getElementById("service-state");
+    const runtimeDetails=document.getElementById("runtime-details");
+    const scannerSelect=document.getElementById("scanner-select");
+    const scannerStatus=document.getElementById("scanner-status");
+    const scannerMode=document.getElementById("scanner-mode");
+    const scannerSettingsControls=document.getElementById("scanner-settings-controls");
+    const scannerInfoButton=document.getElementById("scanner-info");
+    const scannerInfoOutput=document.getElementById("scanner-info-output");
+    const scanButton=document.getElementById("scan-button");
+    const scanStatus=document.getElementById("scan-status");
+    const logDate=document.getElementById("log-date");
+    const logOutput=document.getElementById("log-output");
+    const pdfResult=document.getElementById("pdf-result");
+    const pdfPreview=document.getElementById("pdf-preview");
+    const pdfDownload=document.getElementById("pdf-download");
+    const pdfOpen=document.getElementById("pdf-open");
+
     let pdfObjectUrl=null;
+    let scannerSchema=null;
+    let scannerProjection=null;
+    let discoveredScanners=[];
+
     function today(){const now=new Date(),local=new Date(now.getTime()-now.getTimezoneOffset()*60000);return local.toISOString().slice(0,10)}
-    function setScanButtonsDisabled(disabled){for(const button of scanButtons)button.disabled=disabled}
     function releasePdfUrl(){if(pdfObjectUrl){URL.revokeObjectURL(pdfObjectUrl);pdfObjectUrl=null}}
     function showPdf(pdf){releasePdfUrl();pdfObjectUrl=URL.createObjectURL(pdf);pdfPreview.data=pdfObjectUrl;pdfDownload.href=pdfObjectUrl;pdfOpen.href=pdfObjectUrl;pdfResult.hidden=false}
     async function errorText(response){try{const problem=await response.clone().json();return problem.detail||problem.title||`HTTP ${response.status}`}catch{return `HTTP ${response.status}`}}
-    async function refreshInfo(){try{const response=await fetch(endpoints.info,{cache:"no-store"});if(!response.ok)throw new Error(await errorText(response));const info=await response.json();serviceState.dataset.state="ok";serviceState.textContent="WebAssistant работает";document.getElementById("runtime-version").textContent=info.version;document.getElementById("runtime-os").textContent=info.os;document.getElementById("runtime-listen").textContent=info.listenUrl;document.getElementById("runtime-api").textContent=info.apiVersion;document.getElementById("runtime-scan-state").textContent=info.scanState;runtimeDetails.hidden=false}catch(error){serviceState.dataset.state="error";serviceState.textContent=`Ошибка диагностики: ${error.message}`}}
-    async function refreshScanners(){scannerSelect.disabled=true;setScanButtonsDisabled(true);scannerStatus.textContent="Поиск сканеров…";try{const response=await fetch(endpoints.scanners,{cache:"no-store"});if(!response.ok)throw new Error(await errorText(response));const payload=await response.json(),scanners=payload.scanners||[],warnings=payload.warnings||[];scannerSelect.replaceChildren();for(const scanner of scanners){const option=document.createElement("option");option.value=scanner.scannerId;option.textContent=`${scanner.name||scanner.scannerId} [${scanner.backend}]`;scannerSelect.append(option)}if(scanners.length===0){scannerSelect.append(new Option("Сканеры не найдены",""));scannerStatus.textContent=warnings.length?`Доступных сканеров нет. Предупреждений: ${warnings.length}.`:"Доступных сканеров нет.";return}scannerSelect.disabled=false;setScanButtonsDisabled(false);scannerStatus.textContent=warnings.length?`Обнаружено сканеров: ${scanners.length}. Предупреждений: ${warnings.length}.`:`Обнаружено сканеров: ${scanners.length}`}catch(error){scannerSelect.replaceChildren(new Option("Ошибка обнаружения",""));scannerStatus.textContent=error.message}}
-    async function scan(source,duplex=false){const scannerId=scannerSelect.value;if(!scannerId)return;setScanButtonsDisabled(true);scanStatus.textContent="Сканирование…";try{const response=await fetch(endpoints.scan,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({scannerId,source,settings:{duplex}})});if(!response.ok)throw new Error(await errorText(response));const pdf=await response.blob();showPdf(pdf);scanStatus.textContent=`PDF получен: ${pdf.size} байт.`}catch(error){scanStatus.textContent=`Ошибка: ${error.message}`}finally{setScanButtonsDisabled(scannerSelect.disabled||!scannerSelect.value);await refreshInfo()}}
-    async function readLog(){const date=logDate.value;if(!date)return;logOutput.textContent="Чтение журнала…";try{const response=await fetch(`${endpoints.logs}?date=${encodeURIComponent(date)}`,{cache:"no-store"});if(response.status===404){logOutput.textContent="Журнал за выбранную дату отсутствует.";return}if(!response.ok)throw new Error(await errorText(response));logOutput.textContent=await response.text()}catch(error){logOutput.textContent=`Ошибка: ${error.message}`}}
-    document.getElementById("refresh-scanners").addEventListener("click",refreshScanners);scanButton.addEventListener("click",()=>scan("auto"));scanFeederButton.addEventListener("click",()=>scan("feeder"));scanDuplexButton.addEventListener("click",()=>scan("feeder",true));document.getElementById("read-log").addEventListener("click",readLog);window.addEventListener("beforeunload",releasePdfUrl);logDate.value=today();void Promise.all([refreshInfo(),refreshScanners()]);
+    function settingControlId(fieldName){return `scanner-${fieldName.replace(/[A-Z]/g,letter=>`-${letter.toLowerCase()}`)}`}
+    function selectedMode(){return scannerProjection?.modes?.find(mode=>mode.mode===scannerMode.value)??null}
+    function modeLabel(mode){return ({auto:"Авто",flatbed:"Стекло",feeder:"ADF",feederDuplex:"ADF duplex"})[mode]||mode}
+
+    async function refreshInfo(){
+      try{
+        const response=await fetch(endpoints.info,{cache:"no-store"});
+        if(!response.ok)throw new Error(await errorText(response));
+        const info=await response.json();
+        serviceState.dataset.state="ok";
+        serviceState.textContent="WebAssistant работает";
+        document.getElementById("runtime-version").textContent=info.version;
+        document.getElementById("runtime-os").textContent=info.os;
+        document.getElementById("runtime-listen").textContent=info.listenUrl;
+        document.getElementById("runtime-api").textContent=info.apiVersion;
+        document.getElementById("runtime-scan-state").textContent=info.scanState;
+        runtimeDetails.hidden=false;
+      }catch(error){
+        serviceState.dataset.state="error";
+        serviceState.textContent=`Ошибка диагностики: ${error.message}`;
+      }
+    }
+
+    async function loadScannerSchema(){
+      const response=await fetch(endpoints.settingsSchema,{cache:"no-store"});
+      if(!response.ok)throw new Error(await errorText(response));
+      scannerSchema=await response.json();
+    }
+
+    async function refreshScanners(){
+      scannerSelect.disabled=true;
+      scannerMode.disabled=true;
+      scannerInfoButton.disabled=true;
+      scanButton.disabled=true;
+      scannerSettingsControls.replaceChildren();
+      scannerStatus.textContent="Поиск сканеров…";
+      scannerProjection=null;
+      try{
+        const response=await fetch(endpoints.scanners,{cache:"no-store"});
+        if(!response.ok)throw new Error(await errorText(response));
+        const payload=await response.json();
+        discoveredScanners=payload.scanners||[];
+        const warnings=payload.warnings||[];
+        scannerSelect.replaceChildren();
+        for(const scanner of discoveredScanners){
+          const option=document.createElement("option");
+          option.value=scanner.scannerId;
+          option.textContent=`${scanner.name||scanner.scannerId} [${scanner.backend}]`;
+          scannerSelect.append(option);
+        }
+        if(discoveredScanners.length===0){
+          scannerSelect.append(new Option("Сканеры не найдены",""));
+          scannerStatus.textContent=warnings.length?`Доступных сканеров нет. Предупреждений: ${warnings.length}.`:"Доступных сканеров нет.";
+          return;
+        }
+        scannerSelect.disabled=false;
+        scannerInfoButton.disabled=false;
+        scannerStatus.textContent=warnings.length?`Обнаружено сканеров: ${discoveredScanners.length}. Предупреждений: ${warnings.length}.`:`Обнаружено сканеров: ${discoveredScanners.length}`;
+        await refreshSelectedScannerSettings();
+      }catch(error){
+        scannerSelect.replaceChildren(new Option("Ошибка обнаружения",""));
+        scannerStatus.textContent=error.message;
+      }
+    }
+
+    async function refreshSelectedScannerSettings(){
+      const scannerId=scannerSelect.value;
+      scannerProjection=null;
+      scannerMode.replaceChildren(new Option("—",""));
+      scannerMode.disabled=true;
+      scanButton.disabled=true;
+      scannerSettingsControls.replaceChildren();
+      scannerInfoOutput.hidden=true;
+      if(!scannerId)return;
+
+      try{
+        const response=await fetch(scannerSettingsEndpoint(scannerId),{cache:"no-store"});
+        if(!response.ok)throw new Error(await errorText(response));
+        scannerProjection=await response.json();
+        scannerMode.replaceChildren();
+        for(const mode of scannerProjection.modes||[]){
+          scannerMode.append(new Option(modeLabel(mode.mode),mode.mode));
+        }
+        if(!scannerProjection.modes?.length){
+          scannerMode.append(new Option("Нет доступных режимов",""));
+          return;
+        }
+        scannerMode.disabled=false;
+        renderSettingsControls();
+      }catch(error){
+        scannerStatus.textContent=`Ошибка capabilities: ${error.message}`;
+      }
+    }
+
+    function renderSettingsControls(){
+      scannerSettingsControls.replaceChildren();
+      const mode=selectedMode();
+      if(!mode||!scannerSchema){scanButton.disabled=true;return}
+
+      for(const [fieldName,fieldSchema] of Object.entries(scannerSchema.fields||{})){
+        if(fieldName==="duplex")continue;
+        const capability=mode.settings?.[fieldName];
+        if(!capability?.supported||!Array.isArray(capability.values)||capability.values.length===0)continue;
+
+        const label=document.createElement("label");
+        label.textContent=`${fieldSchema.title||fieldName} `;
+        const select=document.createElement("select");
+        select.id=settingControlId(fieldName);
+        select.dataset.settingName=fieldName;
+        for(const value of capability.values){select.append(new Option(String(value),String(value)))}
+        if(capability.default!==null&&capability.default!==undefined){select.value=String(capability.default)}
+        label.append(select);
+        scannerSettingsControls.append(label);
+      }
+
+      scanButton.disabled=false;
+    }
+
+    function showScannerInfo(){
+      const scanner=discoveredScanners.find(item=>item.scannerId===scannerSelect.value)??null;
+      scannerInfoOutput.textContent=JSON.stringify({scanner,capabilities:scannerProjection},null,2);
+      scannerInfoOutput.hidden=false;
+    }
+
+    async function scan(){
+      const scannerId=scannerSelect.value;
+      const mode=selectedMode();
+      if(!scannerId||!mode||!scannerSchema)return;
+
+      scanButton.disabled=true;
+      scanStatus.textContent="Сканирование…";
+      const settings={duplex:Boolean(mode.duplex)};
+      for(const select of scannerSettingsControls.querySelectorAll("select[data-setting-name]")){
+        const fieldName=select.dataset.settingName;
+        if(!fieldName||select.value==="")continue;
+        const fieldSchema=scannerSchema.fields?.[fieldName];
+        settings[fieldName]=fieldSchema?.type==="integer"?Number(select.value):select.value;
+      }
+
+      try{
+        const response=await fetch(endpoints.scan,{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({scannerId,source:mode.source,settings})
+        });
+        if(!response.ok)throw new Error(await errorText(response));
+        const pdf=await response.blob();
+        showPdf(pdf);
+        scanStatus.textContent=`PDF получен: ${pdf.size} байт.`;
+      }catch(error){
+        scanStatus.textContent=`Ошибка: ${error.message}`;
+      }finally{
+        scanButton.disabled=!selectedMode();
+        await refreshInfo();
+      }
+    }
+
+    async function readLog(){
+      const date=logDate.value;if(!date)return;
+      logOutput.textContent="Чтение журнала…";
+      try{
+        const response=await fetch(`${endpoints.logs}?date=${encodeURIComponent(date)}`,{cache:"no-store"});
+        if(response.status===404){logOutput.textContent="Журнал за выбранную дату отсутствует.";return}
+        if(!response.ok)throw new Error(await errorText(response));
+        logOutput.textContent=await response.text();
+      }catch(error){logOutput.textContent=`Ошибка: ${error.message}`}
+    }
+
+    document.getElementById("refresh-scanners").addEventListener("click",refreshScanners);
+    scannerSelect.addEventListener("change",refreshSelectedScannerSettings);
+    scannerMode.addEventListener("change",renderSettingsControls);
+    scannerInfoButton.addEventListener("click",showScannerInfo);
+    scanButton.addEventListener("click",scan);
+    document.getElementById("read-log").addEventListener("click",readLog);
+    window.addEventListener("beforeunload",releasePdfUrl);
+    logDate.value=today();
+
+    void refreshInfo();
+    void (async()=>{
+      try{await loadScannerSchema();await refreshScanners()}
+      catch(error){scannerStatus.textContent=`Ошибка scanner settings schema: ${error.message}`}
+    })();
   </script>
 </body>
 </html>

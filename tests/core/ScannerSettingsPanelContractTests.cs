@@ -16,20 +16,21 @@ public sealed class ScannerSettingsPanelContractTests
             "wwwroot",
             "index.html"));
 
-        Assert.Contains("scanner-mode", html, StringComparison.Ordinal);
-        Assert.Contains("scanner-dpi", html, StringComparison.Ordinal);
-        Assert.Contains("scanner-color-mode", html, StringComparison.Ordinal);
-        Assert.Contains("scanner-paper-size", html, StringComparison.Ordinal);
-        Assert.Contains("scanner-info", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"scanner-mode\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"scanner-settings-controls\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"scanner-info\"", html, StringComparison.Ordinal);
         Assert.Contains("/v1/scanner-settings/schema", html, StringComparison.Ordinal);
         Assert.Contains("/settings", html, StringComparison.Ordinal);
+        Assert.Contains("Object.entries(scannerSchema.fields", html, StringComparison.Ordinal);
+        Assert.Contains("settingControlId(fieldName)", html, StringComparison.Ordinal);
+        Assert.Contains("select.dataset.settingName=fieldName", html, StringComparison.Ordinal);
 
-        Assert.DoesNotContain("scan-feeder", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("scan-duplex", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"scan-feeder\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"scan-duplex\"", html, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void ServicePanel_HasOneScanActionAndModeSelector()
+    public void ServicePanel_HasOneScanActionAndCapabilityDrivenModeSelector()
     {
         var root = FindRepositoryRoot();
         var html = File.ReadAllText(Path.Combine(
@@ -43,7 +44,9 @@ public sealed class ScannerSettingsPanelContractTests
         Assert.Contains("id=\"scan-button\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"scanner-mode\"", html, StringComparison.Ordinal);
         Assert.Contains("Информация о сканере", html, StringComparison.Ordinal);
-        Assert.Contains("Сканировать", html, StringComparison.Ordinal);
+        Assert.Contains("for(const mode of scannerProjection.modes", html, StringComparison.Ordinal);
+        Assert.Contains("source:mode.source", html, StringComparison.Ordinal);
+        Assert.Contains("duplex:Boolean(mode.duplex)", html, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

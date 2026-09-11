@@ -9,7 +9,8 @@ internal sealed record ScannerDevice(
     bool SupportsFlatbed = true,
     bool SupportsFeeder = false,
     bool SupportsDuplex = false,
-    FeederPaperState FeederPaperState = FeederPaperState.Unknown);
+    FeederPaperState FeederPaperState = FeederPaperState.Unknown,
+    ScannerEndpointCapabilities? Capabilities = null);
 
 internal sealed record ScannerDiscoveryWarning(ScannerBackend Backend, string Code);
 

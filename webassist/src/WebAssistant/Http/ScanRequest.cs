@@ -12,4 +12,10 @@ internal sealed class ScanRequest
 internal sealed class ScanSettings
 {
     public bool? Duplex { get; init; }
+
+    public int? Dpi { get; init; }
+
+    public string? ColorMode { get; init; }
+
+    public string? PaperSize { get; init; }
 }

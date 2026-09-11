@@ -22,6 +22,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="../../docs/scanner-settings.schema.json">
+      <Link>scanner-settings.schema.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>WebAssistant.CoreTests</_Parameter1>
     </AssemblyAttribute>
