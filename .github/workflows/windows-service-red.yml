@@ -9,7 +9,100 @@ permissions:
   actions: read
 
 jobs:
-  windows-service:
-    uses: ./.github/workflows/windows-service.yml
+  build-candidate:
+    uses: ./.github/workflows/build-installers.yml
     with:
       source_ref: ${{ github.sha }}
+      run_linux: false
+      run_windows: true
+
+  diagnose-live-worker-upgrade:
+    needs: build-candidate
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download exact candidate artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: webassistant-windows-installer-${{ github.sha }}
+          path: ${{ runner.temp }}/webassistant-windows-artifacts
+
+      - name: Download exact historical v0.3.21 artifact
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 10155509111
+          github-token: ${{ github.token }}
+          repository: netkeep80/WebAssistant
+          run-id: 34485513571
+          path: ${{ runner.temp }}/webassistant-windows-historical
+          merge-multiple: true
+
+      - name: Diagnose live-worker historical upgrade
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $startedUtc = [DateTime]::UtcNow
+          $candidateRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-artifacts'
+          $candidate = @(Get-ChildItem -LiteralPath $candidateRoot -Filter 'WebAssistant-win-x64-*.exe' -File)
+          if ($candidate.Count -ne 1) {
+              throw "Expected exactly one candidate Windows EXE; found $($candidate.Count)."
+          }
+
+          $historicalRoot = Join-Path $env:RUNNER_TEMP 'webassistant-windows-historical'
+          $historical = Join-Path $historicalRoot 'WebAssistant-win-x64-0.3.21.exe'
+
+          try {
+              .\tests\windows-service\run-upgrade-acceptance.ps1 `
+                  -CandidateArtifactPath $candidate[0].FullName `
+                  -CandidateSha256Path "$($candidate[0].FullName).sha256" `
+                  -CandidateProvenancePath "$($candidate[0].FullName).provenance.json" `
+                  -HistoricalArtifactPath $historical `
+                  -HistoricalSha256Path "$historical.sha256" `
+                  -HistoricalProvenancePath "$historical.provenance.json" `
+                  -Port 17654
+          }
+          catch {
+              Write-Host '=== Upgrade failure ==='
+              Write-Host $_
+
+              $preflightLog = Join-Path ([IO.Path]::GetTempPath()) 'WebAssistant-UpgradePreflight.log'
+              if (Test-Path -LiteralPath $preflightLog -PathType Leaf) {
+                  Write-Host "=== $preflightLog ==="
+                  Get-Content -LiteralPath $preflightLog
+              }
+              else {
+                  Write-Host "Preflight diagnostic log not found: $preflightLog"
+              }
+
+              Write-Host '=== Burn/package logs ==='
+              $logs = @(Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Filter '*.log' -File -Recurse -ErrorAction SilentlyContinue |
+                  Where-Object {
+                      $_.LastWriteTimeUtc -ge $startedUtc.AddMinutes(-2) -and
+                      ($_.Name -match '(?i)webassistant|upgrade|burn|wix')
+                  } |
+                  Sort-Object FullName)
+              foreach ($log in $logs) {
+                  Write-Host "=== $($log.FullName) ==="
+                  Get-Content -LiteralPath $log.FullName -ErrorAction SilentlyContinue | Select-Object -Last 300
+              }
+
+              throw
+          }
+
+      - name: Emergency cleanup
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Stop-Service -Name 'WebAssistant' -Force -ErrorAction SilentlyContinue
+          foreach ($worker in @(Get-CimInstance Win32_Process -Filter "Name='NAPS2.Worker.exe'" -ErrorAction SilentlyContinue)) {
+              $path = [string]$worker.ExecutablePath
+              if ($path -and $path.StartsWith("$env:ProgramFiles\WebAssistant\", [StringComparison]::OrdinalIgnoreCase)) {
+                  Stop-Process -Id ([int]$worker.ProcessId) -Force -ErrorAction SilentlyContinue
+              }
+          }
