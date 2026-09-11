@@ -73,7 +73,7 @@ It must not change:
 - staged v0.3.21 bytes;
 - unrelated installer localization, release publication, or metadata-renaming work.
 
-No accepted MTS-like semantic authority exists here: #191 is operational lifecycle behavior. Existing WebAssistant contract authority remains unchanged unless implementation unexpectedly exposes an observable API delta; if that happens, stop and classify it separately.
+#191 does not itself change accepted WebAssistant HTTP contract authority. If implementation unexpectedly creates an observable API-semantic delta, stop and classify that delta separately rather than hiding it inside the upgrade transaction.
 
 ## 3. Current-state findings
 
@@ -142,11 +142,28 @@ At that baseline:
 - `WorkerContext.Stop()` returns immediately on a second call once `_stopped` is set, even if the first asynchronous stop has not completed;
 - `WorkerFactory.StopSpareWorkers()` can wait for workers still present in spare queues, but the factory does not own a complete registry of every created/live worker;
 - worker startup is asynchronous, which creates a race where shutdown can begin while a worker is still being created;
-- on Windows NAPS2 places workers in a kill-on-job-close Job object, but the Job lifetime is ultimately tied to parent-process teardown, not to a deterministic `ScanningContext.Dispose()` completion barrier.
+- on Windows NAPS2 places workers in a kill-on-job-close Job object, but the Job lifetime is ultimately tied to parent-process teardown, not to a deterministic `ScanningContext` shutdown completion barrier.
 
 This is sufficient to explain a service being considered stopped while a package-owned worker is still alive long enough for MSI `Files In Use` detection.
 
-### 3.5 A new runtime fix alone cannot repair the first legacy upgrade
+### 3.5 DI disposal alone is too late for the service-stop invariant
+
+.NET Generic Host shutdown ordering is:
+
+```text
+IHostedLifecycleService.StoppingAsync
+IHostApplicationLifetime.ApplicationStopping
+IHostedService.StopAsync
+IHostedLifecycleService.StoppedAsync
+IHostApplicationLifetime.ApplicationStopped
+IHostLifetime.StopAsync
+```
+
+`WindowsServiceLifetime.OnStop()` waits for `ApplicationStopped` before returning to SCM. Ordinary service-provider disposal of singleton `IDisposable` instances is not part of the pre-`ApplicationStopped` sequence.
+
+Therefore relying only on eventual DI disposal of `WindowsScanAdapter` would not prove that workers are gone when SCM observes the service as stopped. #191 requires an explicit pre-`ApplicationStopped` shutdown participant.
+
+### 3.6 A new runtime fix alone cannot repair the first legacy upgrade
 
 This is the critical compatibility fact.
 
@@ -181,13 +198,16 @@ new Burn bundle
 
 new WebAssistant runtime
   |
-  +-- deterministic WindowsScanAdapter shutdown
-        |
-        +-- repo-owned NAPS2 WorkerFactory lifetime barrier
-              -> own every worker it creates
-              -> stop every owned worker
-              -> wait until each process exits
-              -> bounded force-kill only its own unresponsive worker
+  +-- WindowsScannerShutdownHostedService
+        -> runs before ApplicationStopped
+        -> does not force scanner adapter materialization
+        -> shuts down already-materialized WindowsScanAdapter
+              |
+              +-- repo-owned NAPS2 WorkerFactory lifetime barrier
+                    -> own every worker it creates
+                    -> stop every owned worker
+                    -> wait until each process exits
+                    -> bounded force-kill only its own unresponsive worker
 ```
 
 The installer bridge and runtime fix deliberately overlap. The installer bridge is needed because old versions cannot be retroactively fixed. The runtime fix is needed so the installer is not permanently used to hide a runtime resource leak.
@@ -221,10 +241,10 @@ Use platform APIs / narrow Win32 P/Invoke rather than PowerShell or an external 
 Burn authoring must schedule the helper for install/upgrade/repair preparation **before the MSI package executes**. It must not uninstall or persist the helper as a separate product. The exact `ExePackage` detect/permanent/arguments authoring is an implementation detail, but executable tests must prove the observable planning rules:
 
 ```text
-fresh install      -> helper executes, sees no prior service, success/no-op
-upgrade            -> helper executes before MSI
-same-version repair-> helper executes before repair payload validation
-uninstall only     -> helper does not perform upgrade preparation
+fresh install       -> helper executes, sees no prior service, success/no-op
+upgrade             -> helper executes before MSI
+same-version repair -> helper executes before repair payload validation
+uninstall only      -> helper does not perform upgrade preparation
 ```
 
 The helper is `Vital`: if it detects an existing WebAssistant runtime but cannot establish the required clean ownership state, the bundle fails closed before MSI payload replacement.
@@ -243,9 +263,18 @@ If the service exists, read its configured binary path through Windows service A
 
 The helper must reject an ambiguous or unsafe service configuration instead of guessing. It must not terminate a process merely because its image name is `WebAssistant.exe` or `NAPS2.Worker.exe`.
 
-### 5.3 Ownership proof for worker processes
+### 5.3 Service-process and worker ownership proof
 
-A worker is eligible for preflight cleanup only if ownership can be proven from the old installed runtime.
+When the service is running, identify the exact old service-process instance as:
+
+```text
+service instance =
+    configured executable path
+  + PID reported by SCM
+  + process creation time
+```
+
+A worker is eligible for preflight cleanup only if ownership can be proven from that exact old service-process instance.
 
 Required proof is the conjunction of:
 
@@ -256,7 +285,12 @@ process executable path
 AND
 
 process parent PID
-  == the recorded running WebAssistant service PID
+  == recorded WebAssistant service PID
+
+AND
+
+worker process creation time
+  falls within the recorded lifetime of that service-process instance
 ```
 
 The supported worker path set must match the pinned NAPS2 `CreateDefault()` search layout relative to the WebAssistant entry folder:
@@ -268,9 +302,9 @@ The supported worker path set must match the pinned NAPS2 `CreateDefault()` sear
 
 The implementation must derive the concrete allowed paths from the resolved installed WebAssistant root rather than searching the entire machine by process name.
 
-The service PID is recorded while the service is still running. Worker candidates are captured against that identity before the parent can disappear and its PID can later be reused.
+Unrelated `NAPS2.Worker.exe` processes with a different executable path, different parent PID, or incompatible creation time are out of scope and must remain untouched.
 
-Unrelated `NAPS2.Worker.exe` processes with a different executable path or different parent PID are out of scope and must remain untouched.
+If the service is already stopped and no exact parent service-process instance can be established, the helper must not guess worker ancestry. If package-owned worker locks remain but ownership cannot be proven safely, fail closed rather than kill by name or path alone.
 
 ### 5.4 Preflight algorithm
 
@@ -282,29 +316,36 @@ if absent:
     return SUCCESS
 
 resolve configured service executable path
-resolve running service PID, if any
-validate service binary identity/path is compatible with WebAssistant ownership
+query current service state
+
+if service has a running process:
+    record service process path + PID + creation time
+    begin capturing workers satisfying the ownership proof
 
 if service is Running/StartPending/StopPending:
-    capture currently provable owned worker PIDs
     request SERVICE_CONTROL_STOP when needed
 
-wait until SCM reports service Stopped, bounded
-wait until recorded WebAssistant service process exits, bounded
+while the recorded service process is alive:
+    continue capturing newly-created workers satisfying the same ownership proof
+    wait for SCM/service-process convergence within bounded policy
 
-re-scan captured/derived package-owned worker identities
-for each proven owned worker still alive:
+record service-process exit time
+freeze the captured owned-worker identity set
+
+for each captured owned worker still alive:
     wait short graceful-exit window
     if still alive:
-        terminate that exact process only
+        terminate that exact captured process only
         wait for its exit, bounded
 
 verify:
-    old service process is gone
-    no proven old WebAssistant-owned worker remains alive
+    old service-process instance is gone
+    every captured owned-worker instance is gone
 
 return SUCCESS
 ```
+
+After the recorded service process exits, new processes that merely reuse its numeric PID are never added to the ownership set. This prevents PID-reuse races from widening cleanup authority.
 
 The helper does not attempt to stop arbitrary active scans gracefully through HTTP. Its job is the compatibility bridge for a version whose shutdown semantics are already frozen. The first action remains an orderly SCM stop; force termination is only a bounded fallback for a worker whose ownership has already been proven.
 
@@ -312,9 +353,9 @@ The helper does not attempt to stop arbitrary active scans gracefully through HT
 
 The design must cover worker startup racing with service stop.
 
-Preflight must not assume that one process snapshot taken long before `SERVICE_CONTROL_STOP` is complete. It should maintain the recorded service PID and allowed worker paths through the stop window and re-evaluate candidate processes while that parent identity is still relevant.
+Preflight continuously closes the observation window until the recorded service-process instance exits. A worker created after the first snapshot but before parent exit can therefore enter the captured ownership set; a process created after parent exit cannot.
 
-Success is based on final absence of proven workers, not merely on having issued a stop request.
+Success is based on final absence of the captured owned-worker set, not merely on having issued a stop request.
 
 If final ownership cannot be determined safely, fail closed rather than kill by name.
 
@@ -429,15 +470,28 @@ The barrier must be idempotent and safe when called while scanner operations are
 
 The existing 60-second per-worker upstream fallback is too large to become an unconstrained aggregate service-stop delay. Implementation should use a bounded shutdown policy compatible with the host `ShutdownTimeout`, and tests must prove the total service stop path is bounded. Exact timeout constants belong in the implementation plan/tests, not in public API semantics.
 
-### 6.5 ScanningContext disposal owns the barrier
+### 6.5 ScanningContext exposes the same deterministic barrier to both async and sync shutdown
 
-For a context configured with this worker factory, `ScanningContext.Dispose()` must not return while its owned worker processes are still alive.
+For a context configured with this worker factory, WebAssistant needs an awaitable shutdown path that does not complete while its owned worker processes are still alive.
 
-The `.3` package therefore connects context disposal to the worker-factory shutdown barrier before disposing the remaining context resources.
+The `.3` package must therefore expose one awaitable context-shutdown operation backed by the factory barrier. Synchronous `ScanningContext.Dispose()` must join the same idempotent barrier for fallback/ordinary ownership safety rather than start an independent cleanup path.
+
+Conceptually:
+
+```text
+await ScanningContext shutdown
+    -> await WorkerFactory shutdown barrier
+    -> dispose remaining context resources
+
+ScanningContext.Dispose()
+    -> synchronously join that same already-idempotent shutdown operation
+```
+
+The exact public/internal method name is an implementation detail, but there must be one shared state machine, not separate async and sync shutdown semantics.
 
 This is an internal repository-owned SDK lifecycle correction. It does not change WebAssistant HTTP semantics.
 
-## 7. Layer C — WebAssistant host shutdown barrier
+## 7. Layer C — explicit WebAssistant host shutdown barrier
 
 ### 7.1 Required service-stop ordering
 
@@ -446,10 +500,13 @@ For candidate and later versions, Windows service stop must satisfy:
 ```text
 SCM stop request
   -> ASP.NET host begins shutdown
-  -> scanner operations stop accepting new work
-  -> materialized WindowsScanAdapter is disposed
-  -> ScanningContext waits for every owned NAPS2 worker to exit
-  -> host reaches ApplicationStopped
+  -> ApplicationStopping
+  -> WindowsScannerShutdownHostedService.StopAsync
+       -> stop accepting scanner lifetime work
+       -> if WindowsScanAdapter was materialized, await its deterministic shutdown
+       -> ScanningContext awaits every owned NAPS2 worker exit
+  -> remaining hosted-service shutdown completes
+  -> ApplicationStopped
   -> WindowsServiceLifetime returns from OnStop
   -> SCM may report service Stopped
 ```
@@ -461,21 +518,41 @@ SCM reports WebAssistant stopped
 => no NAPS2 worker owned by that WebAssistant process remains alive
 ```
 
-### 7.2 DI disposal is the preferred integration point
+### 7.2 A dedicated hosted shutdown participant is required
 
-`IScanAdapter` is already a singleton owned by the ASP.NET dependency-injection container. `WindowsScanAdapter` implements `IDisposable`.
+Do not rely only on DI container disposal of `WindowsScanAdapter`: Generic Host calls `ApplicationStopped` before service-provider disposal, while Windows SCM waits on `ApplicationStopped`.
 
-Preserve that ownership model rather than inventing a second global scanner lifetime service unless testing proves DI shutdown ordering insufficient.
+Introduce a small Windows-only lifetime boundary, conceptually:
 
-The runtime change should make `WindowsScanAdapter.Dispose()` deterministic because `ScanningContext.Dispose()` now provides the worker barrier.
+```text
+WindowsScannerShutdownCoordinator
+WindowsScannerShutdownHostedService : IHostedService
+```
 
-The adapter remains lazy. If no scanner endpoint was ever used, no Windows scanner context/worker needs to be created merely for shutdown.
+Responsibilities:
 
-### 7.3 In-flight HTTP work
+- `WindowsScanAdapter` registers itself with the coordinator when and only when the lazy singleton is actually constructed;
+- the hosted service depends on the coordinator, not directly on `IScanAdapter`;
+- `StartAsync` is a no-op;
+- `StopAsync` tells the coordinator to prevent further scanner-lifetime acquisition and, if an adapter was registered, awaits that adapter's deterministic shutdown;
+- if no scanner endpoint was ever used, shutdown does **not** construct `WindowsScanAdapter` merely to dispose it;
+- later DI disposal is an idempotent fallback that joins the already-completed barrier.
+
+This boundary exists to establish host ordering; it must not contain scanner selection/business policy.
+
+### 7.3 Adapter shutdown contract
+
+`WindowsScanAdapter` gains one idempotent awaitable shutdown operation used by the hosted service. It delegates to the `.3` `ScanningContext` barrier.
+
+After shutdown begins, attempts to start new adapter operations must fail/cancel rather than create fresh workers behind the barrier.
+
+The existing `IDisposable` path remains as a safe fallback and joins the same shutdown operation.
+
+### 7.4 In-flight HTTP work
 
 WebApplication shutdown stops accepting new requests and cancels request tokens. `ScanCoordinator` already passes request cancellation into discovery/scan work and enforces a single acquisition gate.
 
-#191 does not add a separate long-running job subsystem. The implementation must verify through tests that service shutdown during materialized scanner state converges within the host timeout and does not deadlock the coordinator, adapter, or NAPS2 worker barrier.
+#191 does not add a separate long-running job subsystem. The implementation must verify through tests that service shutdown during materialized scanner state converges within the host timeout and does not deadlock the coordinator, adapter, hosted shutdown service, or NAPS2 worker barrier.
 
 ## 8. Version behavior
 
@@ -590,14 +667,15 @@ On GitHub-hosted Windows acceptance:
 15. assert /v1/health healthy
 16. assert /v1/scanners responds through the candidate runtime
 17. exercise service restart and repeat health/scanner checks
-18. invoke explicit same-version candidate maintenance/repair
-19. repeat version/entry/service/health/scanner assertions
-20. run exact v0.3.21 installer as downgrade attempt
-21. assert downgrade rejected and candidate remains intact/healthy
-22. uninstall candidate through canonical bundle
-23. assert service + Program Files payload removed
-24. assert ProgramData logs/data preservation semantics
-25. assert no WebAssistant-owned NAPS2 worker remains
+18. prove candidate runtime service stop/restart leaves no owned worker after each stop
+19. invoke explicit same-version candidate maintenance/repair
+20. repeat version/entry/service/health/scanner assertions
+21. run exact v0.3.21 installer as downgrade attempt
+22. assert downgrade rejected and candidate remains intact/healthy
+23. uninstall candidate through canonical bundle
+24. assert service + Program Files payload removed
+25. assert ProgramData logs/data preservation semantics
+26. assert no WebAssistant-owned NAPS2 worker remains
 ```
 
 The scanner endpoint is sufficient to materialize the NAPS2 worker path; automated CI does not require a physical scanner to prove process ownership. Existing virtual-scanner/direct-SDK tests continue to cover scanning mechanics separately.
@@ -620,9 +698,15 @@ Repository tests around the `.3` SDK patch must prove at minimum:
 - worker startup racing with shutdown cannot survive the barrier;
 - unresponsive owned worker fallback is bounded and terminates only that worker;
 - shutdown is idempotent;
-- after `ScanningContext.Dispose()`, no factory-owned worker process remains.
+- after awaitable `ScanningContext` shutdown completes, no factory-owned worker process remains;
+- synchronous `ScanningContext.Dispose()` joins the same barrier.
 
-WebAssistant tests must prove materialized `WindowsScanAdapter.Dispose()` reaches that barrier.
+WebAssistant tests must prove:
+
+- hosted shutdown does not materialize an unused Windows scanner adapter;
+- a materialized adapter is shut down before `ApplicationStopped`;
+- subsequent DI disposal is idempotent;
+- adapter operations cannot create a new worker after shutdown begins.
 
 ### 10.6 Preflight ownership negative tests
 
@@ -631,12 +715,14 @@ The helper must have executable tests proving it refuses unsafe cleanup:
 - no WebAssistant service -> success/no-op;
 - unrelated process named `NAPS2.Worker` with different path -> untouched;
 - NAPS2.Worker at expected-looking path but wrong parent PID -> untouched;
+- PID-reuse process created after recorded service-process exit -> untouched;
+- service already stopped + unprovable worker ancestry -> no kill / fail closed if replacement would be unsafe;
 - ambiguous/unsafe WebAssistant service binary identity -> fail closed;
 - service stop timeout -> fail closed;
 - proven owned worker exits gracefully -> no force kill;
-- proven owned worker remains -> only that exact worker is terminated;
+- proven owned worker remains -> only that exact captured worker is terminated;
 - worker/path identity changes during race -> no broad kill;
-- final proven owned worker remains alive -> preflight failure.
+- final captured owned worker remains alive -> preflight failure.
 
 ## 11. TDD transaction order
 
@@ -651,9 +737,12 @@ A. preflight/helper contract tests
    -> helper/bundle pre-MSI ownership barrier absent
 
 B. NAPS2 lifecycle tests
-   -> ScanningContext disposal does not guarantee worker exit
+   -> ScanningContext shutdown does not guarantee worker exit
 
-C. installer acceptance contract/tests
+C. WebAssistant host-lifetime tests
+   -> scanner cleanup is not currently guaranteed before ApplicationStopped
+
+D. installer acceptance contract/tests
    -> no exact v0.3.21 -> candidate live-worker upgrade scenario
 ```
 
@@ -678,15 +767,15 @@ only after the complete functional transaction is GREEN and ready for final cand
 Fail closed before payload replacement when:
 
 - an existing WebAssistant service cannot be stopped within the bounded policy;
-- the old service process remains alive;
-- a proven old package worker remains alive after bounded cleanup;
-- worker ownership is ambiguous and cleanup would require a process-name-wide kill;
+- the old service-process instance remains alive;
+- a captured/proven old package worker remains alive after bounded cleanup;
+- worker ownership is ambiguous and cleanup would require a process-name-wide/path-only kill;
 - helper execution itself fails;
 - historical old installer digest does not match pinned evidence in acceptance.
 
 Do not silently continue and hope Windows Installer resolves the lock.
 
-Runtime shutdown should log and surface a bounded failure rather than leave an untracked worker running indefinitely.
+Runtime shutdown must remain bounded by host shutdown policy and must not report successful service stop while a tracked owned worker is knowingly still alive.
 
 ## 13. Explicit non-solutions
 
@@ -694,10 +783,12 @@ The following are rejected:
 
 - global `taskkill /IM NAPS2.Worker.exe /F`;
 - killing every process with a matching image name;
+- killing by install-root path alone when ancestry cannot be proven;
 - telling users to stop the service manually;
 - telling users to uninstall before upgrading;
 - relying only on WiX `ServiceControl Wait="yes"`;
 - relying only on Job Object process death at eventual parent-process exit;
+- relying only on DI singleton disposal after host shutdown;
 - disabling spare workers as the complete fix;
 - changing `WorkerContext.Dispose()` to synchronously block every normal scanner operation for the full stop timeout;
 - editing immutable `.2` package bytes in place;
@@ -710,13 +801,15 @@ The following are rejected:
 
 - [ ] repo-owned upgrade-preflight helper exists and is isolated from product business logic;
 - [ ] Burn executes preflight before MSI install/upgrade/repair payload validation;
-- [ ] preflight never performs broad process-name cleanup;
+- [ ] preflight never performs broad process-name or unproven path-only cleanup;
 - [ ] exact v0.3.21 service + live package worker is reproduced automatically;
 - [ ] v0.3.21 -> candidate upgrade succeeds without manual stop/uninstall/Ignore;
 - [ ] old proven worker is gone before candidate payload replacement;
 - [ ] repo-owned NAPS2 `.3` lifecycle package is immutable and provenance-pinned;
 - [ ] NAPS2 factory owns and deterministically stops every worker it creates;
-- [ ] `ScanningContext.Dispose()` is a worker-exit barrier;
+- [ ] awaitable/synchronous `ScanningContext` shutdown share one worker-exit barrier;
+- [ ] explicit hosted shutdown runs before `ApplicationStopped`;
+- [ ] hosted shutdown does not instantiate an otherwise unused scanner adapter;
 - [ ] candidate Windows service stop implies no owned NAPS2 worker remains;
 - [ ] service returns Running after upgrade;
 - [ ] health and scanner enumeration are GREEN after upgrade and restart;
