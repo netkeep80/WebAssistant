@@ -69,6 +69,26 @@ public sealed class WindowsUpgradePreflightBundleTests
         Assert.Contains(expectedPath, serviceWorkflow, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void WindowsUpgradeAcceptance_UsesDurableHistoricalReleaseAssets()
+    {
+        foreach (var workflowPath in new[]
+                 {
+                     ".github/workflows/windows-service.yml",
+                     ".github/workflows/installer-acceptance.yml"
+                 })
+        {
+            var workflow = ReadRequired(workflowPath);
+
+            Assert.Contains("555125536", workflow, StringComparison.Ordinal);
+            Assert.Contains("555125537", workflow, StringComparison.Ordinal);
+            Assert.Contains("555125538", workflow, StringComparison.Ordinal);
+            Assert.Contains("run-upgrade-acceptance.ps1", workflow, StringComparison.Ordinal);
+            Assert.DoesNotContain("10155509111", workflow, StringComparison.Ordinal);
+            Assert.DoesNotContain("34485513571", workflow, StringComparison.Ordinal);
+        }
+    }
+
     private static string ReadRequired(string relativePath)
     {
         var path = ToFullPath(relativePath);
