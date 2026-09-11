@@ -8,6 +8,7 @@
     "README.md",
     "webassist/README.md",
     "webassist/docs/api.md",
+    "webassist/docs/scanner-settings.schema.json",
     "webassist/docs/linux-service.md",
     "webassist/docs/windows-service.md",
     "webassist/.gitlab-ci.yml",
@@ -45,13 +46,23 @@
     "tests/core/ScanAdapterContractTests.cs",
     "tests/core/ScannerIdentityTests.cs",
     "tests/core/ScanSourcePolicyTests.cs",
+    "tests/core/ScannerCapabilityProjectionTests.cs",
+    "tests/core/ScannerSettingsSchemaTests.cs",
+    "tests/core/ScannerSettingsHttpContractTests.cs",
+    "tests/core/ScannerSettingsPanelContractTests.cs",
     "tests/core/LinuxScanAdapterTests.cs",
     "tests/core/LinuxVirtualScanAdapterTests.cs",
     "tests/core/WindowsScanAdapterTests.cs",
     "tests/core/ServicePanelScannerApiTests.cs",
     ".github/workflows/virtual-scanner.yml",
     "webassist/src/WebAssistant/Http/ScannerEndpointHandlers.cs",
+    "webassist/src/WebAssistant/Http/ScannerSettingsEndpointHandlers.cs",
     "webassist/src/WebAssistant/Http/ScanCoordinator.cs",
+    "webassist/src/WebAssistant/Scanning/ScannerSettings.cs",
+    "webassist/src/WebAssistant/Scanning/ScannerCapabilities.cs",
+    "webassist/src/WebAssistant/Scanning/ScannerCapabilityProjection.cs",
+    "webassist/src/WebAssistant/Scanning/Naps2ScannerCapabilityMapper.cs",
+    "webassist/src/WebAssistant/wwwroot/index.html",
     "tests/core/DiagnosticsContractTests.cs",
     "tests/core/RequestLoggingMiddlewareTests.cs",
     "webassist/src/WebAssistant/Logging/DailyFileLoggerProvider.cs",
@@ -129,9 +140,9 @@
     {
       "id": "WA-C-SCANNER-HTTP-001",
       "kind": "positive",
-      "assertion": "POST /v1/scan является единственным acquisition route, принимает JSON с обязательным stable scannerId, exact source auto|flatbed|feeder и отдельным settings.duplex, применяет явные 400/404/409/422/502/503 outcomes и возвращает raw application/pdf при успехе.",
-      "requirements": ["WA-SCAN-001", "WA-SCAN-002", "WA-SCAN-003", "WA-TRANSPORT-001"],
-      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/PlatformEndToEndTests.cs", "tests/core/ServicePanelScannerApiTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
+      "assertion": "POST /v1/scan является единственным acquisition route, принимает JSON с обязательным stable scannerId, exact source auto|flatbed|feeder и normalized settings, применяет явные 400/404/409/422/502/503 outcomes и возвращает raw application/pdf при успехе.",
+      "requirements": ["WA-SCAN-001", "WA-SCAN-002", "WA-SCAN-003", "WA-SCAN-006", "WA-TRANSPORT-001"],
+      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/ScannerSettingsHttpContractTests.cs", "tests/core/PlatformEndToEndTests.cs", "tests/core/ServicePanelScannerApiTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
     },
     {
       "id": "WA-C-SCANNER-AUTO-001",
@@ -144,8 +155,22 @@
       "id": "WA-C-SCANNER-STATELESS-001",
       "kind": "negative",
       "assertion": "scannerId детерминированно выводится из backend и exact native identity и может сохраняться caller'ом между restart/reboot; WebAssistant не хранит mutable scanner profile, выбранный scannerId, source или settings и при acquisition заново разрешает endpoint stateless.",
-      "requirements": ["WA-SCAN-001", "WA-SCAN-002"],
-      "evidence": ["tests/core/ScannerIdentityTests.cs", "tests/core/WindowsScanAdapterTests.cs", "tests/core/LinuxScanAdapterTests.cs", "tests/core/HttpScanContractTests.cs", "webassist/docs/api.md"]
+      "requirements": ["WA-SCAN-001", "WA-SCAN-002", "WA-SCAN-006"],
+      "evidence": ["tests/core/ScannerIdentityTests.cs", "tests/core/WindowsScanAdapterTests.cs", "tests/core/LinuxScanAdapterTests.cs", "tests/core/HttpScanContractTests.cs", "tests/core/ScannerSettingsHttpContractTests.cs", "webassist/docs/api.md"]
+    },
+    {
+      "id": "WA-C-SCANNER-SETTINGS-001",
+      "kind": "positive",
+      "assertion": "Canonical scanner-settings schema и GET /v1/scanners/{scannerId}/settings позволяют получить normalized dpi/colorMode/paperSize capabilities по public request modes; auto projection является пересечением возможностей concrete sources, defaults детерминированы, invalid syntax получает 400, а valid unsupported value получает 422 до acquisition.",
+      "requirements": ["WA-SCAN-006"],
+      "evidence": ["webassist/docs/scanner-settings.schema.json", "tests/core/ScannerSettingsSchemaTests.cs", "tests/core/ScannerCapabilityProjectionTests.cs", "tests/core/ScannerSettingsHttpContractTests.cs", "webassist/src/WebAssistant/Http/ScannerSettingsEndpointHandlers.cs", "webassist/src/WebAssistant/Scanning/ScannerCapabilityProjection.cs", "webassist/docs/api.md"]
+    },
+    {
+      "id": "WA-C-SCANNER-PANEL-001",
+      "kind": "positive",
+      "assertion": "Diagnostic panel строит scanner mode/settings controls из canonical schema и projection выбранного scannerId, использует один Scan action и read-only scanner information без WIA/TWAIN/SANE/model-specific UI правил.",
+      "requirements": ["WA-SCAN-006", "WA-SCAN-007"],
+      "evidence": ["webassist/src/WebAssistant/wwwroot/index.html", "tests/core/ScannerSettingsPanelContractTests.cs", "tests/core/ServicePanelScannerApiTests.cs", "webassist/docs/api.md"]
     },
     {
       "id": "WA-C-MULTIPAGE-001",
