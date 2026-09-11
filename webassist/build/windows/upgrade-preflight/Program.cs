@@ -19,7 +19,7 @@ internal static class Program
         try
         {
             Console.WriteLine("preflight-start service=WebAssistant");
-            var environment = new WindowsUpgradeEnvironment();
+            using var environment = new RetainedServiceProcessUpgradeEnvironment();
             var orchestrator = new UpgradePreflightOrchestrator(environment, policy);
             await orchestrator.RunAsync(CancellationToken.None);
             Console.WriteLine("preflight-pass");

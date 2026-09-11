@@ -116,6 +116,23 @@ internal sealed class UpgradePreflightOrchestrator
             await environment.DelayAsync(policy.PollInterval, cancellationToken);
         }
 
+        var serviceExitTimeUtc = environment.GetExitTimeUtc(serviceProcess);
+        if (serviceExitTimeUtc is not null)
+        {
+            if (serviceExitTimeUtc.Value < serviceProcess.StartTimeUtc)
+            {
+                throw new UpgradePreflightException(
+                    "Exact WebAssistant service process exit time predates its creation time.");
+            }
+
+            CaptureOwnedWorkers(
+                environment.SnapshotProcesses(),
+                serviceProcess,
+                allowedWorkerPaths,
+                capturedWorkers,
+                serviceExitTimeUtc.Value);
+        }
+
         foreach (var worker in capturedWorkers)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -149,13 +166,15 @@ internal sealed class UpgradePreflightOrchestrator
         IReadOnlyList<ProcessIdentity> processes,
         ProcessIdentity serviceProcess,
         IReadOnlySet<string> allowedWorkerPaths,
-        ISet<ProcessIdentity> capturedWorkers)
+        ISet<ProcessIdentity> capturedWorkers,
+        DateTimeOffset? latestStartTimeUtc = null)
     {
         foreach (var process in processes)
         {
             if (process.ProcessId <= 0 ||
                 process.ParentProcessId != serviceProcess.ProcessId ||
                 process.StartTimeUtc < serviceProcess.StartTimeUtc ||
+                (latestStartTimeUtc is not null && process.StartTimeUtc > latestStartTimeUtc.Value) ||
                 !allowedWorkerPaths.Contains(NormalizeWindowsPath(process.ImagePath)) ||
                 !environment.IsAlive(process))
             {

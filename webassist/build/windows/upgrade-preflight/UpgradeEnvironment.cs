@@ -27,6 +27,8 @@ internal interface IUpgradeEnvironment
 
     bool IsAlive(ProcessIdentity process);
 
+    DateTimeOffset? GetExitTimeUtc(ProcessIdentity process) => null;
+
     Task<bool> WaitForExitAsync(
         ProcessIdentity process,
         TimeSpan timeout,
