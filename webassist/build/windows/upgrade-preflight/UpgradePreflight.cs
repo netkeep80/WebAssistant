@@ -108,11 +108,14 @@ internal sealed class UpgradePreflightOrchestrator
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            CaptureOwnedWorkers(
-                environment.SnapshotProcesses(),
-                serviceProcess,
-                allowedWorkerPaths,
-                capturedWorkers);
+            if (!serviceProcessExited)
+            {
+                CaptureOwnedWorkers(
+                    environment.SnapshotProcesses(),
+                    serviceProcess,
+                    allowedWorkerPaths,
+                    capturedWorkers);
+            }
 
             if (convergenceRemaining <= TimeSpan.Zero)
             {
