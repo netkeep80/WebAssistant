@@ -231,6 +231,8 @@ dotnet pack "$project" \
     --configuration Release \
     --no-build \
     --property:TargetFrameworks=net10.0 \
+    --property:DebugType=None \
+    --property:DebugSymbols=false \
     --property:PackageOutputPath="$output_dir"
 
 [[ -f "$package_path" ]] || {
