@@ -16,6 +16,8 @@ internal sealed class UpgradePreflightException : Exception
 
 internal sealed class UpgradePreflightOrchestrator
 {
+    private static readonly TimeSpan DefaultConvergenceSlice = TimeSpan.FromMilliseconds(100);
+
     private readonly IUpgradeEnvironment environment;
     private readonly UpgradePreflightPolicy policy;
 
@@ -93,27 +95,51 @@ internal sealed class UpgradePreflightOrchestrator
             allowedWorkerPaths,
             capturedWorkers);
 
-        if (service.State != ServiceState.Stopped)
+        var serviceStopped = service.State == ServiceState.Stopped;
+        var serviceProcessExited = !environment.IsAlive(serviceProcess);
+
+        if (!serviceStopped)
         {
             await environment.RequestServiceStopAsync(cancellationToken);
-            if (!await environment.WaitForServiceStoppedAsync(
-                    policy.ServiceStopTimeout,
-                    cancellationToken))
-            {
-                throw new UpgradePreflightException(
-                    "WebAssistant service did not reach Stopped within the preflight timeout.");
-            }
         }
 
-        while (environment.IsAlive(serviceProcess))
+        var convergenceRemaining = policy.ServiceStopTimeout;
+        while (!serviceStopped || !serviceProcessExited)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             CaptureOwnedWorkers(
                 environment.SnapshotProcesses(),
                 serviceProcess,
                 allowedWorkerPaths,
                 capturedWorkers);
 
-            await environment.DelayAsync(policy.PollInterval, cancellationToken);
+            if (convergenceRemaining <= TimeSpan.Zero)
+            {
+                throw new UpgradePreflightException(
+                    serviceStopped
+                        ? "WebAssistant service process did not exit within the preflight timeout."
+                        : "WebAssistant service did not reach Stopped within the preflight timeout.");
+            }
+
+            var convergenceSlice = GetConvergenceSlice(convergenceRemaining);
+            var serviceWait = serviceStopped
+                ? Task.FromResult(true)
+                : environment.WaitForServiceStoppedAsync(convergenceSlice, cancellationToken);
+            var processWait = serviceProcessExited
+                ? Task.FromResult(true)
+                : environment.WaitForExitAsync(serviceProcess, convergenceSlice, cancellationToken);
+
+            await Task.WhenAll(serviceWait, processWait);
+
+            serviceStopped |= serviceWait.Result;
+            serviceProcessExited |= processWait.Result;
+            if (!serviceProcessExited)
+            {
+                serviceProcessExited = !environment.IsAlive(serviceProcess);
+            }
+
+            convergenceRemaining -= convergenceSlice;
         }
 
         var serviceExitTimeUtc = environment.GetExitTimeUtc(serviceProcess);
@@ -160,6 +186,14 @@ internal sealed class UpgradePreflightOrchestrator
                     $"Owned NAPS2 worker pid={worker.ProcessId} remained alive after termination.");
             }
         }
+    }
+
+    private TimeSpan GetConvergenceSlice(TimeSpan remaining)
+    {
+        var requested = policy.PollInterval > TimeSpan.Zero
+            ? policy.PollInterval
+            : DefaultConvergenceSlice;
+        return requested < remaining ? requested : remaining;
     }
 
     private void CaptureOwnedWorkers(
