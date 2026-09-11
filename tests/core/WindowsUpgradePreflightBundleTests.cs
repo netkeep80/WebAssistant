@@ -70,7 +70,7 @@ public sealed class WindowsUpgradePreflightBundleTests
     }
 
     [Fact]
-    public void WindowsUpgradeAcceptance_UsesDurableHistoricalReleaseAssets()
+    public void WindowsUpgradeAcceptance_UsesExactStagedHistoricalTransport()
     {
         foreach (var workflowPath in new[]
                  {
@@ -80,12 +80,9 @@ public sealed class WindowsUpgradePreflightBundleTests
         {
             var workflow = ReadRequired(workflowPath);
 
-            Assert.Contains("555125536", workflow, StringComparison.Ordinal);
-            Assert.Contains("555125537", workflow, StringComparison.Ordinal);
-            Assert.Contains("555125538", workflow, StringComparison.Ordinal);
+            Assert.Contains("10155509111", workflow, StringComparison.Ordinal);
+            Assert.Contains("34485513571", workflow, StringComparison.Ordinal);
             Assert.Contains("run-upgrade-acceptance.ps1", workflow, StringComparison.Ordinal);
-            Assert.DoesNotContain("10155509111", workflow, StringComparison.Ordinal);
-            Assert.DoesNotContain("34485513571", workflow, StringComparison.Ordinal);
         }
     }
 
