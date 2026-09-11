@@ -4,73 +4,6 @@
   "enforcement": {
     "mode": "blocking"
   },
-  "integration": {
-    "workflows": [
-      {
-        "id": "repo-guard-pr-gate",
-        "kind": "github_actions",
-        "path": ".github/workflows/repo-guard.yml",
-        "role": "repo_guard_pr_gate",
-        "expect": {
-          "events": ["pull_request"],
-          "event_types": ["opened", "synchronize", "reopened", "ready_for_review"],
-          "action": {
-            "uses": "netkeep80/repo-guard",
-            "ref": "92432809fcddc290080beb51ba151e13a5761869",
-            "ref_pinning": "sha"
-          },
-          "mode": "check-pr",
-          "enforcement": "blocking",
-          "permissions": {
-            "contents": "read",
-            "pull-requests": "read",
-            "issues": "read"
-          },
-          "token_env": ["GH_TOKEN"],
-          "summary": true,
-          "disallow": ["continue_on_error", "manual_clone", "direct_temp_cli_execution"]
-        }
-      }
-    ],
-    "templates": [
-      {
-        "id": "pull-request-template",
-        "kind": "markdown",
-        "path": ".github/PULL_REQUEST_TEMPLATE.md",
-        "requires_change_intent_block": true,
-        "required_block_kind": "repo-guard-yaml",
-        "required_change_intent_fields": ["change_type", "scope", "anchors.affects"]
-      },
-      {
-        "id": "change-intent-issue-form",
-        "kind": "github_issue_form",
-        "path": ".github/ISSUE_TEMPLATE/change-intent.yml",
-        "requires_change_intent_block": true,
-        "optional": true,
-        "required_block_kind": "repo-guard-yaml",
-        "required_change_intent_fields": ["change_type", "scope", "anchors.affects"]
-      }
-    ],
-    "docs": [
-      {
-        "id": "readme-governance",
-        "kind": "markdown",
-        "path": "README.md",
-        "must_mention": ["repo-guard", "ChangeIntent", "GovernanceGrant", "webassist"],
-        "must_reference_files": [
-          "repo-policy.json",
-          ".github/PULL_REQUEST_TEMPLATE.md",
-          ".github/ISSUE_TEMPLATE/change-intent.yml",
-          "contracts/webassistant-contract-v0.1.json",
-          "contracts/webassistant-conformance-v0.1.json",
-          "contracts/webassistant-contract-v0.2.json",
-          "contracts/webassistant-conformance-v0.2.json",
-          "webassist/README.md"
-        ],
-        "must_mention_change_intent_fields": ["change_type", "scope", "anchors.affects"]
-      }
-    ]
-  },
   "contract_conformance": {
     "current": {
       "contract": {
@@ -102,7 +35,10 @@
         "projection": "array_items"
       }
     ],
-    "cochange": ["current.contract", "current.conformance"],
+    "cochange": [
+      "current.contract",
+      "current.conformance"
+    ],
     "control_paths": [
       "contracts/webassistant-contract-v*.json",
       "contracts/webassistant-conformance-v*.json"
@@ -119,6 +55,10 @@
         "path": "webassist/VERSION",
         "format": "plain_text",
         "snapshot": "head"
+      },
+      "repo-guard-workflow": {
+        "path": ".github/workflows/repo-guard.yml",
+        "format": "yaml"
       }
     },
     "rules": [
@@ -136,12 +76,79 @@
           "pointer": "",
           "type": "string"
         }
+      },
+      {
+        "id": "repo-guard-workflow-action-pin",
+        "kind": "scalar_equals_literal",
+        "source": {
+          "document": "repo-guard-workflow",
+          "pointer": "/jobs/repo-guard/steps/1/uses",
+          "type": "string"
+        },
+        "value": "netkeep80/repo-guard@e5b9063c9d1c9e05404ec32b78ca005c278839ce"
+      },
+      {
+        "id": "repo-guard-workflow-mode",
+        "kind": "scalar_equals_literal",
+        "source": {
+          "document": "repo-guard-workflow",
+          "pointer": "/jobs/repo-guard/steps/1/with/mode",
+          "type": "string"
+        },
+        "value": "check-pr"
+      },
+      {
+        "id": "repo-guard-workflow-enforcement",
+        "kind": "scalar_equals_literal",
+        "source": {
+          "document": "repo-guard-workflow",
+          "pointer": "/jobs/repo-guard/steps/1/with/enforcement",
+          "type": "string"
+        },
+        "value": "blocking"
+      },
+      {
+        "id": "repo-guard-workflow-permission-contents",
+        "kind": "scalar_equals_literal",
+        "source": {
+          "document": "repo-guard-workflow",
+          "pointer": "/permissions/contents",
+          "type": "string"
+        },
+        "value": "read"
+      },
+      {
+        "id": "repo-guard-workflow-permission-pull-requests",
+        "kind": "scalar_equals_literal",
+        "source": {
+          "document": "repo-guard-workflow",
+          "pointer": "/permissions/pull-requests",
+          "type": "string"
+        },
+        "value": "read"
+      },
+      {
+        "id": "repo-guard-workflow-permission-issues",
+        "kind": "scalar_equals_literal",
+        "source": {
+          "document": "repo-guard-workflow",
+          "pointer": "/permissions/issues",
+          "type": "string"
+        },
+        "value": "read"
       }
     ]
   },
   "paths": {
-    "forbidden": ["*.bak", "*.tmp", "*.orig"],
-    "canonical_docs": ["README.md", "webassist/README.md"],
+    "forbidden": [
+      "*.bak",
+      "*.tmp",
+      "*.orig"
+    ],
+    "canonical_docs": [
+      "README.md",
+      "webassist/README.md"
+    ],
     "governance_paths": [
       "repo-policy.json",
       "contracts/**",
@@ -176,8 +183,8 @@
       "forbid_regex": [
         "ScannerAgent",
         "tmk5scan",
-        "Tri\u0075mf",
-        "depfi\u006e\\.nnov\\.ru"
+        "Triumf",
+        "depfin\\.nnov\\.ru"
       ]
     }
   ],
