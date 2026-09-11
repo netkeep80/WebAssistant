@@ -170,7 +170,7 @@
       "kind": "positive",
       "assertion": "Diagnostic panel строит scanner mode/settings controls из canonical schema и projection выбранного scannerId, использует один Scan action и read-only scanner information без WIA/TWAIN/SANE/model-specific UI правил.",
       "requirements": ["WA-SCAN-006", "WA-SCAN-007"],
-      "evidence": ["webassist/src/WebAssistant/wwwroot/index.html", "tests/core/ScannerSettingsPanelContractTests.cs", "tests/core/ServicePanelScannerApiTests.cs", "webassist/docs/api.md"]
+      "evidence": ["tests/core/ScannerSettingsPanelContractTests.cs", "tests/core/ServicePanelScannerApiTests.cs", "webassist/docs/api.md"]
     },
     {
       "id": "WA-C-MULTIPAGE-001",
