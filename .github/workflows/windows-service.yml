@@ -170,6 +170,7 @@ jobs:
           repository: netkeep80/WebAssistant
           run-id: 34485513571
           path: ${{ runner.temp }}/webassistant-windows-historical
+          merge-multiple: true
 
       - name: Verify and exercise exact Windows installer bytes
         shell: pwsh
