@@ -24,6 +24,7 @@ param(
     [string]$InstallDirectory = "$env:ProgramFiles\WebAssistant"
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $serviceName = "WebAssistant"
 $historicalVersion = "0.3.21"
@@ -257,9 +258,9 @@ try {
     $candidateInstalled = $true
     $historicalInstalled = $false
 
-    foreach ($pid in @($oldServicePid) + $capturedWorkerPids) {
-        if (Get-Process -Id $pid -ErrorAction SilentlyContinue) {
-            throw "Old runtime process pid=$pid survived successful candidate upgrade."
+    foreach ($processId in @($oldServicePid) + $capturedWorkerPids) {
+        if (Get-Process -Id $processId -ErrorAction SilentlyContinue) {
+            throw "Old runtime process pid=$processId survived successful candidate upgrade."
         }
     }
 
