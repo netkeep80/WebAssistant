@@ -58,7 +58,7 @@ public sealed class IsolatedExportRootAcceptanceTests
         Assert.Contains("$WEBASSISTANT_EXPORT_ROOT/build/linux/package.sh", workflow, StringComparison.Ordinal);
         Assert.Contains("actions/upload-artifact@v4", workflow, StringComparison.Ordinal);
         Assert.Contains("actions/download-artifact@v4", workflow, StringComparison.Ordinal);
-        Assert.Contains("run-installer-acceptance.sh", consumer, StringComparison.Ordinal);
+        Assert.Contains("run-installer-acceptance.sh", workflow, StringComparison.Ordinal);
 
         Assert.DoesNotContain("PRODUCT_ROOT=", lifecycle, StringComparison.Ordinal);
         Assert.DoesNotContain("package_script=", lifecycle, StringComparison.Ordinal);
