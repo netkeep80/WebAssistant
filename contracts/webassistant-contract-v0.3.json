@@ -149,7 +149,7 @@
     {
       "id": "WA-DIST-002",
       "kind": "required",
-      "statement": "Canonical installer artifacts имеют имена WebAssistant-win-x64-<VERSION>.exe и WebAssistant-linux-x64-<VERSION>.zip, где <VERSION> равен exact content webassist/VERSION; filename VERSION, application metadata VERSION, installer/package metadata VERSION и release/tag VERSION обязаны совпадать, а mismatch блокирует install/release fail-closed."
+      "statement": "Canonical installer artifacts имеют имена <effective installer basename>-win-x64-<VERSION>.exe и <effective installer basename>-linux-x64-<VERSION>.zip. Public default effective installer basename равен WebAssistant. <VERSION> равен exact content webassist/VERSION и не может быть переопределён product metadata; filename VERSION, application metadata VERSION, installer/package metadata VERSION и release/tag VERSION обязаны совпадать, а mismatch блокирует install/release fail-closed."
     },
     {
       "id": "WA-DIST-003",
@@ -162,19 +162,24 @@
       "statement": "Установка canonical installer artifact на target workstation не требует заранее установленного .NET Runtime, .NET SDK, NuGet, compiler или иных build tools. Это требование target self-containment не означает offline build environment."
     },
     {
+      "id": "WA-DIST-005",
+      "kind": "required",
+      "statement": "Windows и Linux canonical producers используют один repository-owned closed build-time product metadata contract. Public defaults находятся внутри webassist, optional override имеет exact path webassist/src/WebAssistant/product-metadata.json рядом с appsettings.json, отсутствует в public GitHub tree и игнорируется только development-repository root .gitignore так, чтобы exported webassist/.gitignore не запрещал downstream GitLab tracking. Override может менять только applicationName, installerBaseName, fileDescription, companyName и copyright; VERSION и technical executable/service/upgrade identifiers не являются branding metadata. Malformed schema, unknown field, version-like override или invalid portable installer basename приводят к fail-closed до формирования accepted artifact."
+    },
+    {
       "id": "WA-WIN-INSTALL-001",
       "kind": "required",
-      "statement": "Windows canonical artifact WebAssistant-win-x64-<VERSION>.exe обеспечивает elevation/UAC, machine-wide установку в Program Files, self-contained payload, регистрацию и automatic start Windows Service, Installed Apps/Programs and Features registration с DisplayVersion == webassist/VERSION и standard uninstall, удаляющий service, registration и product files."
+      "statement": "Windows canonical artifact <effective installer basename>-win-x64-<VERSION>.exe обеспечивает elevation/UAC, machine-wide установку в Program Files, self-contained payload, регистрацию и automatic start Windows Service, Installed Apps/Programs and Features registration с DisplayVersion == webassist/VERSION и standard uninstall. .NET file/product metadata и WiX/ARP user-visible display identity используют effective product metadata, при этом WebAssistant.exe, technical service name WebAssistant и stable WiX lifecycle identity не переименовываются branding override."
     },
     {
       "id": "WA-ALT-INSTALL-001",
       "kind": "required",
-      "statement": "ALT Linux 10.1 canonical artifact WebAssistant-linux-x64-<VERSION>.zip после распаковки содержит self-contained application, appsettings.json, VERSION, install.sh, uninstall.sh, systemd unit и необходимые product files; sudo ./install.sh устанавливает и запускает systemd system service. Distro-owned runtime dependencies могут устанавливаться штатным apt-rpm и не обязаны vendoring'иться в ZIP."
+      "statement": "ALT Linux 10.1 canonical artifact <effective installer basename>-linux-x64-<VERSION>.zip после распаковки содержит self-contained application, appsettings.json, VERSION, install.sh, uninstall.sh, systemd unit и необходимые product files; sudo ./install.sh устанавливает и запускает systemd system service. Published .NET metadata и human-visible service description используют ту же effective product identity, а executable WebAssistant, unit webassist.service и lifecycle paths остаются technical identifiers. Distro-owned runtime dependencies могут устанавливаться штатным apt-rpm и не обязаны vendoring'иться в ZIP."
     },
     {
       "id": "WA-ARTIFACT-001",
       "kind": "required",
-      "statement": "Каждый canonical producer строит final installer ровно один раз и выдаёт SHA-256 и provenance, однозначно идентифицирующие artifact bytes. Lifecycle consumers сначала проверяют VERSION/hash/provenance, затем устанавливают exact artifact и не выполняют dotnet publish, package.bat, package.sh или payload mutation после checksum."
+      "statement": "Каждый canonical producer строит final branded installer ровно один раз и выдаёт SHA-256 и provenance, однозначно идентифицирующие artifact bytes. Provenance фиксирует metadataMode defaults|override, effective applicationName, effective installerBaseName, SHA-256 выбранного metadata input и SHA-256 canonical effective metadata. Product metadata применяется до artifact checksum/provenance freeze; post-build rename/patch запрещён. Lifecycle consumers сначала проверяют VERSION/hash/provenance, затем устанавливают exact artifact и не выполняют dotnet publish, package.bat, package.sh или payload mutation после checksum."
     },
     {
       "id": "WA-RELEASE-001",
