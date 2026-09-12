@@ -1,8 +1,8 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package
       Id="netkeep80.WebAssistant"
-      Name="WebAssistant"
-      Manufacturer="WebAssistant"
+      Name="$(var.ProductDisplayName)"
+      Manufacturer="$(var.ProductCompanyName)"
       Version="$(var.ProductVersion)"
       Scope="perMachine">
 
@@ -29,8 +29,8 @@
       <ServiceInstall
           Id="WebAssistantServiceInstall"
           Name="WebAssistant"
-          DisplayName="WebAssistant"
-          Description="WebAssistant local service"
+          DisplayName="$(var.ProductDisplayName)"
+          Description="$(var.ProductFileDescription)"
           Type="ownProcess"
           Start="auto"
           ErrorControl="normal" />
