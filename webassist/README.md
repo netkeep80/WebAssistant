@@ -118,6 +118,8 @@ build\windows\package.bat
 
 При public defaults `<installerBaseName>` равен `WebAssistant`. Producer собирает self-contained `win-x64` payload, внутренний MSI и финальный WiX 7 Burn EXE. Внутренний MSI является build intermediate; пользовательским installation artifact является только versioned EXE.
 
+Интерактивный Windows installer по умолчанию использует repository-owned русскую локализацию `build/windows/installer/localization/ru-RU.wxl`. Единственный hand-authored источник графической identity — `build/windows/installer/branding/webassistant-icon.svg`. Во время canonical packaging repository-owned generator воспроизводимо строит из него ICO с кадрами 16×16, 32×32, 48×48 и 256×256 для bundle EXE / Installed Apps, а также PNG 64×64 для WixStandardBootstrapperApplication. Локальный графический редактор или внешний machine-local converter для сборки не требуется. `product-metadata.json` управляет только текстовой product/display identity; `WebAssistant.exe`, Windows Service `WebAssistant`, `netkeep80.WebAssistant.Bundle` и `netkeep80.WebAssistant` остаются стабильными technical lifecycle identities.
+
 Для build machine требуется .NET SDK 10 и WiX toolchain, управляемый repository-owned installer projects. Target workstation заранее установленный .NET Runtime/SDK не требуется.
 
 ### Linux
