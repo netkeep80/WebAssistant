@@ -51,7 +51,9 @@ The current bundle is WiX Toolset 7.0.0 with `WixStandardBootstrapperApplication
 
 The pinned WiX 7.0.0 `HyperlinkTheme.wxl` defines the user-visible localization IDs used by the current theme, including install, cancel, options, progress, modify, repair, uninstall, success, failure, restart, and Files In Use strings. The design uses those IDs as the closed localization surface for this transaction.
 
-WixStdBA also exposes stable presentation hooks for a localization file and logo artwork, while the bundle itself supports a bundle icon. These existing hooks are preferred over a custom BA because they preserve the standard WiX interaction model and #191 lifecycle behavior.
+The pinned WiX 7.0.0 `HyperlinkTheme.xml` renders `logo.png` in a `64x64` `ImageControl`. Therefore the canonical WixStdBA raster logo output for #192 is exactly `64x64` pixels; no later layout decision is required.
+
+WixStdBA exposes `LocalizationFile` and `LogoFile` presentation hooks, while the bundle exposes its icon surface. These existing hooks are preferred over a custom BA because they preserve the standard WiX interaction model and #191 lifecycle behavior.
 
 ## Chosen approach
 
@@ -171,8 +173,10 @@ webassistant-icon.ico
   - 256x256
 
 webassistant-logo.png
-  - one fixed installer-UI size chosen to fit WixStdBA without theme replacement
+  - 64x64
 ```
+
+The `64x64` raster size matches the pinned WiX 7.0.0 `HyperlinkTheme.xml` `ImageControl` exactly.
 
 The output is written under the producer's isolated staging directory and is removed with other staging artifacts after packaging.
 
@@ -181,7 +185,8 @@ The build must fail closed if:
 - the SVG is missing;
 - rendering fails;
 - the ICO does not contain all required dimensions;
-- generated outputs are missing or empty.
+- generated outputs are missing or empty;
+- the generated WixStdBA PNG is not exactly 64x64.
 
 No machine-local ImageMagick, Inkscape, Photoshop, or manual conversion step is part of canonical packaging.
 
@@ -193,7 +198,7 @@ Required mapping:
 
 ```text
 ru-RU.wxl
-  -> WixStdBA localization input
+  -> WixStandardBootstrapperApplication LocalizationFile
 
 webassistant-icon.ico
   -> Bundle icon / final installer EXE icon
@@ -203,7 +208,7 @@ webassistant-logo.png
   -> WixStandardBootstrapperApplication LogoFile
 ```
 
-The existing `Theme="hyperlinkLicense"` is retained unless exact WiX 7 build evidence proves a different standard theme is required solely to support localization. A custom theme is not authorized by this design.
+The existing `Theme="hyperlinkLicense"` is retained. A custom theme or custom BA is not authorized by this design; if pinned WiX 7 build evidence unexpectedly proves either is technically required, implementation stops and returns to design review rather than silently expanding scope.
 
 No icon/localization change may change:
 
@@ -225,7 +230,7 @@ resolve VERSION
 resolve #190 effective product metadata
 publish UpgradePreflight
 publish WebAssistant payload
-render SVG -> ICO + PNG into isolated staging
+render SVG -> ICO + 64x64 PNG into isolated staging
 build internal MSI
 build Burn bundle with:
   - resolved textual product metadata
@@ -271,7 +276,7 @@ The generator must be exercised against the canonical SVG and prove:
 
 - deterministic output for identical input;
 - ICO contains 16, 32, 48, and 256 px images;
-- PNG output has the exact configured dimensions;
+- PNG output is exactly 64x64;
 - missing/invalid SVG fails closed.
 
 Pixel-perfect visual similarity is not a unit-test requirement. Human visual review is required for readability and concept quality.
@@ -281,6 +286,10 @@ Pixel-perfect visual similarity is not a unit-test requirement. Human visual rev
 The existing canonical Windows producer must build the actual bundle on Windows using the new presentation resources.
 
 Existing #191 lifecycle acceptance remains mandatory and must stay GREEN, including historical `v0.3.21 -> candidate` live-worker upgrade, install, repair/uninstall paths already exercised by the harness, immutable artifact consumption, and no Files In Use regression.
+
+Before the VERSION transition, functional GREEN may include targeted build/tests on the current branch VERSION. Those results are development evidence only and are not final release evidence.
+
+After the single VERSION transition, all final artifact/lifecycle evidence must be regenerated on the exact final head and final VERSION. No pre-bump installer bytes may satisfy final #192 acceptance.
 
 The final exact-head gate must include:
 
@@ -311,11 +320,12 @@ The sequence is:
 
 ```text
 presentation tests RED
--> localization + icon generator + WiX integration GREEN
--> exact artifact/lifecycle GREEN
--> one VERSION transition
--> final exact-head Ready CI
--> visual/manual evidence
+-> localization + icon generator + WiX integration functional GREEN
+-> targeted pre-bump build/lifecycle checks as useful development evidence
+-> exactly one VERSION transition
+-> final exact-head canonical Windows artifact + lifecycle GREEN
+-> final Ready CI / ci-required GREEN
+-> real Windows visual evidence against the final-version artifact
 -> merge
 ```
 
@@ -345,6 +355,23 @@ webassist/VERSION, exactly once after functional GREEN
 
 Exact file names for generated staging outputs are implementation details but must be stable within the producer and covered by tests.
 
+## Pinned upstream references
+
+Implementation and tests should reason against the pinned WiX 7.0.0 sources that match the repository dependency, not an arbitrary newer WiX version:
+
+```text
+wixtoolset/wix@v7.0.0
+src/ext/Bal/stdbas/Resources/HyperlinkTheme.xml
+src/ext/Bal/stdbas/Resources/HyperlinkTheme.wxl
+```
+
+The current repository pins:
+
+```text
+WixToolset.Sdk/7.0.0
+WixToolset.BootstrapperApplications.wixext 7.0.0
+```
+
 ## Acceptance mapping
 
 #192 is complete only when all of the following are proven:
@@ -357,11 +384,11 @@ Exact file names for generated staging outputs are implementation details but mu
 - deterministic ICO includes 16/32/48/256;
 - canonical installer EXE displays that icon;
 - Installed Apps / ARP uses the same visual identity where supported by Burn;
-- WixStdBA uses a graphical asset derived from the same SVG authority;
+- WixStdBA uses a 64x64 graphical asset derived from the same SVG authority;
 - small-size icon is visually recognizable;
 - #191 deterministic upgrade acceptance remains GREEN;
 - #190 VERSION/filename/provenance rules remain intact;
 - technical identifiers remain unchanged;
 - no scanner/API behavior changes;
-- exact-head CI is GREEN;
+- final-version exact-head CI is GREEN;
 - real Windows screenshots are attached as final evidence.
