@@ -45,7 +45,7 @@ src/WebAssistant/product-metadata.json
 }
 ```
 
-Все поля кроме `schema` опциональны и наследуют public defaults. Неизвестные поля, другая schema, пустые/некорректные значения и непереносимый `installerBaseName` приводят к fail-closed build до создания canonical artifact. Поля `version`, service name, executable name, install paths и WiX lifecycle identifiers в metadata contract отсутствуют намеренно.
+Все поля кроме `schema` опциональны и наследуют public defaults. Неизвестные поля, другая schema, пустые/некорректные значения и непереносимый `installerBaseName` приводят к fail-closed build до создания canonical artifact. Поля `applicationName`, `fileDescription` и `companyName` дополнительно не могут содержать `;`, потому что эти значения передаются в WiX через semicolon-delimited `DefineConstants`; resolver отклоняет такой input до publish/package. Поля `version`, service name, executable name, install paths и WiX lifecycle identifiers в metadata contract отсутствуют намеренно.
 
 Public GitHub repository специально игнорирует `webassist/src/WebAssistant/product-metadata.json` через development-root `.gitignore`. При copy-export содержимого `webassist` это правило не переносится: product-local `.gitignore` не запрещает этот path. Поэтому downstream GitLab repository может track-ить собственный `src/WebAssistant/product-metadata.json` и использовать другую product identity без изменения producer scripts. Различаются данные, а не packaging code.
 
