@@ -117,9 +117,9 @@ public sealed class ProductMetadataContractTests
         File.WriteAllText(overridePath, """
         {
           "schema": "webassistant-product-metadata/v1",
-          "applicationName": "Triumf Web Assistant",
-          "installerBaseName": "TriumfWebAssistant",
-          "companyName": "Triumf"
+          "applicationName": "Custom Web Assistant",
+          "installerBaseName": "CustomWebAssistant",
+          "companyName": "Example Vendor"
         }
         """, new UTF8Encoding(false));
 
@@ -129,10 +129,10 @@ public sealed class ProductMetadataContractTests
 
         var values = ReadEnvironmentFile(output);
         Assert.Equal("override", values["metadataMode"]);
-        Assert.Equal("Triumf Web Assistant", Decode(values["applicationNameBase64"]));
-        Assert.Equal("TriumfWebAssistant", Decode(values["installerBaseNameBase64"]));
+        Assert.Equal("Custom Web Assistant", Decode(values["applicationNameBase64"]));
+        Assert.Equal("CustomWebAssistant", Decode(values["installerBaseNameBase64"]));
         Assert.Equal("WebAssistant", Decode(values["fileDescriptionBase64"]));
-        Assert.Equal("Triumf", Decode(values["companyNameBase64"]));
+        Assert.Equal("Example Vendor", Decode(values["companyNameBase64"]));
         Assert.Equal("Copyright © WebAssistant", Decode(values["copyrightBase64"]));
         Assert.Matches("^[0-9a-f]{64}$", values["metadataInputSha256"]);
         Assert.Matches("^[0-9a-f]{64}$", values["effectiveMetadataSha256"]);
