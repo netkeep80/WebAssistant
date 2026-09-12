@@ -142,6 +142,9 @@ public sealed class ProductMetadataContractTests
     [InlineData("{\"schema\":\"webassistant-product-metadata/v1\",\"version\":\"9.9.9\"}")]
     [InlineData("{\"schema\":\"webassistant-product-metadata/v1\",\"installerBaseName\":\"../bad\"}")]
     [InlineData("{\"schema\":\"webassistant-product-metadata/v1\",\"unknown\":\"x\"}")]
+    [InlineData("{\"schema\":\"webassistant-product-metadata/v1\",\"applicationName\":\"Custom;Injected=1\"}")]
+    [InlineData("{\"schema\":\"webassistant-product-metadata/v1\",\"fileDescription\":\"Custom;Injected=1\"}")]
+    [InlineData("{\"schema\":\"webassistant-product-metadata/v1\",\"companyName\":\"Custom;Injected=1\"}")]
     public void Resolver_InvalidOverride_FailsClosedWithoutOutput(string invalidOverride)
     {
         using var temp = new TemporaryDirectory();
