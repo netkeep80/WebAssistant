@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>Package</OutputType>
     <OutputName>WebAssistant.Package</OutputName>
-    <DefineConstants>$(DefineConstants);PayloadRoot=$(PayloadRoot);ProductVersion=$(ProductVersion)</DefineConstants>
+    <DefineConstants>$(DefineConstants);PayloadRoot=$(PayloadRoot);ProductVersion=$(ProductVersion);ProductDisplayName=$(ProductDisplayName);ProductCompanyName=$(ProductCompanyName);ProductFileDescription=$(ProductFileDescription)</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="Bundle.wxs" />
