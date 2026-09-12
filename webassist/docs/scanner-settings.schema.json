@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema": "webassistant-scanner-settings/v1",
+  "description": "Каноническая нормализованная модель scanner settings WebAssistant. Конкретный scanner endpoint публикует только реально поддерживаемую проекцию.",
+  "fields": {
+    "duplex": {
+      "type": "boolean",
+      "title": "Двустороннее сканирование",
+      "preferredDefault": false,
+      "requestLocation": "settings.duplex",
+      "constraint": "Допустимо только при source=feeder."
+    },
+    "dpi": {
+      "type": "integer",
+      "title": "Разрешение",
+      "unit": "dpi",
+      "minimum": 1,
+      "preferredDefault": 100,
+      "requestLocation": "settings.dpi"
+    },
+    "colorMode": {
+      "type": "string",
+      "title": "Цвет",
+      "values": [
+        "color",
+        "grayscale",
+        "blackAndWhite"
+      ],
+      "preferredDefault": "color",
+      "requestLocation": "settings.colorMode"
+    },
+    "paperSize": {
+      "type": "string",
+      "title": "Размер бумаги",
+      "values": [
+        "letter",
+        "legal",
+        "a5",
+        "a4",
+        "a3",
+        "b5",
+        "b4"
+      ],
+      "preferredDefault": "letter",
+      "requestLocation": "settings.paperSize"
+    }
+  },
+  "validation": {
+    "malformedOrUnknownValueStatus": 400,
+    "validButUnsupportedBySelectedModeStatus": 422,
+    "preferencesOwnedByCaller": true
+  }
+}

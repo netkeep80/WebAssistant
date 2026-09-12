@@ -87,7 +87,8 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
                         paperSourceCaps?.SupportsFlatbed ?? false,
                         paperSourceCaps?.SupportsFeeder ?? false,
                         paperSourceCaps?.SupportsDuplex ?? false,
-                        MapFeederPaperState(paperSourceCaps?.FeederHasPaper)));
+                        MapFeederPaperState(paperSourceCaps?.FeederHasPaper),
+                        Naps2ScannerCapabilityMapper.From(caps)));
                 }
 
                 scanners.AddRange(normalized);
@@ -111,11 +112,18 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
     }
 
     public Task<Stream> ScanAsync(string scannerId, CancellationToken cancellationToken = default) =>
-        ScanAsync(scannerId, ScanSource.Glass, cancellationToken);
+        ScanAsync(scannerId, ScanSource.Glass, ScannerEffectiveSettings.Unspecified, cancellationToken);
+
+    public Task<Stream> ScanAsync(
+        string scannerId,
+        ScanSource source,
+        CancellationToken cancellationToken = default) =>
+        ScanAsync(scannerId, source, ScannerEffectiveSettings.Unspecified, cancellationToken);
 
     public async Task<Stream> ScanAsync(
         string scannerId,
         ScanSource source,
+        ScannerEffectiveSettings settings,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(scannerId);
@@ -155,6 +163,7 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             Device = matches[0],
             PaperSource = MapPaperSource(source)
         };
+        Naps2ScannerCapabilityMapper.Apply(options, settings);
 
         var images = new List<ProcessedImage>();
         try

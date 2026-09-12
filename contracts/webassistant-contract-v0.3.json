@@ -87,6 +87,16 @@
       "statement": "Scanner operation сама не выполняет edit/merge/split PDF, OCR/annotation/watermark/deskew/semantic document transformation, signing/encryption, business/backend upload и не требует business authentication или per-user business profile. Это ограничения scanner capability, а не глобальные запреты WebAssistant; независимые capabilities такого типа требуют отдельного contract/conformance change."
     },
     {
+      "id": "WA-SCAN-006",
+      "kind": "required",
+      "statement": "Scanner settings имеют repository-owned нормализованный machine-readable schema и scanner-specific capability projection. GET /v1/scanner-settings/schema публикует portable vocabulary, а GET /v1/scanners/{scannerId}/settings возвращает фактические source/mode-specific возможности endpoint без WIA/TWAIN/SANE типов. Первый обязательный normalized набор — settings.dpi, settings.colorMode=color|grayscale|blackAndWhite и settings.paperSize=letter|legal|a5|a4|a3|b5|b4 поверх существующего settings.duplex. Valid normalized value, не поддерживаемый выбранным mode, отклоняется до physical acquisition; malformed/unknown value также отклоняется до acquisition. Для source=auto capability projection допускает только значения, безопасные для каждого concrete source, который auto может выбрать. Caller владеет persistence выбранных значений."
+    },
+    {
+      "id": "WA-SCAN-007",
+      "kind": "required",
+      "statement": "Встроенная diagnostic/service panel является generic browser client scanner API: mode и normalized settings строятся из canonical scanner-settings schema и capability projection выбранного scannerId, без backend/model-specific hardcoding. Панель предоставляет один mode selector, одну action Сканировать, read-only информацию о scanner endpoint и capability-driven controls для accepted normalized settings."
+    },
+    {
       "id": "WA-DIAG-001",
       "kind": "required",
       "statement": "Versioned diagnostic API возвращает только безопасную runtime-информацию и собственные суточные журналы WebAssistant; произвольный путь к файлу не принимается."

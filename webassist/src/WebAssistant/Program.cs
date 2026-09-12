@@ -84,6 +84,19 @@ api.MapGet("/scanners", async (
         loggerFactory.CreateLogger("WebAssistant.Http.Scanners"),
         cancellationToken);
 });
+api.MapGet("/scanner-settings/schema", ScannerSettingsEndpointHandlers.Schema);
+api.MapGet("/scanners/{scannerId}/settings", async (
+    string scannerId,
+    IServiceProvider services,
+    ILoggerFactory loggerFactory,
+    CancellationToken cancellationToken) =>
+{
+    return await ScannerSettingsEndpointHandlers.GetAsync(
+        services.GetService<IScanAdapter>(),
+        scannerId,
+        loggerFactory.CreateLogger("WebAssistant.Http.ScannerSettings"),
+        cancellationToken);
+});
 api.MapPost("/scan", async (
     HttpRequest request,
     ScanCoordinator coordinator,

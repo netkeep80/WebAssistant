@@ -4,7 +4,7 @@
 
 Default listener: `http://127.0.0.1:17654`. Listener привязан только к loopback.
 
-Windows runtime lifecycle не меняет HTTP contract: scanner adapter остаётся lazy, а если scanner runtime был материализован, остановка службы завершает shutdown принадлежащих WebAssistant `NAPS2.Worker` до завершения service stop. Routes, request/response shapes и status semantics от этого не меняются.
+Windows runtime lifecycle не меняет HTTP contract: scanner adapter остаётся lazy, а если scanner runtime был материализован, остановка службы завершает shutdown принадлежащих WebAssistant `NAPS2.Worker` до завершения service stop.
 
 ## Health
 
@@ -65,6 +65,105 @@ Backend semantics:
 
 Native identity и внутреннее состояние наличия бумаги наружу не публикуются.
 
+## Нормализованные настройки сканера
+
+Canonical machine-readable schema:
+
+`GET /v1/scanner-settings/schema`
+
+Успех: `200 OK`, `Content-Type: application/json`. Endpoint возвращает repository-owned schema `webassist/docs/scanner-settings.schema.json`. Это канонический список portable scanner settings, их типов, enum vocabulary, units и preferred defaults; backend-native WIA/TWAIN/SANE объекты наружу не публикуются.
+
+Первый обязательный normalized набор:
+
+| Поле | Тип | Значения / units | Preferred default |
+| --- | --- | --- | --- |
+| `settings.duplex` | boolean | `true`, `false` | `false` |
+| `settings.dpi` | integer | положительное целое, unit `dpi` | `100` |
+| `settings.colorMode` | string | `color`, `grayscale`, `blackAndWhite` | `color` |
+| `settings.paperSize` | string | `letter`, `legal`, `a5`, `a4`, `a3`, `b5`, `b4` | `letter` |
+
+Preferred default не означает, что каждое устройство обязано его поддерживать. Для concrete scanner/mode WebAssistant выбирает preferred default, если он поддерживается; иначе детерминированно выбирает первое поддерживаемое значение в canonical order. Если backend не предоставил доказуемый набор значений для optional setting, WebAssistant не выдумывает capability.
+
+### Возможности выбранного scanner endpoint
+
+`GET /v1/scanners/{scannerId}/settings`
+
+Endpoint возвращает read-only snapshot нормализованных возможностей выбранного scanner endpoint. Он не читает и не меняет пользовательские preferences.
+
+Пример:
+
+```json
+{
+  "scannerId": "wa1-wia-...",
+  "modes": [
+    {
+      "mode": "auto",
+      "source": "auto",
+      "duplex": false,
+      "settings": {
+        "dpi": {
+          "supported": true,
+          "values": [300],
+          "unit": "dpi",
+          "default": 300
+        },
+        "colorMode": {
+          "supported": true,
+          "values": ["grayscale"],
+          "default": "grayscale"
+        },
+        "paperSize": {
+          "supported": true,
+          "values": ["a4"],
+          "default": "a4"
+        }
+      }
+    },
+    {
+      "mode": "flatbed",
+      "source": "flatbed",
+      "duplex": false,
+      "settings": {
+        "dpi": {
+          "supported": true,
+          "values": [100, 300, 600],
+          "unit": "dpi",
+          "default": 100
+        },
+        "colorMode": {
+          "supported": true,
+          "values": ["color", "grayscale"],
+          "default": "color"
+        },
+        "paperSize": {
+          "supported": true,
+          "values": ["letter", "a4"],
+          "default": "letter"
+        }
+      }
+    }
+  ]
+}
+```
+
+Public mode vocabulary:
+
+- `auto` → request `source=auto`, `duplex=false`;
+- `flatbed` → request `source=flatbed`, `duplex=false`;
+- `feeder` → request `source=feeder`, `duplex=false`;
+- `feederDuplex` → request `source=feeder`, `duplex=true`.
+
+Modes, которых concrete endpoint не поддерживает, отсутствуют.
+
+Capabilities являются source-specific. Поэтому значения flatbed, feeder и duplex могут различаться. Для dual-source `auto` WebAssistant публикует только пересечение значений, которые допустимы для каждого concrete source, который auto реально может выбрать. Например flatbed `[100,300,600]` и feeder `[200,300]` дают auto `[300]`. Это гарантирует, что настройка, выбранная до проверки наличия бумаги, останется допустимой после выбора feeder или flatbed.
+
+Ошибки endpoint:
+
+- `400` — синтаксически неверный `scannerId`;
+- `404` — корректный `scannerId` отсутствует после успешного перечисления его backend;
+- `503` — scanner module/discovery либо backend указанного scannerId недоступен;
+- `502` — непредвиденная ошибка capability discovery boundary.
+
 ## Сканирование
 
 Единственный acquisition endpoint:
@@ -78,7 +177,10 @@ Request обязан иметь `Content-Type: application/json` и содерж
   "scannerId": "wa1-wia-...",
   "source": "auto",
   "settings": {
-    "duplex": false
+    "duplex": false,
+    "dpi": 300,
+    "colorMode": "grayscale",
+    "paperSize": "a4"
   }
 }
 ```
@@ -87,7 +189,14 @@ Request обязан иметь `Content-Type: application/json` и содерж
 
 - `scannerId` — обязательный непустой stable identifier из `GET /v1/scanners`;
 - `source` — опционально, только exact lowercase `auto`, `flatbed` или `feeder`; при отсутствии используется `auto`;
-- `settings.duplex` — опциональный boolean; при отсутствии используется `false`.
+- `settings.duplex` — опциональный boolean; при отсутствии используется `false`;
+- `settings.dpi` — опциональный положительный integer DPI;
+- `settings.colorMode` — опционально, exact `color`, `grayscale` или `blackAndWhite`;
+- `settings.paperSize` — опционально, exact `letter`, `legal`, `a5`, `a4`, `a3`, `b5` или `b4`.
+
+Если `dpi`, `colorMode` или `paperSize` не переданы, применяется effective default выбранного public mode из той же capability/default policy, которая используется `GET /v1/scanners/{scannerId}/settings`. Если backend не предоставил доказуемые normalized values для optional setting и caller его не передал, WebAssistant сохраняет backend default вместо изобретения значения.
+
+Caller обязан сохранять пользовательские scanner preferences у себя и передавать их в каждом acquisition request. WebAssistant не хранит mutable per-user/per-scanner profile.
 
 Source-specific routes `/v1/scan/feeder` и `/v1/scan/duplex` отсутствуют. `scannerId` не передаётся через query parameter и автоматический выбор scanner endpoint по количеству найденных устройств не выполняется.
 
@@ -120,12 +229,20 @@ Source-specific routes `/v1/scan/feeder` и `/v1/scan/duplex` отсутству
 
 Неподдерживаемый явно запрошенный flatbed/feeder также возвращает `422` до acquisition.
 
+### Валидация settings
+
+Валидация выполняется до physical acquisition:
+
+- неизвестное имя `colorMode` или `paperSize`, неположительный `dpi` и другая syntactic/schema ошибка → `400`;
+- syntactically valid normalized value, которого нет в capability projection выбранного mode → `422`;
+- invalid/unsupported request не запускает scanner acquisition.
+
 ### Ошибки acquisition
 
-- `400` — отсутствующий/пустой/синтаксически неверный `scannerId`, malformed JSON, неверный `source` или недопустимое сочетание `source`/`duplex`;
+- `400` — отсутствующий/пустой/синтаксически неверный `scannerId`, malformed JSON, неверный `source`, неверное сочетание `source`/`duplex` либо malformed normalized setting;
 - `404` — синтаксически корректный `scannerId` отсутствует после успешного перечисления указанного им backend;
 - `409` — другой physical scanner acquisition уже выполняется;
-- `422` — запрошенный source или duplex не поддерживается endpoint;
+- `422` — запрошенный source, duplex или valid normalized setting не поддерживается выбранным endpoint/mode;
 - `502` — ошибка scanner acquisition либо scanner backend не вернул читаемый PDF;
 - `503` — scanner module/discovery недоступен либо backend, на который указывает корректный `scannerId`, в данный момент не удалось перечислить.
 
@@ -137,9 +254,23 @@ Base64, JSON document envelope и ZIP/raster envelope не используют�
 
 Scanner operation сама не выполняет edit/merge/split PDF, OCR/annotation/watermark/deskew или другую semantic document transformation, signing/encryption, business/backend upload и не требует business authentication или per-user business profile. Это граница scanner capability; независимые capabilities WebAssistant имеют отдельную семантику.
 
-Дополнительные scanner settings, включая DPI, color mode и paper size, относятся к отдельному развитию API и не входят в текущий scanner request contract.
+## Диагностическая панель
 
-## Диагностика
+Service panel `/` является browser-level клиентом того же публичного scanner API. Для scanner controls она загружает canonical `GET /v1/scanner-settings/schema` и capability projection выбранного `scannerId`, после чего формирует доступные mode/settings controls без WIA/TWAIN/SANE и scanner-model-specific правил.
+
+Панель предоставляет:
+
+- выбор scanner endpoint;
+- одну кнопку `Информация о сканере` с read-only discovery/capability данными;
+- один mode selector (`Авто`, `Стекло`, `ADF`, `ADF duplex`) из реально доступных modes;
+- capability-driven controls для accepted normalized settings;
+- одну action `Сканировать`;
+- просмотр/открытие/сохранение полученного PDF;
+- runtime status и собственный журнал WebAssistant.
+
+Панель не хранит пользовательские scanner preferences как профиль.
+
+## Диагностика API
 
 `GET /v1/diag/info`
 

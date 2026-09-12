@@ -19,4 +19,11 @@ internal interface IScanAdapter
 
         return ScanAsync(scannerId, cancellationToken);
     }
+
+    Task<Stream> ScanAsync(
+        string scannerId,
+        ScanSource source,
+        ScannerEffectiveSettings settings,
+        CancellationToken cancellationToken = default) =>
+        ScanAsync(scannerId, source, cancellationToken);
 }

@@ -51,6 +51,14 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
                 title: "Некорректное сочетание source и duplex");
         }
 
+        if (!TryParseRequestedSettings(request.Settings, out var requestedSettings))
+        {
+            logger.LogWarning("Получены некорректные scanner settings");
+            return Results.Problem(
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Некорректные параметры сканирования");
+        }
+
         if (adapter is null)
         {
             logger.LogError("Модуль сканирования недоступен для текущей платформы");
@@ -134,6 +142,30 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
                     title: "Режим сканирования не поддерживается");
             }
 
+            ScannerEffectiveSettings effectiveSettings;
+            try
+            {
+                var requestMode = ScannerCapabilityProjection.ResolveMode(requestedSource, duplex);
+                effectiveSettings = ScannerCapabilityProjection.ResolveEffectiveSettings(
+                    selected,
+                    requestMode,
+                    requestedSettings);
+            }
+            catch (ArgumentException exception)
+            {
+                logger.LogWarning(exception, "Некорректные normalized scanner settings");
+                return Results.Problem(
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Некорректные параметры сканирования");
+            }
+            catch (NotSupportedException exception)
+            {
+                logger.LogWarning(exception, "Scanner settings не поддерживаются выбранным режимом");
+                return Results.Problem(
+                    statusCode: StatusCodes.Status422UnprocessableEntity,
+                    title: "Настройки сканирования не поддерживаются");
+            }
+
             var safeScannerId = SafeLogText(selected.Id);
             var safeScannerName = SafeLogText(selected.Name);
             logger.LogInformation(
@@ -145,7 +177,11 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
             Stream pdf;
             try
             {
-                pdf = await adapter.ScanAsync(selected.Id, source, cancellationToken);
+                pdf = await adapter.ScanAsync(
+                    selected.Id,
+                    source,
+                    effectiveSettings,
+                    cancellationToken);
             }
             catch (DeviceFeederEmptyException) when (
                 requestedSource == RequestedScanSource.Auto &&
@@ -156,7 +192,11 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
                     "Автовыбор feeder оказался пустым; повторное сканирование со стекла scannerId={ScannerId} scannerName={ScannerName}",
                     safeScannerId,
                     safeScannerName);
-                pdf = await adapter.ScanAsync(selected.Id, ScanSource.Glass, cancellationToken);
+                pdf = await adapter.ScanAsync(
+                    selected.Id,
+                    ScanSource.Glass,
+                    effectiveSettings,
+                    cancellationToken);
             }
 
             if (!pdf.CanRead || (pdf.CanSeek && pdf.Length == 0))
@@ -217,9 +257,32 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
         }
     }
 
+    private static bool TryParseRequestedSettings(
+        ScanSettings? settings,
+        out ScannerRequestedSettings requested)
+    {
+        if (settings?.Dpi is int dpi && dpi <= 0)
+        {
+            requested = default;
+            return false;
+        }
+
+        if (!ScannerSettingNames.TryParseColorMode(settings?.ColorMode, out var colorMode) ||
+            !ScannerSettingNames.TryParsePaperSize(settings?.PaperSize, out var paperSize))
+        {
+            requested = default;
+            return false;
+        }
+
+        requested = new ScannerRequestedSettings(settings?.Dpi, colorMode, paperSize);
+        return true;
+    }
+
     private static string SafeLogText(string value)
     {
         return new string(
             value.Where(character => !char.IsControl(character)).Take(200).ToArray());
     }
 }
+
+#pragma warning restore CA2252
