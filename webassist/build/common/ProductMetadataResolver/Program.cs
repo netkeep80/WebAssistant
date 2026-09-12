@@ -20,6 +20,9 @@ internal static class Program
     private static readonly HashSet<string> AllowedProperties =
         new(["schema", .. MetadataFields], StringComparer.Ordinal);
 
+    private static readonly HashSet<string> WixDefineBoundFields =
+        new(["applicationName", "fileDescription", "companyName"], StringComparer.Ordinal);
+
     private static readonly Regex InstallerBaseNamePattern =
         new("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", RegexOptions.CultureInvariant);
 
@@ -196,6 +199,12 @@ internal static class Program
         if (value.Any(char.IsControl))
         {
             throw new InvalidDataException($"Product metadata field '{field}' contains control characters.");
+        }
+
+        if (WixDefineBoundFields.Contains(field) && value.Contains(';', StringComparison.Ordinal))
+        {
+            throw new InvalidDataException(
+                $"Product metadata field '{field}' must not contain ';' because WiX DefineConstants uses semicolon as a delimiter.");
         }
 
         if (value.EnumerateRunes().Take(257).Count() > 256)
