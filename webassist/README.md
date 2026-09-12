@@ -6,14 +6,52 @@
 
 Файл `VERSION` в корне продукта — единственный persisted source of truth для product version. Он содержит numeric SemVer `major.minor.patch` и переносится вместе с продуктом без зависимости от `.git`, tags или CI metadata.
 
-Canonical package producers читают это значение и формируют versioned artifacts:
+Canonical package producers читают это значение и формируют versioned artifacts по effective installer basename:
+
+```text
+Windows: <installerBaseName>-win-x64-<VERSION>.exe
+Linux:   <installerBaseName>-linux-x64-<VERSION>.zip
+```
+
+При отсутствии product metadata override public default `installerBaseName` равен `WebAssistant`, поэтому обычная GitHub/manual сборка по-прежнему даёт:
 
 ```text
 Windows: WebAssistant-win-x64-<VERSION>.exe
 Linux:   WebAssistant-linux-x64-<VERSION>.zip
 ```
 
-`<VERSION>` всегда означает exact content файла `VERSION`. То же значение передаётся в application/package metadata и записывается в provenance.
+`<VERSION>` всегда означает exact content файла `VERSION`. То же значение передаётся в application/package metadata и записывается в provenance. Product metadata не может задавать или переопределять version.
+
+## Build-time product metadata
+
+Windows и Linux используют один repository-owned `ProductMetadataResolver` и одну schema `webassistant-product-metadata/v1`. Сначала берутся public defaults из `build/common/product-metadata.defaults.json`, затем при наличии применяется optional override:
+
+```text
+src/WebAssistant/product-metadata.json
+```
+
+Файл находится рядом с runtime `src/WebAssistant/appsettings.json`, но имеет другую семантику: `appsettings.json` управляет runtime configuration, а `product-metadata.json` — только build-time product/display identity.
+
+Допустимые поля override:
+
+```json
+{
+  "schema": "webassistant-product-metadata/v1",
+  "applicationName": "Custom Web Assistant",
+  "installerBaseName": "CustomWebAssistant",
+  "fileDescription": "Custom Web Assistant",
+  "companyName": "Example Vendor",
+  "copyright": "Copyright © Example Vendor"
+}
+```
+
+Все поля кроме `schema` опциональны и наследуют public defaults. Неизвестные поля, другая schema, пустые/некорректные значения и непереносимый `installerBaseName` приводят к fail-closed build до создания canonical artifact. Поля `applicationName`, `fileDescription` и `companyName` дополнительно не могут содержать `;`, потому что эти значения передаются в WiX через semicolon-delimited `DefineConstants`; resolver отклоняет такой input до publish/package. Поля `version`, service name, executable name, install paths и WiX lifecycle identifiers в metadata contract отсутствуют намеренно.
+
+Public GitHub repository специально игнорирует `webassist/src/WebAssistant/product-metadata.json` через development-root `.gitignore`. При copy-export содержимого `webassist` это правило не переносится: product-local `.gitignore` не запрещает этот path. Поэтому downstream GitLab repository может track-ить собственный `src/WebAssistant/product-metadata.json` и использовать другую product identity без изменения producer scripts. Различаются данные, а не packaging code.
+
+Effective metadata применяются к .NET file/product metadata, Windows WiX/ARP display identity, Linux human-visible service description и basename canonical artifacts. Технические identifiers остаются стабильными: `WebAssistant.exe`, Windows Service `WebAssistant`, Linux unit `webassist.service`, install paths и WiX package/bundle lifecycle identities не переименовываются через branding override.
+
+Provenance final artifact фиксирует `metadataMode` (`defaults` или `override`), effective `applicationName`, `installerBaseName`, `metadataInputSha256` и `effectiveMetadataSha256`. Metadata разрешаются до publish/package/checksum; post-build branding patching не используется.
 
 ## Что работает сейчас
 
@@ -62,7 +100,7 @@ WebAssistant пишет собственные технические событ
 
 ## Сборка canonical artifacts
 
-Packaging scripts определяют product root относительно собственного расположения и не зависят от текущего рабочего каталога.
+Packaging scripts определяют product root относительно собственного расположения и не зависят от текущего рабочего каталога. Оба producer-а используют один effective product metadata contract, описанный выше.
 
 ### Windows
 
@@ -73,12 +111,12 @@ build\windows\package.bat
 Результат по умолчанию находится в `artifacts/windows-x64/`:
 
 ```text
-WebAssistant-win-x64-<VERSION>.exe
-WebAssistant-win-x64-<VERSION>.exe.sha256
-WebAssistant-win-x64-<VERSION>.exe.provenance.json
+<installerBaseName>-win-x64-<VERSION>.exe
+<installerBaseName>-win-x64-<VERSION>.exe.sha256
+<installerBaseName>-win-x64-<VERSION>.exe.provenance.json
 ```
 
-Producer собирает self-contained `win-x64` payload, внутренний MSI и финальный WiX 7 Burn EXE. Внутренний MSI является build intermediate; пользовательским installation artifact является только versioned EXE.
+При public defaults `<installerBaseName>` равен `WebAssistant`. Producer собирает self-contained `win-x64` payload, внутренний MSI и финальный WiX 7 Burn EXE. Внутренний MSI является build intermediate; пользовательским installation artifact является только versioned EXE.
 
 Для build machine требуется .NET SDK 10 и WiX toolchain, управляемый repository-owned installer projects. Target workstation заранее установленный .NET Runtime/SDK не требуется.
 
@@ -91,12 +129,12 @@ Producer собирает self-contained `win-x64` payload, внутренний
 Результат по умолчанию находится в `artifacts/linux-x64/`:
 
 ```text
-WebAssistant-linux-x64-<VERSION>.zip
-WebAssistant-linux-x64-<VERSION>.zip.sha256
-WebAssistant-linux-x64-<VERSION>.zip.provenance.json
+<installerBaseName>-linux-x64-<VERSION>.zip
+<installerBaseName>-linux-x64-<VERSION>.zip.sha256
+<installerBaseName>-linux-x64-<VERSION>.zip.provenance.json
 ```
 
-Linux producer публикует self-contained `linux-x64` application и кладёт в ZIP `VERSION`, `install.sh`, `uninstall.sh`, `webassist.service` и package-owned `appsettings.json`.
+При public defaults `<installerBaseName>` равен `WebAssistant`. Linux producer публикует self-contained `linux-x64` application и кладёт в ZIP `VERSION`, `install.sh`, `uninstall.sh`, `webassist.service` и package-owned `appsettings.json`.
 
 Для build machine требуется .NET SDK 10. `package.sh` ищет его в следующем порядке:
 
@@ -120,20 +158,20 @@ WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0 ./build/linux/package.sh
 Администратор запускает canonical artifact:
 
 ```text
-WebAssistant-win-x64-<VERSION>.exe
+<installerBaseName>-win-x64-<VERSION>.exe
 ```
 
-Installer запрашивает elevation, выполняет machine-wide установку в Program Files, регистрирует и автоматически запускает Windows Service `WebAssistant`, а также регистрирует продукт в Installed Apps / Programs and Features. Подробности: [`docs/windows-service.md`](docs/windows-service.md).
+Для public defaults это `WebAssistant-win-x64-<VERSION>.exe`. Installer запрашивает elevation, выполняет machine-wide установку в Program Files, регистрирует и автоматически запускает Windows Service `WebAssistant`, а также регистрирует effective product display identity в Installed Apps / Programs and Features. Подробности: [`docs/windows-service.md`](docs/windows-service.md).
 
 ### ALT Linux 10.1
 
 Администратор распаковывает:
 
 ```text
-WebAssistant-linux-x64-<VERSION>.zip
+<installerBaseName>-linux-x64-<VERSION>.zip
 ```
 
-и из распакованного каталога запускает:
+Для public defaults это `WebAssistant-linux-x64-<VERSION>.zip`. Из распакованного каталога запускается:
 
 ```bash
 sudo ./install.sh
@@ -179,7 +217,9 @@ Pinned document toolchain описан в `docs/installation-guide/toolchain.env
 ./build/linux/package.sh artifacts/linux-x64
 ```
 
-Файл не определяет отдельную product packaging implementation. Конкретные runner/container/registry/network параметры будущей ALT Linux 10.1 build infrastructure должны задаваться downstream infrastructure только после их фактического определения; наличие `.gitlab-ci.yml` само по себе не является доказательством ALT Linux 10.1 target acceptance.
+Downstream GitLab может commit-ить собственный `src/WebAssistant/product-metadata.json`: export-root `.gitignore` этот path не запрещает. Producer автоматически применит этот override через тот же `ProductMetadataResolver`; отдельная GitLab-specific branding/package implementation не требуется.
+
+Файл `.gitlab-ci.yml` не определяет отдельную product packaging implementation. Конкретные runner/container/registry/network параметры будущей ALT Linux 10.1 build infrastructure должны задаваться downstream infrastructure только после их фактического определения; наличие `.gitlab-ci.yml` само по себе не является доказательством ALT Linux 10.1 target acceptance.
 
 Windows distribution в GitLab не является частью текущей target architecture.
 

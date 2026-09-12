@@ -3,8 +3,8 @@
     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
   <Bundle
       Id="netkeep80.WebAssistant.Bundle"
-      Name="WebAssistant"
-      Manufacturer="WebAssistant"
+      Name="$(var.ProductDisplayName)"
+      Manufacturer="$(var.ProductCompanyName)"
       Version="$(var.ProductVersion)"
       Compressed="yes">
 

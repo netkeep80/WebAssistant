@@ -10,6 +10,16 @@
     <FileVersion>$(ProductVersion).0</FileVersion>
     <InformationalVersion>$(ProductVersion)</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+
+    <ProductApplicationName Condition="'$(ProductApplicationName)' == ''">WebAssistant</ProductApplicationName>
+    <ProductFileDescription Condition="'$(ProductFileDescription)' == ''">WebAssistant</ProductFileDescription>
+    <ProductCompanyName Condition="'$(ProductCompanyName)' == ''">WebAssistant</ProductCompanyName>
+    <ProductCopyright Condition="'$(ProductCopyright)' == ''">Copyright © WebAssistant</ProductCopyright>
+    <Product>$(ProductApplicationName)</Product>
+    <AssemblyTitle>$(ProductFileDescription)</AssemblyTitle>
+    <Description>$(ProductFileDescription)</Description>
+    <Company>$(ProductCompanyName)</Company>
+    <Copyright>$(ProductCopyright)</Copyright>
   </PropertyGroup>
 
   <ItemGroup>

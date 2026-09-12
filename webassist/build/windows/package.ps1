@@ -23,11 +23,47 @@ function Get-Sha256Hex {
     }
 }
 
+function Read-MetadataEnvironment {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $result = @{}
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $parts = $line -split '=', 2
+        if ($parts.Count -ne 2 -or [string]::IsNullOrWhiteSpace($parts[0])) {
+            throw "Некорректная строка ProductMetadataResolver: $line"
+        }
+        if ($result.ContainsKey($parts[0])) {
+            throw "Duplicate ProductMetadataResolver key: $($parts[0])"
+        }
+        $result[$parts[0]] = $parts[1]
+    }
+
+    return $result
+}
+
+function Decode-MetadataValue {
+    param([Parameter(Mandatory = $true)][string]$Base64)
+
+    try {
+        return [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Base64))
+    }
+    catch {
+        throw "Некорректное Base64 value от ProductMetadataResolver."
+    }
+}
+
 $productRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 $projectPath = Join-Path $productRoot "src/WebAssistant/WebAssistant.csproj"
 $preflightProject = Join-Path $productRoot "build/windows/upgrade-preflight/WebAssistant.UpgradePreflight.csproj"
 $sourceConfigPath = Join-Path $productRoot "src/WebAssistant/appsettings.json"
 $defaultConfigPath = Join-Path $productRoot "build/common/default-appsettings.json"
+$metadataDefaultsPath = Join-Path $productRoot "build/common/product-metadata.defaults.json"
+$metadataOverridePath = Join-Path $productRoot "src/WebAssistant/product-metadata.json"
+$metadataResolverProject = Join-Path $productRoot "build/common/ProductMetadataResolver/ProductMetadataResolver.csproj"
 $provenanceWriter = Join-Path $productRoot "build/common/write-provenance.ps1"
 $installerRoot = Join-Path $productRoot "build/windows/installer"
 $packageProject = Join-Path $installerRoot "WebAssistant.Package.wixproj"
@@ -37,6 +73,8 @@ $versionPath = Join-Path $productRoot "VERSION"
 foreach ($requiredPath in @(
     $versionPath,
     $defaultConfigPath,
+    $metadataDefaultsPath,
+    $metadataResolverProject,
     $provenanceWriter,
     $packageProject,
     $bundleProject,
@@ -57,25 +95,88 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item $outputRoot -ItemType Directory -Force | Out-Null
 
-$artifactName = "WebAssistant-win-x64-$version.exe"
-$artifactPath = Join-Path $outputRoot $artifactName
-$stagingRoot = Join-Path $outputRoot (".webassistant-windows-stage-" + [Guid]::NewGuid().ToString("N"))
-$appDirectory = Join-Path $stagingRoot "app"
-$preflightOutput = Join-Path $stagingRoot "preflight"
-$msiOutput = Join-Path $stagingRoot "msi"
-$bundleOutput = Join-Path $stagingRoot "bundle"
-
-foreach ($path in @($artifactPath, "$artifactPath.sha256", "$artifactPath.provenance.json")) {
-    if (Test-Path -LiteralPath $path) {
-        Remove-Item -LiteralPath $path -Force
-    }
+$metadataEnvironmentPath = Join-Path $outputRoot (".webassistant-product-metadata-" + [Guid]::NewGuid().ToString("N") + ".env")
+$stagingRoot = $null
+$metadataPropertyNames = @(
+    "ProductApplicationName",
+    "ProductDisplayName",
+    "ProductFileDescription",
+    "ProductCompanyName",
+    "ProductCopyright")
+$previousMetadataEnvironment = @{}
+foreach ($name in $metadataPropertyNames) {
+    $previousMetadataEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, [EnvironmentVariableTarget]::Process)
 }
-New-Item $appDirectory -ItemType Directory -Force | Out-Null
-New-Item $preflightOutput -ItemType Directory -Force | Out-Null
-New-Item $msiOutput -ItemType Directory -Force | Out-Null
-New-Item $bundleOutput -ItemType Directory -Force | Out-Null
 
 try {
+    & dotnet run `
+        --project $metadataResolverProject `
+        --configuration Release `
+        -- `
+        --defaults $metadataDefaultsPath `
+        --override $metadataOverridePath `
+        --output $metadataEnvironmentPath
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $metadataEnvironmentPath -PathType Leaf)) {
+        throw "ProductMetadataResolver не смог сформировать effective metadata."
+    }
+
+    $metadata = Read-MetadataEnvironment -Path $metadataEnvironmentPath
+    $requiredMetadataKeys = @(
+        "metadataMode",
+        "applicationNameBase64",
+        "installerBaseNameBase64",
+        "fileDescriptionBase64",
+        "companyNameBase64",
+        "copyrightBase64",
+        "metadataInputSha256",
+        "effectiveMetadataSha256")
+    foreach ($key in $requiredMetadataKeys) {
+        if (-not $metadata.ContainsKey($key) -or [string]::IsNullOrWhiteSpace($metadata[$key])) {
+            throw "ProductMetadataResolver не вернул обязательный key: $key"
+        }
+    }
+
+    $metadataMode = $metadata["metadataMode"]
+    if ($metadataMode -notin @("defaults", "override")) {
+        throw "Некорректный metadataMode: $metadataMode"
+    }
+    $applicationName = Decode-MetadataValue -Base64 $metadata["applicationNameBase64"]
+    $installerBaseName = Decode-MetadataValue -Base64 $metadata["installerBaseNameBase64"]
+    $fileDescription = Decode-MetadataValue -Base64 $metadata["fileDescriptionBase64"]
+    $companyName = Decode-MetadataValue -Base64 $metadata["companyNameBase64"]
+    $copyright = Decode-MetadataValue -Base64 $metadata["copyrightBase64"]
+    $metadataInputSha256 = $metadata["metadataInputSha256"]
+    $effectiveMetadataSha256 = $metadata["effectiveMetadataSha256"]
+    foreach ($metadataHash in @($metadataInputSha256, $effectiveMetadataSha256)) {
+        if ($metadataHash -notmatch '^[0-9a-f]{64}$') {
+            throw "ProductMetadataResolver вернул некорректный SHA-256: $metadataHash"
+        }
+    }
+
+    [Environment]::SetEnvironmentVariable("ProductApplicationName", $applicationName, [EnvironmentVariableTarget]::Process)
+    [Environment]::SetEnvironmentVariable("ProductDisplayName", $applicationName, [EnvironmentVariableTarget]::Process)
+    [Environment]::SetEnvironmentVariable("ProductFileDescription", $fileDescription, [EnvironmentVariableTarget]::Process)
+    [Environment]::SetEnvironmentVariable("ProductCompanyName", $companyName, [EnvironmentVariableTarget]::Process)
+    [Environment]::SetEnvironmentVariable("ProductCopyright", $copyright, [EnvironmentVariableTarget]::Process)
+
+    $artifactName = "$installerBaseName-win-x64-$version.exe"
+    $artifactPath = Join-Path $outputRoot $artifactName
+    $stagingRoot = Join-Path $outputRoot (".webassistant-windows-stage-" + [Guid]::NewGuid().ToString("N"))
+    $appDirectory = Join-Path $stagingRoot "app"
+    $preflightOutput = Join-Path $stagingRoot "preflight"
+    $msiOutput = Join-Path $stagingRoot "msi"
+    $bundleOutput = Join-Path $stagingRoot "bundle"
+
+    foreach ($path in @($artifactPath, "$artifactPath.sha256", "$artifactPath.provenance.json")) {
+        if (Test-Path -LiteralPath $path) {
+            Remove-Item -LiteralPath $path -Force
+        }
+    }
+    New-Item $appDirectory -ItemType Directory -Force | Out-Null
+    New-Item $preflightOutput -ItemType Directory -Force | Out-Null
+    New-Item $msiOutput -ItemType Directory -Force | Out-Null
+    New-Item $bundleOutput -ItemType Directory -Force | Out-Null
+
     & dotnet publish $preflightProject `
         --configuration Release `
         --runtime win-x64 `
@@ -174,7 +275,12 @@ try {
         -Rid "win-x64" `
         -SdkVersion $sdkVersion `
         -ConfigMode $configMode `
-        -PackageEntrypoint "build/windows/package.bat" | Out-Null
+        -PackageEntrypoint "build/windows/package.bat" `
+        -MetadataMode $metadataMode `
+        -ApplicationName $applicationName `
+        -InstallerBaseName $installerBaseName `
+        -MetadataInputSha256 $metadataInputSha256 `
+        -EffectiveMetadataSha256 $effectiveMetadataSha256 | Out-Null
 
     if (-not (Test-Path -LiteralPath "$artifactPath.sha256" -PathType Leaf)) {
         throw "Не создан SHA-256 evidence: $artifactPath.sha256"
@@ -189,10 +295,20 @@ try {
         throw "Windows artifact bytes изменились после фиксации SHA-256."
     }
 
-    Write-Host "Windows artifact создан: $artifactPath (version $version, config $configMode)"
+    Write-Host "Windows artifact создан: $artifactPath (version $version, config $configMode, metadata $metadataMode)"
 }
 finally {
-    if (Test-Path -LiteralPath $stagingRoot) {
+    foreach ($name in $metadataPropertyNames) {
+        [Environment]::SetEnvironmentVariable(
+            $name,
+            $previousMetadataEnvironment[$name],
+            [EnvironmentVariableTarget]::Process)
+    }
+
+    if (Test-Path -LiteralPath $metadataEnvironmentPath) {
+        Remove-Item -LiteralPath $metadataEnvironmentPath -Force -ErrorAction SilentlyContinue
+    }
+    if ($null -ne $stagingRoot -and (Test-Path -LiteralPath $stagingRoot)) {
         Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

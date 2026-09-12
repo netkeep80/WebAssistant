@@ -144,7 +144,7 @@ public sealed class SystemServiceProductTests
         Assert.Contains("--self-contained true", packageText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("WebAssistant.Package.wixproj", packageText, StringComparison.Ordinal);
         Assert.Contains("WebAssistant.Bundle.wixproj", packageText, StringComparison.Ordinal);
-        Assert.Contains("WebAssistant-win-x64-$version.exe", packageText, StringComparison.Ordinal);
+        Assert.Contains("$artifactName = \"$installerBaseName-win-x64-$version.exe\"", packageText, StringComparison.Ordinal);
         Assert.DoesNotContain("install.ps1", packageText, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("uninstall.ps1", packageText, StringComparison.OrdinalIgnoreCase);
 

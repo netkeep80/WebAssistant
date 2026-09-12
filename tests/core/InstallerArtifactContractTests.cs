@@ -6,17 +6,21 @@ namespace WebAssistant.CoreTests;
 public sealed class InstallerArtifactContractTests
 {
     [Fact]
-    public void Producers_ConstructExactVersionedCanonicalArtifactNames()
+    public void Producers_ConstructVersionedCanonicalArtifactNamesFromEffectiveBasename()
     {
         var version = ReadRequired("webassist/VERSION").Trim();
         Assert.Matches(new Regex("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$", RegexOptions.CultureInvariant), version);
 
+        var defaults = ReadRequired("webassist/build/common/product-metadata.defaults.json");
         var windows = ReadRequired("webassist/build/windows/package.ps1");
         var linux = ReadRequired("webassist/build/linux/package.sh");
 
-        Assert.Contains("$artifactName = \"WebAssistant-win-x64-$version.exe\"", windows, StringComparison.Ordinal);
-        Assert.Contains("artifact_name=\"WebAssistant-linux-x64-${version}.zip\"", linux, StringComparison.Ordinal);
+        Assert.Contains("\"installerBaseName\": \"WebAssistant\"", defaults, StringComparison.Ordinal);
+        Assert.Contains("$artifactName = \"$installerBaseName-win-x64-$version.exe\"", windows, StringComparison.Ordinal);
+        Assert.Contains("artifact_name=\"${installer_basename}-linux-x64-${version}.zip\"", linux, StringComparison.Ordinal);
 
+        Assert.DoesNotContain("$artifactName = \"WebAssistant-win-x64-$version.exe\"", windows, StringComparison.Ordinal);
+        Assert.DoesNotContain("artifact_name=\"WebAssistant-linux-x64-${version}.zip\"", linux, StringComparison.Ordinal);
         Assert.DoesNotContain("WebAssistant-win-x64.exe", windows, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("WebAssistant-linux-x64.zip", linux, StringComparison.OrdinalIgnoreCase);
     }
@@ -39,7 +43,7 @@ public sealed class InstallerArtifactContractTests
     }
 
     [Fact]
-    public void ProvenanceWriters_DefineRequiredIdentityFieldsAndClosedConfigModeEnum()
+    public void ProvenanceWriters_DefineRequiredIdentityFieldsAndClosedModes()
     {
         var powershell = ReadRequired("webassist/build/common/write-provenance.ps1");
         var shell = ReadRequired("webassist/build/common/write-provenance.sh");
@@ -54,6 +58,11 @@ public sealed class InstallerArtifactContractTests
             "size",
             "sdkVersion",
             "configMode",
+            "metadataMode",
+            "applicationName",
+            "installerBaseName",
+            "metadataInputSha256",
+            "effectiveMetadataSha256",
             "packageEntrypoint"
         };
 
@@ -67,6 +76,8 @@ public sealed class InstallerArtifactContractTests
         Assert.Contains("generated-default", powershell, StringComparison.Ordinal);
         Assert.Contains("source-appsettings", shell, StringComparison.Ordinal);
         Assert.Contains("generated-default", shell, StringComparison.Ordinal);
+        Assert.Contains("ValidateSet(\"defaults\", \"override\")", powershell, StringComparison.Ordinal);
+        Assert.Contains("defaults|override", shell, StringComparison.Ordinal);
 
         Assert.Contains(
             "ValidateSet(\"source-appsettings\", \"generated-default\")",
@@ -101,7 +112,7 @@ public sealed class InstallerArtifactContractTests
     }
 
     [Fact]
-    public void WindowsInstaller_UsesPinnedWix7MachineWideServiceBundle()
+    public void WindowsInstaller_UsesPinnedWix7MachineWideServiceBundle_WithStableTechnicalIds()
     {
         var props = ReadRequired("webassist/build/windows/installer/Directory.Build.props");
         var packageProject = ReadRequired("webassist/build/windows/installer/WebAssistant.Package.wixproj");
@@ -116,10 +127,19 @@ public sealed class InstallerArtifactContractTests
         Assert.Contains("WixToolset.BootstrapperApplications.wixext", bundleProject, StringComparison.Ordinal);
         Assert.Contains("Version=\"7.0.0\"", bundleProject, StringComparison.Ordinal);
 
+        Assert.Contains("ProductDisplayName=$(ProductDisplayName)", packageProject, StringComparison.Ordinal);
+        Assert.Contains("ProductCompanyName=$(ProductCompanyName)", packageProject, StringComparison.Ordinal);
+        Assert.Contains("ProductFileDescription=$(ProductFileDescription)", packageProject, StringComparison.Ordinal);
+        Assert.Contains("ProductDisplayName=$(ProductDisplayName)", bundleProject, StringComparison.Ordinal);
+        Assert.Contains("ProductCompanyName=$(ProductCompanyName)", bundleProject, StringComparison.Ordinal);
+
         Assert.Contains("Scope=\"perMachine\"", packageSource, StringComparison.Ordinal);
         Assert.Contains("ProgramFiles64Folder", packageSource, StringComparison.Ordinal);
         Assert.Contains("ServiceInstall", packageSource, StringComparison.Ordinal);
         Assert.Contains("Name=\"WebAssistant\"", packageSource, StringComparison.Ordinal);
+        Assert.Contains("DisplayName=\"$(var.ProductDisplayName)\"", packageSource, StringComparison.Ordinal);
+        Assert.Contains("Description=\"$(var.ProductFileDescription)\"", packageSource, StringComparison.Ordinal);
+        Assert.Contains("Manufacturer=\"$(var.ProductCompanyName)\"", packageSource, StringComparison.Ordinal);
         Assert.Contains("Start=\"auto\"", packageSource, StringComparison.Ordinal);
         Assert.Contains("Type=\"ownProcess\"", packageSource, StringComparison.Ordinal);
         Assert.Contains("ServiceControl", packageSource, StringComparison.Ordinal);
@@ -129,6 +149,8 @@ public sealed class InstallerArtifactContractTests
         Assert.Contains("$(var.ProductVersion)", packageSource, StringComparison.Ordinal);
 
         Assert.Contains("<Bundle", bundleSource, StringComparison.Ordinal);
+        Assert.Contains("Name=\"$(var.ProductDisplayName)\"", bundleSource, StringComparison.Ordinal);
+        Assert.Contains("Manufacturer=\"$(var.ProductCompanyName)\"", bundleSource, StringComparison.Ordinal);
         Assert.Contains("Version=\"$(var.ProductVersion)\"", bundleSource, StringComparison.Ordinal);
         Assert.Contains("WixStandardBootstrapperApplication", bundleSource, StringComparison.Ordinal);
         Assert.Contains("MsiPackage", bundleSource, StringComparison.Ordinal);
