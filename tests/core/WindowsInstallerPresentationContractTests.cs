@@ -34,6 +34,50 @@ public sealed class WindowsInstallerPresentationContractTests
     }
 
     [Fact]
+    public void WindowsProducer_GeneratesPresentationAssetsBeforeBundleBuild()
+    {
+        var producer = ReadRequired("webassist/build/windows/package.ps1");
+
+        foreach (var token in new[]
+                 {
+                     "$localizationPath",
+                     "$iconSourcePath",
+                     "$iconGeneratorProject",
+                     "$bundleIconPath",
+                     "$bundleLogoPath"
+                 })
+        {
+            Assert.Contains(token, producer, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("$brandingOutput = Join-Path $stagingRoot \"branding\"", producer, StringComparison.Ordinal);
+        Assert.Contains("$bundleIconPath = Join-Path $brandingOutput \"webassistant-icon.ico\"", producer, StringComparison.Ordinal);
+        Assert.Contains("$bundleLogoPath = Join-Path $brandingOutput \"webassistant-logo.png\"", producer, StringComparison.Ordinal);
+        Assert.Contains("--project $iconGeneratorProject", producer, StringComparison.Ordinal);
+        Assert.Contains("--input $iconSourcePath", producer, StringComparison.Ordinal);
+        Assert.Contains("--ico $bundleIconPath", producer, StringComparison.Ordinal);
+        Assert.Contains("--logo $bundleLogoPath", producer, StringComparison.Ordinal);
+        Assert.Contains("\"-p:LocalizationFile=$localizationPath\"", producer, StringComparison.Ordinal);
+        Assert.Contains("\"-p:BundleIconPath=$bundleIconPath\"", producer, StringComparison.Ordinal);
+        Assert.Contains("\"-p:LogoFile=$bundleLogoPath\"", producer, StringComparison.Ordinal);
+
+        var requiredPathsIndex = producer.IndexOf("foreach ($requiredPath in @(", StringComparison.Ordinal);
+        Assert.True(requiredPathsIndex >= 0, "Required input validation block is missing.");
+        foreach (var declaration in new[] { "$localizationPath =", "$iconSourcePath =", "$iconGeneratorProject =" })
+        {
+            var declarationIndex = producer.IndexOf(declaration, StringComparison.Ordinal);
+            Assert.True(
+                declarationIndex >= 0 && declarationIndex < requiredPathsIndex,
+                $"Presentation input must be declared before required-path validation: {declaration}");
+        }
+
+        var generatorIndex = producer.IndexOf("--project $iconGeneratorProject", StringComparison.Ordinal);
+        var bundleBuildIndex = producer.IndexOf("& dotnet build $bundleProject", StringComparison.Ordinal);
+        Assert.True(generatorIndex >= 0 && bundleBuildIndex > generatorIndex,
+            "Presentation generator must run before the WiX bundle build.");
+    }
+
+    [Fact]
     public void RussianLocalization_DefinesClosedHyperlinkThemeSurface()
     {
         var path = ToFullPath("webassist/build/windows/installer/localization/ru-RU.wxl");
