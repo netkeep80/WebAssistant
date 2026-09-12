@@ -14,7 +14,7 @@
 
 - GitHub `main` is source of truth. Re-fetch live `main` immediately before implementation writes.
 - Baseline at plan creation: `main = bed517f8ec1110c62ed7c32e20976b0ad9967f5e`, `webassist/VERSION = 0.3.27`.
-- If `main` advances before implementation begins, rebase/refresh the transaction before code changes and recompute the single next VERSION; never force `0.3.28` if it has already been consumed.
+- If `main` advances before implementation begins, reconcile the feature branch before code changes and recompute the one allowed next VERSION.
 - Work only through issue `#192` -> branch `feature/192-windows-installer-presentation` -> Draft PR -> RED -> GREEN -> Ready -> merge.
 - Accepted `contracts/webassistant-contract-v0.2.json` and `contracts/webassistant-conformance-v0.2.json` are immutable.
 - `repo-policy.json` is immutable.
@@ -56,20 +56,20 @@ No change is planned for `Package.wxs`, scanner/runtime source, Linux producer, 
 
 ---
 
-### Task 1: Establish #192 governance, Draft PR, and RED presentation contract
+### Task 1: Governance, Draft PR, candidate delta and first RED
 
 **Files:**
-- Modify governance authority: GitHub issue `#192` body only
+- Modify governance authority: issue `#192` body only
 - Create Draft PR from `feature/192-windows-installer-presentation` to `main`
 - Create: `tests/core/WindowsInstallerPresentationContractTests.cs`
 - Modify: `contracts/webassistant-contract-v0.3.json`
 - Modify: `contracts/webassistant-conformance-v0.3.json`
 
 **Interfaces:**
-- Consumes: approved spec and current candidate v0.3.
-- Produces: explicit candidate presentation requirement/vector and a RED test surface that subsequent tasks satisfy.
+- Consumes: approved spec and current unaccepted candidate v0.3.
+- Produces: explicit candidate presentation requirement/vector and RED tests for the missing implementation.
 
-- [ ] **Step 1: Re-fetch live repository authority**
+- [ ] **Step 1: Re-fetch live authority**
 
 Verify immediately before writes:
 
@@ -77,31 +77,36 @@ Verify immediately before writes:
 main SHA
 webassist/VERSION
 issue #192 state/body
-branch head
-accepted v0.2 status
-candidate v0.3 status
+feature branch head
+accepted v0.2 accepted=true
+candidate v0.3 accepted=false
 ```
 
-If `main != bed517f8ec1110c62ed7c32e20976b0ad9967f5e`, reconcile the feature branch before proceeding and update the plan's VERSION expectation in the PR body, not by silently editing accepted contracts.
+If `main` moved, reconcile branch before implementation and use the actual next monotonic patch VERSION later.
 
-- [ ] **Step 2: Add a narrow GovernanceGrant to issue #192 body**
+- [ ] **Step 2: Add exact GovernanceGrant to issue #192 body**
 
-Append exactly this authority:
+Append this fenced block exactly:
 
-```yaml
-repo-guard-grant:
-  authorized_governance_paths:
-    - contracts/webassistant-contract-v0.3.json
-    - contracts/webassistant-conformance-v0.3.json
-  allow_policy_relaxation: []
-  allow_atomic_governance_cutover: true
+````markdown
+```repo-guard-grant
+authorized_governance_paths:
+  - contracts/webassistant-contract-v0.3.json
+  - contracts/webassistant-conformance-v0.3.json
+allow_policy_relaxation: []
+allow_atomic_governance_cutover: true
 ```
+````
 
-State explicitly that no authorization is granted for accepted v0.2, `repo-policy.json`, scanner/runtime semantics, Linux packaging, or #190 metadata schema.
+Immediately after it state:
+
+```text
+No authorization is granted for repo-policy.json, accepted v0.2, scanner/runtime semantics, Linux packaging, #190 product-metadata schema, or technical service/executable/upgrade identifiers.
+```
 
 - [ ] **Step 3: Open Draft PR**
 
-Use title:
+Title:
 
 ```text
 #192: Russian Windows installer presentation
@@ -113,11 +118,11 @@ First line:
 Closes #192
 ```
 
-ChangeIntent must cover only the spec/plan, candidate pair, Windows installer presentation sources, generator, relevant tests/docs, `package.ps1`, and the eventual one-time VERSION change. `must_not_touch` must contain accepted v0.2, `repo-policy.json`, scanner/runtime source, Linux packaging and `product-metadata` schema.
+ChangeIntent scope must contain only spec/plan, candidate v0.3 pair, Windows installer presentation sources, generator, relevant tests/docs, `webassist/build/windows/package.ps1`, and eventual `webassist/VERSION`. `must_not_touch` must include accepted v0.2, `repo-policy.json`, `webassist/src/WebAssistant/Scanning/**`, `webassist/src/WebAssistant/Http/**`, `webassist/build/linux/**`, and `webassist/build/common/ProductMetadataResolver/**`.
 
-- [ ] **Step 4: Write failing presentation contract tests**
+- [ ] **Step 4: Write presentation RED tests**
 
-Create `tests/core/WindowsInstallerPresentationContractTests.cs` with tests equivalent to:
+Create `tests/core/WindowsInstallerPresentationContractTests.cs` using the same repository-root helper pattern as `InstallerArtifactContractTests.cs` and these assertions:
 
 ```csharp
 [Fact]
@@ -127,8 +132,8 @@ public void Candidate_RequiresRussianWindowsPresentationAndRepositoryOwnedIcon()
     var conformance = ReadRequired("contracts/webassistant-conformance-v0.3.json");
 
     Assert.Contains("WA-WIN-INSTALL-001", contract, StringComparison.Ordinal);
-    Assert.Contains("рус", contract, StringComparison.OrdinalIgnoreCase);
     Assert.Contains("WixStandardBootstrapperApplication", contract, StringComparison.Ordinal);
+    Assert.Contains("рус", contract, StringComparison.OrdinalIgnoreCase);
     Assert.Contains("repository-owned", contract, StringComparison.OrdinalIgnoreCase);
     Assert.Contains("WA-C-WINDOWS-PRESENTATION-001", conformance, StringComparison.Ordinal);
 }
@@ -148,47 +153,35 @@ public void WindowsBundle_UsesExplicitRussianLocalizationAndGeneratedBranding()
 }
 
 [Fact]
-public void PresentationSources_AreRepositoryOwnedAndStableTechnicalIdsRemainUnchanged()
+public void StableTechnicalInstallerIdsRemainUnchanged()
 {
-    Assert.True(File.Exists(ToFullPath("webassist/build/windows/installer/localization/ru-RU.wxl")));
-    Assert.True(File.Exists(ToFullPath("webassist/build/windows/installer/branding/webassistant-icon.svg")));
-
     var bundle = ReadRequired("webassist/build/windows/installer/Bundle.wxs");
-    Assert.Contains("Id=\"netkeep80.WebAssistant.Bundle\"", bundle, StringComparison.Ordinal);
-
     var package = ReadRequired("webassist/build/windows/installer/Package.wxs");
+
+    Assert.Contains("Id=\"netkeep80.WebAssistant.Bundle\"", bundle, StringComparison.Ordinal);
     Assert.Contains("Id=\"netkeep80.WebAssistant\"", package, StringComparison.Ordinal);
     Assert.Contains("Name=\"WebAssistant\"", package, StringComparison.Ordinal);
+    Assert.Contains("WebAssistant.exe", package, StringComparison.Ordinal);
 }
 ```
 
-Reuse the same repository-root helper pattern as `InstallerArtifactContractTests.cs`.
-
-- [ ] **Step 5: Run RED before candidate/production implementation**
-
-Run:
+- [ ] **Step 5: Run RED before candidate/production edits**
 
 ```bash
 dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter FullyQualifiedName~WindowsInstallerPresentationContractTests
 ```
 
-Expected: FAIL because candidate v0.3 does not yet state presentation semantics and localization/SVG/WiX wiring do not exist.
+Expected: FAIL only on the new #192 assertions. Record exact head/run/job/pass-fail evidence.
 
-Capture exact head SHA, run ID, job ID, pass/fail count in PR body or #192 comment.
+- [ ] **Step 6: Update candidate v0.3**
 
-- [ ] **Step 6: Update candidate v0.3 only**
-
-Extend `WA-WIN-INSTALL-001` so its statement additionally requires:
+Extend `WA-WIN-INSTALL-001` with this observable requirement:
 
 ```text
-canonical Windows bundle uses repository-owned Russian WixStdBA localization as the default interactive presentation;
-one repository-owned graphical identity is applied to the bundle executable and Installed Apps/ARP where Burn supports it;
-presentation resources do not change technical service/executable/upgrade identifiers or VERSION authority.
+Canonical Windows Burn installer uses repository-owned Russian WixStandardBootstrapperApplication localization as its default interactive presentation and one repository-owned graphical identity for bundle EXE/Installed Apps plus the standard installer logo; presentation resources do not change VERSION authority, WebAssistant.exe, technical service name WebAssistant, or stable WiX lifecycle identities.
 ```
 
-In `contracts/webassistant-conformance-v0.3.json`:
-
-1. add required repository paths:
+Add these required paths to `contracts/webassistant-conformance-v0.3.json`:
 
 ```text
 webassist/build/windows/installer/localization/ru-RU.wxl
@@ -200,7 +193,7 @@ tests/core/WindowsInstallerPresentationContractTests.cs
 tests/core/IconGeneratorTests.cs
 ```
 
-2. add vector:
+Add exactly this vector:
 
 ```json
 {
@@ -222,34 +215,32 @@ Do not edit accepted v0.2.
 
 - [ ] **Step 7: Commit candidate+RED transaction**
 
-Commit message:
-
-```text
-#192: define Windows installer presentation contract
+```bash
+git commit -m "#192: define Windows installer presentation contract"
 ```
 
 ---
 
-### Task 2: Add complete Russian WixStdBA localization
+### Task 2: Complete repository-owned Russian WixStdBA localization
 
 **Files:**
 - Create: `webassist/build/windows/installer/localization/ru-RU.wxl`
 - Modify: `tests/core/WindowsInstallerPresentationContractTests.cs`
 
 **Interfaces:**
-- Consumes: pinned WiX 7.0.0 `hyperlinkLicense` localization IDs.
-- Produces: one explicit Russian `.wxl` that `Bundle.wxs` consumes later.
+- Consumes: exact localization IDs from pinned WiX 7.0.0 `HyperlinkTheme.wxl`.
+- Produces: one explicit Russian `.wxl`; no machine-locale fallback.
 
-- [ ] **Step 1: Strengthen RED test to require the closed localization surface**
+- [ ] **Step 1: Add localization RED test**
 
-Add a test that parses `ru-RU.wxl` as XML and requires:
+Parse the `.wxl` as XML and require:
 
 ```text
 Culture = ru-RU
 Language = 1049
 ```
 
-and every ID in this exact closed set:
+Require exactly these 66 IDs to exist once each:
 
 ```text
 Caption
@@ -320,30 +311,29 @@ FilesInUseIgnoreButton
 FilesInUseExitButton
 ```
 
-Also assert that user-visible values contain Cyrillic text and that product-facing strings use `[WixBundleName]` instead of hard-coded `WebAssistant` where a bundle-name variable is applicable.
+Additionally assert:
+
+```text
+Caption contains [WixBundleName]
+InstallMessage contains [WixBundleName]
+InstallMessageOptions contains [WixBundleName]
+OptionsPerUserScopeText contains [WixBundleName]
+OptionsPerMachineScopeText contains [WixBundleName]
+no String Value contains literal WebAssistant
+all values except Title contain at least one Cyrillic letter or a documented command-line switch string
+```
 
 - [ ] **Step 2: Run localization RED**
-
-Run:
 
 ```bash
 dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter FullyQualifiedName~WindowsInstallerPresentationContractTests
 ```
 
-Expected: FAIL because `ru-RU.wxl` is absent.
+Expected: missing `ru-RU.wxl` failure.
 
-- [ ] **Step 3: Create the Russian localization source**
+- [ ] **Step 3: Create `ru-RU.wxl` with this complete value map**
 
-Create `ru-RU.wxl` with header:
-
-```xml
-<WixLocalization
-    Culture="ru-RU"
-    Language="1049"
-    xmlns="http://wixtoolset.org/schemas/v4/wxl">
-```
-
-Use these canonical Russian values for the main interaction surface:
+Use XML namespace `http://wixtoolset.org/schemas/v4/wxl`, `Culture="ru-RU"`, `Language="1049"` and these exact logical values; XML-escape ampersands as `&amp;` and hyperlink markup as required by WiX localization syntax:
 
 ```text
 Caption = Установка [WixBundleName]
@@ -354,10 +344,13 @@ InstallHeader = Установка
 InstallMessage = Программа установки установит [WixBundleName] на этот компьютер. Нажмите «Установить» для продолжения или «Отмена» для выхода.
 InstallMessageOptions = Программа установки установит [WixBundleName] на этот компьютер. Нажмите «Установить» для продолжения, «Параметры» для настройки или «Отмена» для выхода.
 InstallVersion = Версия [WixBundleVersion]
-ConfirmCancelMessage = Прервать установку?
+ConfirmCancelMessage = Прервать текущую операцию?
 ExecuteUpgradeRelatedBundleMessage = Предыдущая версия
 HelpHeader = Справка установщика
+HelpText = /install | /repair | /uninstall | /layout [каталог] — установить, восстановить, удалить или создать локальную копию установочных файлов. /passive | /quiet — минимальный интерфейс или выполнение без интерфейса. /norestart — не перезагружать компьютер автоматически. /log файл — записать журнал в указанный файл.
 HelpCloseButton = &Закрыть
+InstallLicenseLinkText = Условия лицензии [WixBundleName]: <a href="#">открыть</a>.
+InstallAcceptCheckbox = Я &принимаю условия лицензии
 InstallOptionsButton = &Параметры
 InstallInstallButton = &Установить
 InstallCancelButton = &Отмена
@@ -368,7 +361,7 @@ OptionsPerMachineScopeText = Установить [WixBundleName] для &все
 OptionsBrowseButton = &Обзор
 OptionsOkButton = &ОК
 OptionsCancelButton = &Отмена
-ProgressHeader = Выполняется установка
+ProgressHeader = Выполняется операция
 ProgressLabel = Операция:
 OverallProgressPackageText = Инициализация...
 ProgressCancelButton = &Отмена
@@ -377,18 +370,33 @@ ModifyRepairButton = &Восстановить
 ModifyUninstallButton = &Удалить
 ModifyCancelButton = &Отмена
 SuccessHeader = Операция успешно завершена
+SuccessCacheHeader = Кэширование успешно завершено
 SuccessInstallHeader = Установка успешно завершена
+SuccessLayoutHeader = Создание локальной копии успешно завершено
+SuccessModifyHeader = Изменение установки успешно завершено
 SuccessRepairHeader = Восстановление успешно завершено
 SuccessUninstallHeader = Удаление успешно завершено
+SuccessUnsafeUninstallHeader = Удаление успешно завершено
+SuccessLaunchButton = &Запустить
+SuccessRestartText = Для использования программы необходимо перезагрузить компьютер.
+SuccessUninstallRestartText = Для завершения удаления необходимо перезагрузить компьютер.
+SuccessRestartButton = &Перезагрузить
 SuccessCloseButton = &Закрыть
 FailureHeader = Операция не выполнена
+FailureCacheHeader = Не удалось выполнить кэширование
 FailureInstallHeader = Установка не выполнена
+FailureLayoutHeader = Не удалось создать локальную копию
+FailureModifyHeader = Не удалось изменить установку
 FailureRepairHeader = Восстановление не выполнено
 FailureUninstallHeader = Удаление не выполнено
+FailureUnsafeUninstallHeader = Удаление не выполнено
 FailureHyperlinkLogText = Во время выполнения операции возникла ошибка. Исправьте причину и повторите попытку. Дополнительные сведения доступны в <a href="#">журнале установки</a>.
+FailureRestartText = Для завершения отката необходимо перезагрузить компьютер.
+FailureRestartButton = &Перезагрузить
 FailureCloseButton = &Закрыть
 FilesInUseTitle = Используемые файлы
 FilesInUseLabel = Следующие приложения используют файлы, которые необходимо обновить:
+FilesInUseNetfxCloseRadioButton = Закрыть &приложения.
 FilesInUseCloseRadioButton = Закрыть &приложения и попытаться запустить их снова.
 FilesInUseDontCloseRadioButton = &Не закрывать приложения. Для завершения потребуется перезагрузка.
 FilesInUseRetryButton = &Повторить
@@ -396,23 +404,19 @@ FilesInUseIgnoreButton = &Игнорировать
 FilesInUseExitButton = &Выйти
 ```
 
-Fill the remaining required IDs with direct Russian equivalents consistent with the same terminology; no English user-facing fallback strings are allowed inside this repository-owned `.wxl`. `HelpText` may preserve command-line switches (`/install`, `/repair`, `/uninstall`, `/layout`, `/passive`, `/quiet`, `/norestart`, `/log`) but explanations must be Russian.
-
 - [ ] **Step 4: Run localization GREEN**
 
-Run the same filtered test. Expected: localization-source assertions PASS; WiX wiring assertions may still fail until Task 4.
+Run the same filtered test. Localization assertions must PASS; WiX wiring assertions remain RED until Task 4.
 
 - [ ] **Step 5: Commit localization**
 
-Commit message:
-
-```text
-#192: add Russian WixStdBA localization
+```bash
+git commit -m "#192: add Russian WixStdBA localization"
 ```
 
 ---
 
-### Task 3: Add canonical SVG and deterministic icon generator
+### Task 3: Canonical SVG and deterministic icon generator
 
 **Files:**
 - Create: `webassist/build/windows/installer/branding/webassistant-icon.svg`
@@ -423,12 +427,10 @@ Commit message:
 - Modify: `tests/core/WebAssistant.CoreTests.csproj`
 
 **Interfaces:**
-- Consumes: one SVG path plus output ICO/PNG paths.
+- Consumes: SVG source path plus requested ICO/PNG output paths.
 - Produces: `IconGenerator.Generate(string svgPath, string icoPath, string logoPath)` and CLI `--input`, `--ico`, `--logo`.
 
-- [ ] **Step 1: Add generator project reference to core tests**
-
-Add:
+- [ ] **Step 1: Add test project reference**
 
 ```xml
 <ProjectReference Include="../../webassist/build/windows/installer/branding/WebAssistant.IconGenerator/WebAssistant.IconGenerator.csproj" />
@@ -436,43 +438,29 @@ Add:
 
 - [ ] **Step 2: Write renderer RED tests**
 
-`tests/core/IconGeneratorTests.cs` must call the real generator and verify:
+The tests must:
 
-```csharp
-[Fact]
-public void Generator_ProducesDeterministicIcoAnd64PxLogo()
-{
-    // Generate twice into separate temp directories from canonical SVG.
-    // Assert SHA-256 of ico1 == ico2 and png1 == png2.
-    // Parse PNG IHDR and assert 64x64.
-    // Parse ICO directory and assert exactly 16,32,48,256 entries.
-}
-
-[Fact]
-public void Generator_FailsClosedForMissingOrInvalidSvg()
-{
-    Assert.ThrowsAny<Exception>(() => IconGenerator.Generate(missing, ico, png));
-    Assert.ThrowsAny<Exception>(() => IconGenerator.Generate(invalidSvg, ico, png));
-    Assert.False(File.Exists(ico));
-    Assert.False(File.Exists(png));
-}
+```text
+generate twice from canonical SVG into two temp directories;
+SHA-256(ico1) == SHA-256(ico2);
+SHA-256(png1) == SHA-256(png2);
+PNG IHDR width == 64 and height == 64;
+ICO count == 4 and sizes == 16,32,48,256;
+missing SVG throws and leaves no outputs;
+malformed SVG throws and leaves no outputs.
 ```
 
-ICO parser in tests must read ICONDIR/ICONDIRENTRY directly and map byte width/height value `0` to `256`.
+ICO parser reads ICONDIR/ICONDIRENTRY directly and interprets width/height byte `0` as 256.
 
 - [ ] **Step 3: Run renderer RED**
-
-Run:
 
 ```bash
 dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter FullyQualifiedName~IconGeneratorTests
 ```
 
-Expected: FAIL because generator project/source does not yet exist.
+Expected: generator source/project missing.
 
-- [ ] **Step 4: Create the canonical SVG**
-
-Use a 256x256 viewBox and only vector shapes; no text, fonts, external images, filters or remote resources. Initial repository-owned geometry is:
+- [ ] **Step 4: Create the canonical SVG exactly from this initial geometry**
 
 ```xml
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
@@ -486,11 +474,9 @@ Use a 256x256 viewBox and only vector shapes; no text, fonts, external images, f
 </svg>
 ```
 
-This explicitly encodes sheet + folded file corner + scanner body and remains legible without text.
+No text, fonts, external images, filters or remote resources.
 
 - [ ] **Step 5: Create pinned generator project**
-
-`WebAssistant.IconGenerator.csproj`:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -509,11 +495,9 @@ This explicitly encodes sheet + folded file corner + scanner body and remains le
 </Project>
 ```
 
-No floating package versions.
-
 - [ ] **Step 6: Implement `IconGenerator.Generate`**
 
-Public interface:
+Public API:
 
 ```csharp
 namespace WebAssistant.IconGenerator;
@@ -524,42 +508,39 @@ public static class IconGenerator
 }
 ```
 
-Implementation rules:
-
-1. validate all paths and ensure SVG exists;
-2. load SVG with `Svg.Skia`;
-3. reject null/empty picture or non-positive bounds;
-4. render transparent square bitmaps at `16, 32, 48, 256` with high-quality antialiasing and fit preserving aspect ratio;
-5. encode each frame as PNG bytes;
-6. write ICO manually as deterministic ICONDIR + four ICONDIRENTRY records + PNG payloads in ascending size order;
-7. encode a separate 64x64 PNG from the same SVG;
-8. write to temporary sibling files first, validate outputs, then atomically move them to requested paths;
-9. on any failure delete temporary/final partial outputs and throw.
-
-ICO header algorithm:
+Rules:
 
 ```text
-ICONDIR:
-  reserved ushort = 0
-  type ushort = 1
-  count ushort = 4
-
-ICONDIRENTRY per size:
-  width byte = size == 256 ? 0 : size
-  height byte = size == 256 ? 0 : size
-  colorCount byte = 0
-  reserved byte = 0
-  planes ushort = 1
-  bitCount ushort = 32
-  bytesInRes uint = png.Length
-  imageOffset uint = headerSize + entriesSize + sum(previous png lengths)
+validate non-empty paths and SVG existence;
+load SVG through Svg.Skia;
+reject empty picture or non-positive bounds;
+render transparent 16,32,48,256 square frames with aspect-fit and antialiasing;
+encode each frame as PNG;
+write ICO in ascending size order using deterministic ICONDIR + ICONDIRENTRY + PNG payloads;
+render separate 64x64 PNG logo from the same SVG;
+write temporary sibling files first, validate, then move to final names;
+on any exception remove all temporary/final partial outputs and rethrow.
 ```
 
-Use explicit little-endian writes via `BinaryWriter`.
+ICO binary layout:
 
-- [ ] **Step 7: Implement CLI adapter**
+```text
+ICONDIR: reserved=0 ushort, type=1 ushort, count=4 ushort
+entry width: 16|32|48|0(=256)
+entry height: 16|32|48|0(=256)
+colorCount=0 byte
+reserved=0 byte
+planes=1 ushort
+bitCount=32 ushort
+bytesInRes=PNG length uint
+imageOffset=6 + 4*16 + sum(previous PNG lengths) uint
+```
 
-`Program.cs` accepts exactly:
+Use `BinaryWriter` little-endian writes.
+
+- [ ] **Step 7: Implement CLI**
+
+Accepted syntax only:
 
 ```text
 --input <svg>
@@ -567,50 +548,37 @@ Use explicit little-endian writes via `BinaryWriter`.
 --logo <png-output>
 ```
 
-Unknown/missing/duplicate arguments return non-zero and write a concise error to stderr. Successful generation returns `0`.
+Unknown, missing or duplicate options return non-zero and print one concise stderr line. Success returns `0`.
 
-- [ ] **Step 8: Run renderer GREEN on current platform**
-
-Run:
+- [ ] **Step 8: Run renderer GREEN**
 
 ```bash
 dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter FullyQualifiedName~IconGeneratorTests
 ```
 
-Expected: PASS.
+Expected: PASS on Linux core and Windows environment with platform-specific native assets.
 
-Also run twice manually:
+- [ ] **Step 9: Commit generator**
 
 ```bash
-dotnet run --project webassist/build/windows/installer/branding/WebAssistant.IconGenerator/WebAssistant.IconGenerator.csproj --configuration Release -- --input webassist/build/windows/installer/branding/webassistant-icon.svg --ico /tmp/webassistant-icon.ico --logo /tmp/webassistant-logo.png
-```
-
-Inspect hashes to confirm repeated executions are identical on the same toolchain/platform.
-
-- [ ] **Step 9: Commit graphical authority + generator**
-
-Commit message:
-
-```text
-#192: add reproducible WebAssistant icon generator
+git commit -m "#192: add reproducible WebAssistant icon generator"
 ```
 
 ---
 
-### Task 4: Wire localization and branding into WiX and canonical Windows producer
+### Task 4: WiX + canonical Windows producer wiring
 
 **Files:**
 - Modify: `webassist/build/windows/installer/Bundle.wxs`
 - Modify: `webassist/build/windows/installer/WebAssistant.Bundle.wixproj`
 - Modify: `webassist/build/windows/package.ps1`
 - Modify: `tests/core/WindowsInstallerPresentationContractTests.cs`
-- Modify: `tests/core/InstallerArtifactContractTests.cs` only if the existing stable-ID assertions need additive presentation checks
 
 **Interfaces:**
-- Consumes: `ru-RU.wxl`, canonical SVG, generator CLI, #190 effective metadata.
-- Produces: final Burn EXE containing Russian presentation resources and generated graphical identity before checksum freeze.
+- Consumes: `ru-RU.wxl`, canonical SVG, generator CLI and #190 effective textual metadata.
+- Produces: Burn bundle containing Russian localization, generated icon and generated 64x64 logo before SHA/provenance freeze.
 
-- [ ] **Step 1: Add producer/wiring RED assertions**
+- [ ] **Step 1: Add wiring RED assertions**
 
 Require `package.ps1` to define and validate:
 
@@ -622,29 +590,25 @@ $bundleIconPath
 $bundleLogoPath
 ```
 
-Require it to run the generator before bundle build and pass:
+Require it to run generator before bundle build and pass all three MSBuild properties:
 
 ```text
--p:LocalizationFile=<ru-RU.wxl>
--p:BundleIconPath=<generated ico>
--p:LogoFile=<generated png>
+LocalizationFile
+BundleIconPath
+LogoFile
 ```
 
-Require generated outputs to live under `$stagingRoot`, never source tree or final artifact directory.
+Generated outputs must be under `$stagingRoot`.
 
 - [ ] **Step 2: Run wiring RED**
-
-Run:
 
 ```bash
 dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --filter "FullyQualifiedName~WindowsInstallerPresentationContractTests|FullyQualifiedName~InstallerArtifactContractTests"
 ```
 
-Expected: FAIL on missing producer/WiX wiring.
+Expected: missing wiring failures.
 
-- [ ] **Step 3: Modify `Bundle.wxs` minimally**
-
-Final relevant shape:
+- [ ] **Step 3: Modify `Bundle.wxs` to this relevant shape**
 
 ```xml
 <Bundle
@@ -664,23 +628,21 @@ Final relevant shape:
   </BootstrapperApplication>
 ```
 
-Do not change Bundle Id, chain package IDs, preflight semantics or MSI visibility.
+No other bundle-chain semantic change.
 
-- [ ] **Step 4: Extend bundle project constants**
+- [ ] **Step 4: Extend `WebAssistant.Bundle.wixproj` constants**
 
-`WebAssistant.Bundle.wixproj` `DefineConstants` must append:
+Append to `DefineConstants`:
 
 ```text
-LocalizationFile=$(LocalizationFile)
-BundleIconPath=$(BundleIconPath)
-LogoFile=$(LogoFile)
+LocalizationFile=$(LocalizationFile);BundleIconPath=$(BundleIconPath);LogoFile=$(LogoFile)
 ```
 
-Preserve #190 constants unchanged.
+Preserve all #190 constants.
 
 - [ ] **Step 5: Wire generator in `package.ps1`**
 
-Add source inputs:
+Source inputs:
 
 ```powershell
 $localizationPath = Join-Path $installerRoot "localization/ru-RU.wxl"
@@ -688,9 +650,9 @@ $iconSourcePath = Join-Path $installerRoot "branding/webassistant-icon.svg"
 $iconGeneratorProject = Join-Path $installerRoot "branding/WebAssistant.IconGenerator/WebAssistant.IconGenerator.csproj"
 ```
 
-Include all three in required-path validation.
+All three go into required-path validation.
 
-After `$stagingRoot` exists and before MSI/bundle build:
+After `$stagingRoot` creation:
 
 ```powershell
 $brandingOutput = Join-Path $stagingRoot "branding"
@@ -716,7 +678,7 @@ foreach ($presentationOutput in @($bundleIconPath, $bundleLogoPath)) {
 }
 ```
 
-Pass to bundle build:
+Bundle build receives:
 
 ```powershell
 "-p:LocalizationFile=$localizationPath" `
@@ -724,72 +686,56 @@ Pass to bundle build:
 "-p:LogoFile=$bundleLogoPath"
 ```
 
-No presentation operation occurs after copying the bundle to `$artifactPath` and before checksum/provenance verification.
+No presentation write occurs after `Copy-Item` creates `$artifactPath`.
 
-- [ ] **Step 6: Run core GREEN before VERSION bump**
-
-Run full core:
+- [ ] **Step 6: Run full functional GREEN while VERSION is unchanged**
 
 ```bash
 dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release
 ```
 
-Expected: all tests PASS while VERSION is still the baseline value.
+Expected: all core tests PASS at baseline VERSION.
 
-- [ ] **Step 7: Run a Windows canonical producer checkpoint**
-
-On Windows CI/manual canonical environment run only the repository producer:
+- [ ] **Step 7: Run one Windows canonical producer checkpoint**
 
 ```powershell
 webassist\build\windows\package.bat
 ```
 
-Expected:
-
-```text
-<effective installerBaseName>-win-x64-0.3.27.exe
-.sha256
-.provenance.json
-```
-
-This checkpoint proves functional buildability but is not final release/lifecycle evidence because VERSION has not yet advanced.
+Expected baseline-version EXE + `.sha256` + `.provenance.json`. This proves buildability only; it is not final acceptance.
 
 - [ ] **Step 8: Commit functional GREEN**
 
-Commit message:
-
-```text
-#192: integrate Russian installer presentation
+```bash
+git commit -m "#192: integrate Russian installer presentation"
 ```
 
-Record exact functional-GREEN head and core/producer evidence in PR body.
+Record exact functional-GREEN SHA and evidence in PR.
 
 ---
 
-### Task 5: Documentation and one-time VERSION transition
+### Task 5: Documentation and the one VERSION transition
 
 **Files:**
 - Modify: `webassist/README.md`
 - Modify: `webassist/VERSION`
 
 **Interfaces:**
-- Consumes: functional GREEN presentation implementation.
-- Produces: factual product documentation and the only VERSION transition for #192.
+- Consumes: functional GREEN implementation.
+- Produces: factual docs and exactly one monotonic VERSION transition.
 
 - [ ] **Step 1: Document presentation authority**
 
-Add a concise Windows packaging subsection stating:
+Document all of these facts:
 
 ```text
-ru-RU.wxl is the canonical default interactive installer localization;
-webassistant-icon.svg is the only hand-authored graphical authority;
-ICO 16/32/48/256 and WixStdBA PNG 64x64 are generated during canonical packaging;
-no machine-local graphics tool is required;
-product-metadata.json controls textual identity only and does not override graphical branding;
-technical service/executable/upgrade IDs remain stable.
+ru-RU.wxl is canonical default interactive Windows installer localization;
+webassistant-icon.svg is the only hand-authored graphic authority;
+ICO sizes 16/32/48/256 and WixStdBA PNG 64x64 are generated during canonical packaging;
+no machine-local graphics editor/converter is required;
+product-metadata.json controls textual identity only;
+WebAssistant.exe, service name and WiX lifecycle IDs remain technical stable identities.
 ```
-
-Do not document behavior that has not been implemented and tested.
 
 - [ ] **Step 2: Re-run full core on docs head**
 
@@ -799,56 +745,46 @@ dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release
 
 Expected: PASS.
 
-- [ ] **Step 3: Resolve the single next VERSION from live main/base**
+- [ ] **Step 3: Resolve next VERSION against current base**
 
-If baseline is still `0.3.27`, set:
-
-```text
-0.3.28
-```
-
-If main has advanced, choose the next monotonic patch version over the actual base and document why in PR evidence.
+If base remains `0.3.27`, next is exactly `0.3.28`. If base changed, next is the next patch over the actual current base.
 
 - [ ] **Step 4: Change `webassist/VERSION` exactly once**
 
-No other VERSION commit is allowed for this transaction.
-
-Commit message when baseline remains current:
+For unchanged baseline:
 
 ```text
-#192: bump version to 0.3.28
+0.3.27 -> 0.3.28
 ```
 
-- [ ] **Step 5: Verify repo-guard and core on VERSION head**
+Commit:
 
-Expected:
-
-```text
-repo-guard = PASS
-core = PASS
+```bash
+git commit -m "#192: bump version to 0.3.28"
 ```
 
-If either fails, fix implementation/tests/docs without another VERSION bump.
+No second VERSION bump in this transaction.
+
+- [ ] **Step 5: Verify core + repo-guard on VERSION head**
+
+Both must PASS. Any defect after this point is fixed on the same VERSION.
 
 ---
 
-### Task 6: Final exact-head installer/lifecycle acceptance
+### Task 6: Final exact-head Ready CI and lifecycle acceptance
 
 **Files:**
-- No planned source changes unless a failing acceptance test proves a defect.
-- If a defect is found, return to RED -> GREEN on the same VERSION; do not bump again.
+- No planned source changes.
 
 **Interfaces:**
-- Consumes: final source head with the one VERSION transition.
-- Produces: immutable exact-artifact acceptance evidence.
+- Consumes: final source head after the single VERSION bump.
+- Produces: immutable exact-artifact evidence.
 
-- [ ] **Step 1: Mark Draft PR Ready only after repo-guard/core are GREEN**
+- [ ] **Step 1: Mark PR Ready only after core and repo-guard GREEN**
 
-Do not change source head while heavy Ready CI is running.
+Do not change source head during heavy Ready CI.
 
-- [ ] **Step 2: Require final Ready CI on exact head**
-
-Final gate must show SUCCESS for:
+- [ ] **Step 2: Require exact-head SUCCESS for**
 
 ```text
 core / test
@@ -856,16 +792,16 @@ repo-guard
 Windows Service acceptance / Build Windows installer artifact once
 Windows Service acceptance / Windows WiX installer lifecycle
 scanner final acceptance / Windows TWAIN direct SDK
-scanner final acceptance / Linux SANE direct SDK (if repository classifier still requires it)
+scanner final acceptance / Linux SANE direct SDK when repository classifier requires it
 ci-fast
 ci-required
 ```
 
-The Windows lifecycle must exercise exact producer bytes and historical `v0.3.21 -> final candidate` live-worker upgrade.
+Windows lifecycle must consume exact producer bytes and reproduce historical `v0.3.21 -> final VERSION` live-worker upgrade.
 
-- [ ] **Step 3: Verify artifact identity/evidence**
+- [ ] **Step 3: Verify exact artifact evidence**
 
-Check final artifact set:
+Require:
 
 ```text
 <effective basename>-win-x64-<final VERSION>.exe
@@ -873,11 +809,9 @@ Check final artifact set:
 <same>.provenance.json
 ```
 
-Verify recorded SHA matches exact EXE bytes and provenance source SHA equals the final accepted PR head used by producer.
+Recorded hash must equal EXE bytes; provenance source SHA must equal exact producer source head.
 
-- [ ] **Step 4: Verify no technical identity drift**
-
-From source/tests and lifecycle logs prove unchanged:
+- [ ] **Step 4: Verify technical identity invariants**
 
 ```text
 WebAssistant.exe
@@ -887,68 +821,53 @@ Package Id = netkeep80.WebAssistant
 UpgradePreflight order/tokens
 ```
 
-- [ ] **Step 5: Update PR final evidence**
+- [ ] **Step 5: Record exact final evidence in PR**
 
-Record exact:
-
-```text
-final head SHA
-VERSION
-core pass count
-repo-guard pass count
-Ready CI run
-Windows producer job
-Windows lifecycle job
-historical upgrade result
-scanner acceptance jobs
-ci-required job
-```
+Record head SHA, VERSION, core pass count, repo-guard pass count, Ready run ID, producer job, lifecycle job, historical upgrade result, scanner acceptance jobs and `ci-required` job.
 
 ---
 
-### Task 7: Real Windows visual evidence, merge, and roadmap handoff
+### Task 7: Real Windows visual evidence, merge and roadmap handoff
 
 **Files:**
-- No production source changes expected.
-- Evidence is attached to issue/PR comments; screenshots are not build inputs.
+- No production source change expected.
+- Screenshots are issue/PR evidence only, never build inputs.
 
 **Interfaces:**
-- Consumes: exact final installer from Task 6.
+- Consumes: exact final accepted installer bytes from Task 6.
 - Produces: human visual acceptance and completed #192 transaction.
 
-- [ ] **Step 1: Install/test exact final EXE on real Windows**
+- [ ] **Step 1: Capture exact-artifact Windows screenshots**
 
-Capture screenshots showing:
+Use the CI-accepted EXE without local rebuild and capture:
 
-1. initial installer screen in Russian;
-2. maintenance/upgrade interaction in Russian where reachable;
-3. installer EXE icon in Explorer;
-4. Installed Apps / Programs and Features icon;
-5. representative downgrade/failure-facing result that is understandable in Russian.
-
-Use the exact artifact SHA already accepted by CI; do not rebuild locally for screenshots.
+```text
+initial installer UI in Russian;
+maintenance/repair/uninstall UI in Russian;
+installer EXE icon in Explorer;
+Installed Apps / Programs and Features icon;
+representative downgrade/failure result with understandable Russian user-facing text.
+```
 
 - [ ] **Step 2: Human icon review**
 
-Inspect at 16/32/48/256 sizes and confirm:
+Confirm at 16/32/48/256 and WixStdBA 64x64:
 
 ```text
-scanner silhouette remains recognizable;
-paper/file cue remains visible;
-no text is required to understand the mark;
-64x64 WixStdBA logo is not blurry/cropped;
-Explorer and ARP use the same graphical identity.
+scanner body remains recognizable;
+paper/file folded-corner cue remains visible;
+no text is required;
+logo is not cropped or blurred;
+Explorer and ARP use the same identity.
 ```
 
-If visual changes are requested, treat them as source changes: update SVG, re-run generator/core, re-run full exact-head Ready CI and keep the same VERSION unless repository policy explicitly requires a new transaction. Never patch accepted EXE bytes.
+A requested SVG visual change is a source change: rerun generator/core and full exact-head Ready CI on the same VERSION; never patch accepted EXE bytes.
 
-- [ ] **Step 3: Attach visual evidence to #192 and PR**
-
-Document that screenshots correspond to exact artifact SHA and VERSION.
+- [ ] **Step 3: Attach screenshots with exact VERSION and SHA evidence to #192/PR**
 
 - [ ] **Step 4: Final diff audit**
 
-Before merge confirm changed files do not include:
+Changed files must not include:
 
 ```text
 contracts/webassistant-contract-v0.2.json
@@ -961,25 +880,17 @@ webassist/build/common/product-metadata.defaults.json
 webassist/build/common/ProductMetadataResolver/**
 ```
 
-- [ ] **Step 5: Merge with expected-head guard**
+- [ ] **Step 5: Merge using expected final head SHA**
 
-Merge only if PR remains mergeable and head SHA equals the fully accepted exact head.
+Merge only while PR is mergeable and exact head equals the fully accepted head.
 
-- [ ] **Step 6: Post-merge verify main**
+- [ ] **Step 6: Post-merge verify**
 
-Re-fetch:
+Re-fetch `main`, VERSION and #192 closed state; record post-merge CI if push workflows run.
 
-```text
-main SHA
-webassist/VERSION
-issue #192 closed/completed
-```
+- [ ] **Step 7: Update #160 and #154**
 
-Run/observe post-merge required CI if repository workflows trigger on push and record outcomes.
-
-- [ ] **Step 7: Update roadmap #160 and distribution roadmap #154**
-
-Record #192 DONE and the new current main/VERSION. Preserve the existing next-order rule from #160; do not silently start unrelated GitLab/filesystem work.
+Record #192 DONE plus new `main`/VERSION; continue only with the already authorized roadmap order.
 
 ---
 
@@ -988,25 +899,24 @@ Record #192 DONE and the new current main/VERSION. Preserve the existing next-or
 ### Spec coverage
 
 - Russian install/upgrade/maintenance/failure UI: Tasks 2, 4, 7.
-- Repository-owned SVG and scanner+file visual concept: Task 3.
-- Deterministic ICO 16/32/48/256 and PNG 64x64: Task 3.
-- Bundle EXE + ARP icon: Task 4 plus real evidence Task 7.
-- WixStdBA logo from same SVG authority: Tasks 3-4.
-- Stable technical IDs/#191 behavior: Tasks 4, 6.
-- #190 filename/version/provenance invariants: Tasks 4-6.
-- Accepted v0.2/scanner/Linux exclusions: Global Constraints + Task 7 diff audit.
-- One VERSION transition after functional GREEN: Tasks 4-5.
-- Final acceptance after VERSION bump: Task 6.
-- Real screenshot evidence: Task 7.
+- Repository-owned scanner+file SVG: Task 3.
+- Deterministic ICO 16/32/48/256 + PNG 64x64: Task 3.
+- Bundle EXE + ARP icon and standard WixStdBA logo: Task 4 + Task 7 evidence.
+- #191 stable upgrade lifecycle: Tasks 4 and 6.
+- #190 VERSION/filename/provenance invariants: Tasks 4-6.
+- Candidate v0.3 updated, accepted v0.2 immutable: Task 1.
+- Exactly one VERSION transition after functional GREEN: Task 5.
+- Final lifecycle evidence after bump: Task 6.
+- Real Windows screenshot evidence: Task 7.
 
 ### Placeholder scan
 
-No `TBD`, `TODO`, `implement later`, floating dependency versions, undefined output sizes, or unspecified final gates remain.
+No `TBD`, `TODO`, `implement later`, unspecified localization strings, floating dependency versions, undefined image dimensions or undefined final gates remain.
 
 ### Type/interface consistency
 
-- Generator API is consistently `IconGenerator.Generate(string svgPath, string icoPath, string logoPath)`.
-- CLI contract is consistently `--input`, `--ico`, `--logo`.
-- Generated outputs are consistently `webassistant-icon.ico` and `webassistant-logo.png` under isolated staging.
-- WiX properties are consistently `LocalizationFile`, `BundleIconPath`, `LogoFile`.
-- Final logo size is consistently 64x64; ICO sizes are consistently 16/32/48/256.
+- Generator API: `IconGenerator.Generate(string svgPath, string icoPath, string logoPath)`.
+- CLI: `--input`, `--ico`, `--logo`.
+- Generated names: `webassistant-icon.ico`, `webassistant-logo.png` under isolated staging.
+- WiX properties: `LocalizationFile`, `BundleIconPath`, `LogoFile`.
+- PNG: 64x64. ICO: 16/32/48/256.
