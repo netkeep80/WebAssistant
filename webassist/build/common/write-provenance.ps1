@@ -20,7 +20,23 @@ param(
     [string]$ConfigMode,
 
     [Parameter(Mandatory = $true)]
-    [string]$PackageEntrypoint
+    [string]$PackageEntrypoint,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("defaults", "override")]
+    [string]$MetadataMode,
+
+    [Parameter(Mandatory = $true)]
+    [string]$ApplicationName,
+
+    [Parameter(Mandatory = $true)]
+    [string]$InstallerBaseName,
+
+    [Parameter(Mandatory = $true)]
+    [string]$MetadataInputSha256,
+
+    [Parameter(Mandatory = $true)]
+    [string]$EffectiveMetadataSha256
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,6 +56,12 @@ function Get-Sha256Hex {
     }
     finally {
         $stream.Dispose()
+    }
+}
+
+foreach ($metadataHash in @($MetadataInputSha256, $EffectiveMetadataSha256)) {
+    if ($metadataHash -notmatch '^[0-9a-f]{64}$') {
+        throw "Некорректный product metadata SHA-256: $metadataHash"
     }
 }
 
@@ -71,6 +93,11 @@ $provenance = [ordered]@{
     size = $size
     sdkVersion = $SdkVersion
     configMode = $ConfigMode
+    metadataMode = $MetadataMode
+    applicationName = $ApplicationName
+    installerBaseName = $InstallerBaseName
+    metadataInputSha256 = $MetadataInputSha256
+    effectiveMetadataSha256 = $EffectiveMetadataSha256
     packageEntrypoint = $PackageEntrypoint
 }
 
