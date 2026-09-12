@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
-using WebAssistant.IconGenerator;
+using IconGeneratorApi = WebAssistant.IconGenerator.IconGenerator;
 using Xunit;
 
 namespace WebAssistant.CoreTests;
@@ -26,8 +26,8 @@ public sealed class IconGeneratorTests
             var secondIco = Path.Combine(second, "webassistant-icon.ico");
             var secondLogo = Path.Combine(second, "webassistant-logo.png");
 
-            IconGenerator.Generate(svgPath, firstIco, firstLogo);
-            IconGenerator.Generate(svgPath, secondIco, secondLogo);
+            IconGeneratorApi.Generate(svgPath, firstIco, firstLogo);
+            IconGeneratorApi.Generate(svgPath, secondIco, secondLogo);
 
             Assert.Equal(Sha256(firstIco), Sha256(secondIco));
             Assert.Equal(Sha256(firstLogo), Sha256(secondLogo));
@@ -56,7 +56,7 @@ public sealed class IconGeneratorTests
                 var icoPath = Path.Combine(tempRoot, $"{suffix}.ico");
                 var logoPath = Path.Combine(tempRoot, $"{suffix}.png");
 
-                Assert.ThrowsAny<Exception>(() => IconGenerator.Generate(svgPath, icoPath, logoPath));
+                Assert.ThrowsAny<Exception>(() => IconGeneratorApi.Generate(svgPath, icoPath, logoPath));
                 Assert.False(File.Exists(icoPath));
                 Assert.False(File.Exists(logoPath));
             }
