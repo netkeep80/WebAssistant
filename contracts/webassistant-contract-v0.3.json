@@ -169,7 +169,7 @@
     {
       "id": "WA-WIN-INSTALL-001",
       "kind": "required",
-      "statement": "Windows canonical artifact <effective installer basename>-win-x64-<VERSION>.exe обеспечивает elevation/UAC, machine-wide установку в Program Files, self-contained payload, регистрацию и automatic start Windows Service, Installed Apps/Programs and Features registration с DisplayVersion == webassist/VERSION и standard uninstall. .NET file/product metadata и WiX/ARP user-visible display identity используют effective product metadata, при этом WebAssistant.exe, technical service name WebAssistant и stable WiX lifecycle identity не переименовываются branding override."
+      "statement": "Windows canonical artifact <effective installer basename>-win-x64-<VERSION>.exe обеспечивает elevation/UAC, machine-wide установку в Program Files, self-contained payload, регистрацию и automatic start Windows Service, Installed Apps/Programs and Features registration с DisplayVersion == webassist/VERSION и standard uninstall. .NET file/product metadata и WiX/ARP user-visible display identity используют effective product metadata, при этом WebAssistant.exe, technical service name WebAssistant и stable WiX lifecycle identity не переименовываются branding override. Canonical Windows Burn installer использует repository-owned русскую локализацию WixStandardBootstrapperApplication как default interactive presentation и одну repository-owned графическую identity для bundle EXE/Installed Apps и standard installer logo; presentation resources не изменяют VERSION authority, WebAssistant.exe, technical service name WebAssistant или stable WiX lifecycle identities."
     },
     {
       "id": "WA-ALT-INSTALL-001",
