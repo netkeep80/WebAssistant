@@ -6,12 +6,15 @@
       Name="$(var.ProductDisplayName)"
       Manufacturer="$(var.ProductCompanyName)"
       Version="$(var.ProductVersion)"
+      IconSourceFile="$(var.BundleIconPath)"
       Compressed="yes">
 
     <BootstrapperApplication>
       <bal:WixStandardBootstrapperApplication
           Theme="hyperlinkLicense"
-          LicenseUrl="" />
+          LicenseUrl=""
+          LocalizationFile="$(var.LocalizationFile)"
+          LogoFile="$(var.LogoFile)" />
     </BootstrapperApplication>
 
     <Chain>

@@ -68,6 +68,9 @@ $provenanceWriter = Join-Path $productRoot "build/common/write-provenance.ps1"
 $installerRoot = Join-Path $productRoot "build/windows/installer"
 $packageProject = Join-Path $installerRoot "WebAssistant.Package.wixproj"
 $bundleProject = Join-Path $installerRoot "WebAssistant.Bundle.wixproj"
+$localizationPath = Join-Path $installerRoot "localization/ru-RU.wxl"
+$iconSourcePath = Join-Path $installerRoot "branding/webassistant-icon.svg"
+$iconGeneratorProject = Join-Path $installerRoot "branding/WebAssistant.IconGenerator/WebAssistant.IconGenerator.csproj"
 $versionPath = Join-Path $productRoot "VERSION"
 
 foreach ($requiredPath in @(
@@ -78,6 +81,9 @@ foreach ($requiredPath in @(
     $provenanceWriter,
     $packageProject,
     $bundleProject,
+    $localizationPath,
+    $iconSourcePath,
+    $iconGeneratorProject,
     $preflightProject)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "Отсутствует обязательный installer build input: $requiredPath"
@@ -166,6 +172,9 @@ try {
     $preflightOutput = Join-Path $stagingRoot "preflight"
     $msiOutput = Join-Path $stagingRoot "msi"
     $bundleOutput = Join-Path $stagingRoot "bundle"
+    $brandingOutput = Join-Path $stagingRoot "branding"
+    $bundleIconPath = Join-Path $brandingOutput "webassistant-icon.ico"
+    $bundleLogoPath = Join-Path $brandingOutput "webassistant-logo.png"
 
     foreach ($path in @($artifactPath, "$artifactPath.sha256", "$artifactPath.provenance.json")) {
         if (Test-Path -LiteralPath $path) {
@@ -176,6 +185,24 @@ try {
     New-Item $preflightOutput -ItemType Directory -Force | Out-Null
     New-Item $msiOutput -ItemType Directory -Force | Out-Null
     New-Item $bundleOutput -ItemType Directory -Force | Out-Null
+    New-Item $brandingOutput -ItemType Directory -Force | Out-Null
+
+    & dotnet run `
+        --project $iconGeneratorProject `
+        --configuration Release `
+        -- `
+        --input $iconSourcePath `
+        --ico $bundleIconPath `
+        --logo $bundleLogoPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Не удалось сформировать Windows presentation assets."
+    }
+    foreach ($presentationOutput in @($bundleIconPath, $bundleLogoPath)) {
+        if (-not (Test-Path -LiteralPath $presentationOutput -PathType Leaf) -or
+            (Get-Item -LiteralPath $presentationOutput).Length -le 0) {
+            throw "Не сформирован обязательный presentation asset: $presentationOutput"
+        }
+    }
 
     & dotnet publish $preflightProject `
         --configuration Release `
@@ -244,6 +271,9 @@ try {
         "-p:MsiPath=$msiPath" `
         "-p:PreflightPath=$preflightPath" `
         "-p:ProductVersion=$version" `
+        "-p:LocalizationFile=$localizationPath" `
+        "-p:BundleIconPath=$bundleIconPath" `
+        "-p:LogoFile=$bundleLogoPath" `
         "-p:OutputPath=$bundleOutput"
     if ($LASTEXITCODE -ne 0) {
         throw "Не удалось собрать финальный WiX bundle WebAssistant."
