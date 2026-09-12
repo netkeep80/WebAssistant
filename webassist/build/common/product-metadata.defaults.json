@@ -1,0 +1,8 @@
+{
+  "schema": "webassistant-product-metadata/v1",
+  "applicationName": "WebAssistant",
+  "installerBaseName": "WebAssistant",
+  "fileDescription": "WebAssistant",
+  "companyName": "WebAssistant",
+  "copyright": "Copyright © WebAssistant"
+}
