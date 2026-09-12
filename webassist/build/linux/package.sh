@@ -6,6 +6,9 @@ product_root="$(cd -- "$script_dir/../.." && pwd)"
 project_path="$product_root/src/WebAssistant/WebAssistant.csproj"
 source_config_path="$product_root/src/WebAssistant/appsettings.json"
 default_config_path="$product_root/build/common/default-appsettings.json"
+metadata_defaults_path="$product_root/build/common/product-metadata.defaults.json"
+metadata_override_path="$product_root/src/WebAssistant/product-metadata.json"
+metadata_resolver_project="$product_root/build/common/ProductMetadataResolver/ProductMetadataResolver.csproj"
 provenance_writer="$product_root/build/common/write-provenance.sh"
 version_file="$product_root/VERSION"
 install_root="$product_root/install/linux"
@@ -28,6 +31,14 @@ dotnet_source=""
     echo "Отсутствует provenance writer: $provenance_writer" >&2
     exit 1
 }
+[[ -f "$metadata_defaults_path" ]] || {
+    echo "Отсутствует canonical product metadata defaults: $metadata_defaults_path" >&2
+    exit 1
+}
+[[ -f "$metadata_resolver_project" ]] || {
+    echo "Отсутствует ProductMetadataResolver: $metadata_resolver_project" >&2
+    exit 1
+}
 
 version="$(<"$version_file")"
 [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
@@ -35,15 +46,16 @@ version="$(<"$version_file")"
     exit 1
 }
 
-artifact_name="WebAssistant-linux-x64-${version}.zip"
-artifact_path="$output_root/$artifact_name"
-
 command -v zip >/dev/null 2>&1 || {
     echo "Для сборки Linux artifact требуется zip." >&2
     exit 1
 }
 command -v sha256sum >/dev/null 2>&1 || {
     echo "Для сборки Linux artifact требуется sha256sum." >&2
+    exit 1
+}
+command -v base64 >/dev/null 2>&1 || {
+    echo "Для обработки product metadata требуется base64." >&2
     exit 1
 }
 
@@ -129,15 +141,98 @@ fi
 echo "Используется .NET SDK 10: $dotnet_source ($dotnet_command)"
 
 mkdir -p -- "$output_root"
+metadata_environment_path="$(mktemp "$output_root/.webassistant-product-metadata.XXXXXX.env")"
+rm -f -- "$metadata_environment_path"
+staging_root=""
+
+cleanup_build() {
+    rm -f -- "$metadata_environment_path"
+    if [[ -n "$staging_root" ]]; then
+        rm -rf -- "$staging_root"
+    fi
+}
+trap cleanup_build EXIT
+
+"$dotnet_command" run \
+    --project "$metadata_resolver_project" \
+    --configuration Release \
+    -- \
+    --defaults "$metadata_defaults_path" \
+    --override "$metadata_override_path" \
+    --output "$metadata_environment_path"
+
+[[ -f "$metadata_environment_path" ]] || {
+    echo "ProductMetadataResolver не создал effective metadata output." >&2
+    exit 1
+}
+
+declare -A metadata=()
+while IFS='=' read -r key value; do
+    [[ -n "$key" ]] || continue
+    [[ -z "${metadata[$key]+x}" ]] || {
+        echo "Duplicate ProductMetadataResolver key: $key" >&2
+        exit 1
+    }
+    metadata["$key"]="$value"
+done < "$metadata_environment_path"
+
+required_metadata_keys=(
+    metadataMode
+    applicationNameBase64
+    installerBaseNameBase64
+    fileDescriptionBase64
+    companyNameBase64
+    copyrightBase64
+    metadataInputSha256
+    effectiveMetadataSha256)
+for key in "${required_metadata_keys[@]}"; do
+    [[ -n "${metadata[$key]:-}" ]] || {
+        echo "ProductMetadataResolver не вернул обязательный key: $key" >&2
+        exit 1
+    }
+done
+
+metadata_mode="${metadata[metadataMode]}"
+case "$metadata_mode" in
+    defaults|override)
+        ;;
+    *)
+        echo "Некорректный metadataMode: $metadata_mode" >&2
+        exit 1
+        ;;
+esac
+
+decode_metadata_value() {
+    printf '%s' "$1" | base64 --decode
+}
+
+application_name="$(decode_metadata_value "${metadata[applicationNameBase64]}")"
+installer_basename="$(decode_metadata_value "${metadata[installerBaseNameBase64]}")"
+file_description="$(decode_metadata_value "${metadata[fileDescriptionBase64]}")"
+company_name="$(decode_metadata_value "${metadata[companyNameBase64]}")"
+copyright="$(decode_metadata_value "${metadata[copyrightBase64]}")"
+metadata_input_sha256="${metadata[metadataInputSha256]}"
+effective_metadata_sha256="${metadata[effectiveMetadataSha256]}"
+
+for metadata_hash in "$metadata_input_sha256" "$effective_metadata_sha256"; do
+    [[ "$metadata_hash" =~ ^[0-9a-f]{64}$ ]] || {
+        echo "ProductMetadataResolver вернул некорректный SHA-256: $metadata_hash" >&2
+        exit 1
+    }
+done
+
+export ProductApplicationName="$application_name"
+export ProductDisplayName="$application_name"
+export ProductFileDescription="$file_description"
+export ProductCompanyName="$company_name"
+export ProductCopyright="$copyright"
+
+artifact_name="${installer_basename}-linux-x64-${version}.zip"
+artifact_path="$output_root/$artifact_name"
 staging_root="$(mktemp -d "$output_root/.webassistant-linux-stage.XXXXXX")"
 package_root_name="${artifact_name%.zip}"
 package_root="$staging_root/$package_root_name"
 app_directory="$package_root/app"
-
-cleanup_staging() {
-    rm -rf -- "$staging_root"
-}
-trap cleanup_staging EXIT
 mkdir -p -- "$app_directory"
 
 "$dotnet_command" publish "$project_path" \
@@ -164,7 +259,15 @@ cp -- "$version_file" "$package_root/VERSION"
 cp -- "$install_root/install.sh" "$package_root/install.sh"
 cp -- "$install_root/runtime-dependencies.sh" "$package_root/runtime-dependencies.sh"
 cp -- "$install_root/uninstall.sh" "$package_root/uninstall.sh"
-cp -- "$install_root/webassist.service" "$package_root/webassist.service"
+{
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" == Description=* ]]; then
+            printf 'Description=%s\n' "$file_description"
+        else
+            printf '%s\n' "$line"
+        fi
+    done < "$install_root/webassist.service"
+} > "$package_root/webassist.service"
 chmod +x -- "$package_root/install.sh" "$package_root/runtime-dependencies.sh" "$package_root/uninstall.sh"
 
 [[ -x "$app_directory/WebAssistant" ]] || {
@@ -201,7 +304,12 @@ bash "$provenance_writer" \
     "linux-x64" \
     "$sdk_version" \
     "$config_mode" \
-    "build/linux/package.sh" >/dev/null
+    "build/linux/package.sh" \
+    "$metadata_mode" \
+    "$application_name" \
+    "$installer_basename" \
+    "$metadata_input_sha256" \
+    "$effective_metadata_sha256" >/dev/null
 
 [[ -f "${artifact_path}.sha256" ]] || {
     echo "Не создан SHA-256 evidence: ${artifact_path}.sha256" >&2
@@ -219,7 +327,7 @@ final_sha="$(sha256sum -- "$artifact_path" | awk '{print $1}')"
     exit 1
 }
 
-cleanup_staging
+cleanup_build
 trap - EXIT
 
-echo "Linux artifact создан: $artifact_path (version $version, config $config_mode)"
+echo "Linux artifact создан: $artifact_path (version $version, config $config_mode, metadata $metadata_mode)"
