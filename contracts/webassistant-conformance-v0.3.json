@@ -27,6 +27,11 @@
     "webassist/build/windows/package.ps1",
     "webassist/build/windows/installer/Package.wxs",
     "webassist/build/windows/installer/Bundle.wxs",
+    "webassist/build/windows/installer/localization/ru-RU.wxl",
+    "webassist/build/windows/installer/branding/webassistant-icon.svg",
+    "webassist/build/windows/installer/branding/WebAssistant.IconGenerator/WebAssistant.IconGenerator.csproj",
+    "webassist/build/windows/installer/branding/WebAssistant.IconGenerator/IconGenerator.cs",
+    "webassist/build/windows/installer/branding/WebAssistant.IconGenerator/Program.cs",
     "webassist/install/linux/install.sh",
     "webassist/install/linux/uninstall.sh",
     "webassist/install/windows/install.bat",
@@ -78,6 +83,8 @@
     "tests/core/DistributionContractCandidateTests.cs",
     "tests/core/InstallerArtifactContractTests.cs",
     "tests/core/ProductMetadataContractTests.cs",
+    "tests/core/WindowsInstallerPresentationContractTests.cs",
+    "tests/core/IconGeneratorTests.cs",
     "tests/core/CiWorkflowContractTests.cs",
     "tests/core/ChangePlanClassifierTests.cs",
     "ci/change-plan.sh",
@@ -295,6 +302,13 @@
       "assertion": "Distribution candidate определяет один canonical Windows EXE с configurable user-visible product identity, elevation, machine-wide Program Files lifecycle, self-contained payload, automatic Windows Service, ARP/Installed Apps registration, exact DisplayVersion и standard uninstall при неизменных technical executable/service/lifecycle identifiers.",
       "requirements": ["WA-WIN-INSTALL-001"],
       "evidence": ["tests/core/DistributionContractCandidateTests.cs", "tests/core/SystemServiceProductTests.cs", "tests/core/ProductMetadataContractTests.cs", "webassist/build/windows/installer/Package.wxs", "webassist/build/windows/installer/Bundle.wxs", "tests/windows-service/run-installer-acceptance.ps1", ".github/workflows/windows-service.yml", ".github/workflows/build-installers.yml", ".github/workflows/installer-acceptance.yml"]
+    },
+    {
+      "id": "WA-C-WINDOWS-PRESENTATION-001",
+      "kind": "positive",
+      "assertion": "Canonical Windows Burn installer uses explicit repository-owned Russian WixStdBA localization and one repository-owned scanner+file graphical identity rendered reproducibly into the bundle EXE/ARP icon and standard installer logo without changing stable technical lifecycle identifiers.",
+      "requirements": ["WA-WIN-INSTALL-001", "WA-ARTIFACT-001", "WA-DOC-001"],
+      "evidence": ["tests/core/WindowsInstallerPresentationContractTests.cs", "tests/core/IconGeneratorTests.cs", "webassist/build/windows/installer/localization/ru-RU.wxl", "webassist/build/windows/installer/branding/webassistant-icon.svg", ".github/workflows/windows-service.yml"]
     },
     {
       "id": "WA-C-ALT-INSTALLER-001",
