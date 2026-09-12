@@ -87,6 +87,30 @@ if [[ "${1:-}" == "--list-sdks" ]]; then
     exit 0
 fi
 printf '%s\n' "$*" >> '{{publishMarker}}'
+if [[ "${1:-}" == "run" ]]; then
+    output=""
+    while (($#)); do
+        if [[ "$1" == "--output" ]]; then
+            shift
+            output="$1"
+            break
+        fi
+        shift
+    done
+    [[ -n "$output" ]]
+    mkdir -p "$(dirname -- "$output")"
+    cat > "$output" <<'METADATA'
+metadataMode=defaults
+applicationNameBase64=V2ViQXNzaXN0YW50
+installerBaseNameBase64=V2ViQXNzaXN0YW50
+fileDescriptionBase64=V2ViQXNzaXN0YW50
+companyNameBase64=V2ViQXNzaXN0YW50
+copyrightBase64=Q29weXJpZ2h0IMKpIFdlYkFzc2lzdGFudA==
+metadataInputSha256=0000000000000000000000000000000000000000000000000000000000000000
+effectiveMetadataSha256=1111111111111111111111111111111111111111111111111111111111111111
+METADATA
+    exit 0
+fi
 if [[ "${1:-}" == "publish" ]]; then
     output=""
     while (($#)); do
@@ -130,6 +154,30 @@ if [[ "${1:-}" == "--list-sdks" ]]; then
     exit 0
 fi
 printf '%s\n' "$*" >> '{{publishMarker}}'
+if [[ "${1:-}" == "run" ]]; then
+    output=""
+    while (($#)); do
+        if [[ "$1" == "--output" ]]; then
+            shift
+            output="$1"
+            break
+        fi
+        shift
+    done
+    [[ -n "$output" ]]
+    mkdir -p "$(dirname -- "$output")"
+    cat > "$output" <<'METADATA'
+metadataMode=defaults
+applicationNameBase64=V2ViQXNzaXN0YW50
+installerBaseNameBase64=V2ViQXNzaXN0YW50
+fileDescriptionBase64=V2ViQXNzaXN0YW50
+companyNameBase64=V2ViQXNzaXN0YW50
+copyrightBase64=Q29weXJpZ2h0IMKpIFdlYkFzc2lzdGFudA==
+metadataInputSha256=0000000000000000000000000000000000000000000000000000000000000000
+effectiveMetadataSha256=1111111111111111111111111111111111111111111111111111111111111111
+METADATA
+    exit 0
+fi
 if [[ "${1:-}" == "publish" ]]; then
     output=""
     while (($#)); do
