@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using Xunit;
 
 namespace WebAssistant.CoreTests;
@@ -29,6 +31,77 @@ public sealed class WindowsInstallerPresentationContractTests
         Assert.Contains("LocalizationFile=$(LocalizationFile)", project, StringComparison.Ordinal);
         Assert.Contains("LogoFile=$(LogoFile)", project, StringComparison.Ordinal);
         Assert.Contains("BundleIconPath=$(BundleIconPath)", project, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RussianLocalization_DefinesClosedHyperlinkThemeSurface()
+    {
+        var path = ToFullPath("webassist/build/windows/installer/localization/ru-RU.wxl");
+        Assert.True(File.Exists(path), "Required file is missing: webassist/build/windows/installer/localization/ru-RU.wxl");
+
+        var document = XDocument.Load(path, LoadOptions.PreserveWhitespace);
+        var root = Assert.IsType<XElement>(document.Root);
+        Assert.Equal("WixLocalization", root.Name.LocalName);
+        Assert.Equal("ru-RU", (string?)root.Attribute("Culture"));
+        Assert.Equal("1049", (string?)root.Attribute("Language"));
+
+        var requiredIds = new[]
+        {
+            "Caption", "Title", "CheckingForUpdatesLabel", "UpdateButton", "InstallHeader",
+            "InstallMessage", "InstallMessageOptions", "InstallVersion", "ConfirmCancelMessage",
+            "ExecuteUpgradeRelatedBundleMessage", "HelpHeader", "HelpText", "HelpCloseButton",
+            "InstallLicenseLinkText", "InstallAcceptCheckbox", "InstallOptionsButton",
+            "InstallInstallButton", "InstallCancelButton", "OptionsHeader", "OptionsLocationLabel",
+            "OptionsPerUserScopeText", "OptionsPerMachineScopeText", "OptionsBrowseButton",
+            "OptionsOkButton", "OptionsCancelButton", "ProgressHeader", "ProgressLabel",
+            "OverallProgressPackageText", "ProgressCancelButton", "ModifyHeader", "ModifyRepairButton",
+            "ModifyUninstallButton", "ModifyCancelButton", "SuccessHeader", "SuccessCacheHeader",
+            "SuccessInstallHeader", "SuccessLayoutHeader", "SuccessModifyHeader", "SuccessRepairHeader",
+            "SuccessUninstallHeader", "SuccessUnsafeUninstallHeader", "SuccessLaunchButton",
+            "SuccessRestartText", "SuccessUninstallRestartText", "SuccessRestartButton",
+            "SuccessCloseButton", "FailureHeader", "FailureCacheHeader", "FailureInstallHeader",
+            "FailureLayoutHeader", "FailureModifyHeader", "FailureRepairHeader", "FailureUninstallHeader",
+            "FailureUnsafeUninstallHeader", "FailureHyperlinkLogText", "FailureRestartText",
+            "FailureRestartButton", "FailureCloseButton", "FilesInUseTitle", "FilesInUseLabel",
+            "FilesInUseNetfxCloseRadioButton", "FilesInUseCloseRadioButton",
+            "FilesInUseDontCloseRadioButton", "FilesInUseRetryButton", "FilesInUseIgnoreButton",
+            "FilesInUseExitButton"
+        };
+
+        var strings = root.Elements().Where(element => element.Name.LocalName == "String").ToArray();
+        var byId = strings.ToDictionary(
+            element => (string?)element.Attribute("Id") ?? string.Empty,
+            element => (string?)element.Attribute("Value") ?? string.Empty,
+            StringComparer.Ordinal);
+
+        Assert.Equal(requiredIds.Length, strings.Length);
+        foreach (var id in requiredIds)
+        {
+            Assert.True(byId.ContainsKey(id), $"Missing localization String Id={id}");
+        }
+
+        foreach (var id in new[]
+                 {
+                     "Caption", "InstallMessage", "InstallMessageOptions",
+                     "OptionsPerUserScopeText", "OptionsPerMachineScopeText"
+                 })
+        {
+            Assert.Contains("[WixBundleName]", byId[id], StringComparison.Ordinal);
+        }
+
+        foreach (var pair in byId)
+        {
+            Assert.DoesNotContain("WebAssistant", pair.Value, StringComparison.Ordinal);
+            if (pair.Key == "Title")
+            {
+                Assert.Equal("[WixBundleName]", pair.Value);
+                continue;
+            }
+
+            Assert.True(
+                Regex.IsMatch(pair.Value, "[А-Яа-яЁё]", RegexOptions.CultureInvariant),
+                $"Localization value must contain Russian text: {pair.Key}");
+        }
     }
 
     [Fact]
