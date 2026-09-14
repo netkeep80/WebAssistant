@@ -23,6 +23,10 @@ internal static class FileSystemInternalNames
 
     internal static string CreateStagingFileName() =>
         string.Concat(StagingFilePrefix, Guid.NewGuid().ToString("N"));
+
+    internal static bool IsOwnedStagingFileName(string name) =>
+        name.StartsWith(StagingFilePrefix, StringComparison.Ordinal) &&
+        Guid.TryParseExact(name[StagingFilePrefix.Length..], "N", out _);
 }
 
 internal sealed class FileSystemOperationException : Exception
