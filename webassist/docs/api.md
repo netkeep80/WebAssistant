@@ -274,7 +274,7 @@ Service panel `/` является browser-level клиентом того же 
 
 `GET /v1/diag/info`
 
-Возвращает безопасную runtime-информацию: version, OS, uptime, listen URL, API version и текущее состояние scan coordinator.
+Возвращает безопасную runtime-информацию: version, OS, uptime, listen URL, API version, текущее состояние scan coordinator и состояние filesystem capability (`available` или `unavailable`).
 
 `GET /v1/diag/logs?date=YYYY-MM-DD`
 
@@ -291,6 +291,162 @@ Endpoint принимает только дату, а не filename/path. PDF by
 
 CORS выключен по умолчанию. Для browser origin, отличающегося от origin service panel, его нужно явно добавить в JSON allowlist и установить `WebAssistant:Cors:Enabled=true`. Разрешены только exact HTTP/HTTPS origins; wildcard `*` запрещён.
 
-## Filesystem capability
+При включённом CORS WebAssistant разрешает только методы `GET`, `POST`, `PUT`, `DELETE`. Для JSON и opaque upload запросов разрешён request header `Content-Type`. Cross-origin mutation проходит обычный browser preflight; origin, отсутствующий в allowlist, не получает `Access-Control-Allow-Origin`.
 
-`WebAssistant:FileSystem:RootDirectory` является runtime boundary. Внутренний path resolver принимает только относительные пути внутри configured root и отвергает navigation segments, absolute paths и существующие symlink/reparse-point components. Browser-facing filesystem routes в текущем API не опубликованы.
+## Файловый обмен
+
+`WebAssistant:FileSystem:RootDirectory` задаёт единственную filesystem authority WebAssistant. Клиент видит только root-relative virtual paths; host absolute path через filesystem API не публикуется. Browser/API не могут менять `RootDirectory`.
+
+Filesystem API stateless: сервер не хранит current directory пользователя. Навигация принадлежит caller и выражается только переданным `path`.
+
+Публичная поверхность содержит ровно следующие маршруты:
+
+```text
+GET    /v1/filesystem/list?path=<relative>&cursor=<opaque>&limit=<n>
+GET    /v1/filesystem/file?path=<relative>
+PUT    /v1/filesystem/file?path=<relative>
+DELETE /v1/filesystem/file?path=<relative>
+POST   /v1/filesystem/directory
+DELETE /v1/filesystem/directory?path=<relative>
+POST   /v1/filesystem/move
+```
+
+Нет catch-all filesystem route, server-side `cd` session или endpoint для произвольного host path.
+
+### Listing
+
+`GET /v1/filesystem/list`
+
+`path` — root-relative каталог; пустая строка обозначает `Root`. `limit` по умолчанию равен `200`, maximum `1000`. `cursor` opaque и действителен только для того же каталога, для которого был выдан.
+
+Ответ:
+
+```json
+{
+  "path": "incoming/2026",
+  "entries": [
+    {
+      "name": "document.pdf",
+      "kind": "file",
+      "size": 12345,
+      "createdAt": "2026-09-14T12:00:00Z",
+      "lastModifiedAt": "2026-09-14T12:00:00Z",
+      "restrictionCode": null
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+`kind` принимает `file`, `directory` или `link`. Для directory/link `size` может быть `null`. `restrictionCode` — `null`, `active_extension`, `link` или `hardlink`. Listing advisory и не является snapshot: внешняя программа может изменить каталог между страницами.
+
+### Создание каталога
+
+`POST /v1/filesystem/directory`
+
+`Content-Type: application/json`:
+
+```json
+{
+  "path": "incoming/2026"
+}
+```
+
+Успех: `204 No Content`. Existing destination не заменяется.
+
+### Upload / создание файла
+
+`PUT /v1/filesystem/file?path=<relative>`
+
+Request body — opaque bytes; canonical content type `application/octet-stream`. Zero-length body создаёт пустой файл.
+
+Upload публикуется атомарно: данные сначала полностью записываются во внутренний staging namespace на том же filesystem, затем complete staging object атомарно переименовывается в final path с no-replace semantics. Final filename не появляется из-за данного upload до commit. Existing destination никогда не перезаписывается; competing same-name uploads дают одного победителя и conflict остальным.
+
+Успех: `204 No Content`.
+
+### Download
+
+`GET /v1/filesystem/file?path=<relative>`
+
+Успех: `200 OK` с file-transfer semantics:
+
+```text
+Content-Type: application/octet-stream
+Content-Disposition: attachment
+X-Content-Type-Options: nosniff
+```
+
+WebAssistant не определяет rendering behavior по filename extension и не отображает `RootDirectory` как static web tree.
+
+### Move / rename
+
+`POST /v1/filesystem/move`
+
+`Content-Type: application/json`:
+
+```json
+{
+  "sourcePath": "incoming/a.bin",
+  "destinationPath": "archive/a.bin"
+}
+```
+
+Move выполняется как atomic same-filesystem rename без replacement. Copy+delete fallback не используется. Успех: `204 No Content`.
+
+### Delete
+
+`DELETE /v1/filesystem/file?path=<relative>` удаляет обычный файл.
+
+`DELETE /v1/filesystem/directory?path=<relative>` удаляет только пустой каталог. Recursive delete через API отсутствует.
+
+Успех: `204 No Content`.
+
+### Path и link policy
+
+Разрешены только segment-based root-relative paths. Отклоняются absolute Windows/POSIX/UNC paths, `.`/`..`, empty interior segments, NUL, недопустимые platform names и внутренний `.webassistant-*` namespace.
+
+Symlink, junction и другие link/reparse objects могут быть диагностически видимы в listing как `kind=link`, но public API не проходит через них, не скачивает, не перемещает и не удаляет их. Hard-linked regular files также fail-closed для read/destructive operations.
+
+### Active-file deny policy
+
+WebAssistant считает пользовательский файл недоверенным opaque набором байтов: не исполняет, не парсит, не конвертирует и не рендерит его как web content.
+
+Standalone active extensions блокируются case-insensitive по final extension:
+
+```text
+.exe .com .bat .cmd
+.ps1 .psm1
+.vbs .vbe
+.js .jse
+.wsf .wsh .hta
+.msi .msp
+.scr .cpl
+.sh .bash .zsh .fish
+.desktop
+.html .htm
+.svg
+```
+
+Upload в blocked extension и move из/в такой filename возвращают `422 blocked_file_type`. Если restricted file создан внешней программой напрямую в `RootDirectory`, listing может показать его с `restrictionCode=active_extension`, но WebAssistant не отдаёт его через download и не переименовывает. Удаление такого directory entry разрешено для cleanup.
+
+Это filename policy, а не antivirus/content inspection; переименованный executable под разрешённым расширением не заявляется как обнаруживаемый.
+
+### Ошибки filesystem API
+
+Filesystem errors имеют `Content-Type: application/problem+json` и stable top-level machine-readable `code`.
+
+```text
+400 invalid_path
+404 not_found
+409 destination_exists
+409 directory_not_empty
+409 unsafe_link
+409 hardlink_rejected
+422 blocked_file_type
+423 locked
+503 filesystem_unavailable
+```
+
+Problem response не раскрывает host absolute root path.
+
+Если configured `RootDirectory` невозможно безопасно открыть/проверить, filesystem capability становится unavailable и filesystem routes возвращают `503 filesystem_unavailable`, но unrelated capabilities, включая `GET /v1/health` и scanner API, продолжают работать.

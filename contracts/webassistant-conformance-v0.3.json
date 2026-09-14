@@ -78,6 +78,8 @@
     "tests/core/CorsConfigurationTests.cs",
     "tests/core/ConfigurationOwnershipTests.cs",
     "tests/core/RootedPathResolverTests.cs",
+    "tests/core/FileSystemCandidateContractTests.cs",
+    "tests/core/FileSystemPolicyTests.cs", "tests/core/LinuxRootedFileSystemTests.cs", "tests/core/WindowsRootedFileSystemTests.cs", "tests/core/HttpFileSystemContractTests.cs", "tests/core/FileSystemLifecycleTests.cs", "tests/core/FilePublicationTests.cs", "tests/core/FileSystemPageContractTests.cs", "tests/core/FileSystemBrowserTests.cs",
     "tests/core/DependencyOwnershipTests.cs",
     "webassist/vendor/naps2/README.md",
     "tests/core/DistributionContractCandidateTests.cs",
@@ -236,9 +238,30 @@
     {
       "id": "WA-C-ROOTED-FILESYSTEM-001",
       "kind": "negative",
-      "assertion": "Filesystem resolution остаётся внутри configured root, обход boundary отвергается, browser-facing filesystem routes в current baseline отсутствуют.",
-      "requirements": ["WA-FS-001", "WA-FS-002"],
-      "evidence": ["tests/core/RootedPathResolverTests.cs", "tests/core/HttpScanContractTests.cs"]
+      "assertion": "Filesystem authority остаётся внутри configured RootDirectory: absolute/navigation escape, symlink/junction/reparse traversal, hard-link aliasing и concurrent parent replacement не могут вывести read/write/move/delete за root. Native Windows handle-relative и Linux descriptor-relative evidence обязаны fail-closed.",
+      "requirements": ["WA-FS-001", "WA-FS-007"],
+      "evidence": ["tests/core/RootedPathResolverTests.cs", "tests/core/FileSystemPolicyTests.cs", "tests/core/LinuxRootedFileSystemTests.cs", "tests/core/WindowsRootedFileSystemTests.cs"]
+    },
+    {
+      "id": "WA-C-FILESYSTEM-API-001",
+      "kind": "positive",
+      "assertion": "Candidate filesystem API публикует versioned list/file/directory/move routes с explicit root-relative paths, normalized application/problem+json codes, paged listing default 200/max 1000, streaming opaque downloads и stateless caller-owned navigation.",
+      "requirements": ["WA-FS-002", "WA-FS-005", "WA-FS-006", "WA-FS-007"],
+      "evidence": ["tests/core/HttpFileSystemContractTests.cs", "tests/core/CorsConfigurationTests.cs", "tests/core/FileSystemLifecycleTests.cs"]
+    },
+    {
+      "id": "WA-C-FILESYSTEM-ATOMIC-001",
+      "kind": "negative",
+      "assertion": "Upload publication и move используют atomic no-replace semantics: final upload name отсутствует до complete commit, existing destination bytes никогда не заменяются, staging namespace не public, recursive delete/append/implicit replace отсутствуют.",
+      "requirements": ["WA-FS-003", "WA-FS-004"],
+      "evidence": ["tests/core/FilePublicationTests.cs", "tests/core/HttpFileSystemContractTests.cs"]
+    },
+    {
+      "id": "WA-C-FILESYSTEM-BROWSER-001",
+      "kind": "positive",
+      "assertion": "Repository-owned /filesystem.html является обычным public-API browser client: Playwright/Chromium acceptance проверяет Root breadcrumb navigation, все MVP operations и external mutation shared RootDirectory без private test endpoint или absolute host path disclosure.",
+      "requirements": ["WA-FS-008"],
+      "evidence": ["tests/core/FileSystemPageContractTests.cs", "tests/core/FileSystemBrowserTests.cs"]
     },
     {
       "id": "WA-C-DEPENDENCY-OWNERSHIP-001",

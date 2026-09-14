@@ -15,12 +15,15 @@ public sealed class DistributionContractCandidateTests
     private static readonly HashSet<string> SupersededRequirementIds =
     [
         "WA-SCAN-001",
-        "WA-SCAN-002"
+        "WA-SCAN-002",
+        "WA-FS-001",
+        "WA-FS-002"
     ];
 
     private static readonly HashSet<string> SupersededVectorIds =
     [
-        "WA-C-SCANNER-HTTP-001"
+        "WA-C-SCANNER-HTTP-001",
+        "WA-C-ROOTED-FILESYSTEM-001"
     ];
 
     private static readonly string[] ScannerVectorIds =

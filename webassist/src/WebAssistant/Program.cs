@@ -28,7 +28,7 @@ builder.Services.AddSingleton(serviceProvider =>
     WebAssistantRuntimeOptions.Load(
         serviceProvider.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton(serviceProvider =>
-    new RootedPathResolver(
+    new RootedFileSystemProvider(
         serviceProvider.GetRequiredService<WebAssistantRuntimeOptions>()
             .FileSystemRootDirectory));
 builder.Services.AddSingleton(_ => new AgentRuntimeInfo());
@@ -67,11 +67,17 @@ if (runtimeOptions.CorsEnabled)
     app.UseCors(policy =>
     {
         policy.SetIsOriginAllowed(runtimeOptions.AllowedOrigins.Contains);
-        policy.WithMethods(HttpMethods.Get, HttpMethods.Post);
+        policy.WithMethods(
+            HttpMethods.Get,
+            HttpMethods.Post,
+            HttpMethods.Put,
+            HttpMethods.Delete);
+        policy.WithHeaders("Content-Type");
     });
 }
 
 var api = app.MapGroup(ApiVersion.CurrentPrefix);
+FileSystemEndpointHandlers.Map(api);
 
 api.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 api.MapGet("/scanners", async (
@@ -131,7 +137,8 @@ api.MapPost("/scan", async (
 api.MapGet("/diag/info", (
     AgentRuntimeInfo runtimeInfo,
     WebAssistantRuntimeOptions options,
-    ScanCoordinator coordinator) =>
+    ScanCoordinator coordinator,
+    RootedFileSystemProvider fileSystemProvider) =>
 {
     var uptime = DateTimeOffset.Now - runtimeInfo.StartedAt;
     return Results.Ok(new
@@ -141,7 +148,10 @@ api.MapGet("/diag/info", (
         uptimeSeconds = Math.Max(0L, (long)uptime.TotalSeconds),
         listenUrl = $"http://{options.ListenAddress}:{options.Port}",
         apiVersion = ApiVersion.Current,
-        scanState = coordinator.IsBusy ? "busy" : "idle"
+        scanState = coordinator.IsBusy ? "busy" : "idle",
+        fileSystemState = fileSystemProvider.IsAvailable
+            ? "available"
+            : "unavailable"
     });
 });
 api.MapGet("/diag/logs", async (
