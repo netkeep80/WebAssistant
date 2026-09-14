@@ -24,6 +24,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
 
     private const int AT_SYMLINK_NOFOLLOW = 0x100;
     private const int AT_REMOVEDIR = 0x200;
+    private const uint STATX_BTIME = 0x800;
     private const uint RENAME_NOREPLACE = 1;
 
     private const uint S_IFMT = 0xF000;
@@ -688,10 +689,31 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
             name,
             kind,
             size,
-            ToTimestamp(stat.StCtim),
+            CreationTimestamp(directoryFd, name, stat),
             ToTimestamp(stat.StMtim),
             restriction);
         return true;
+    }
+
+    private static DateTimeOffset CreationTimestamp(int directoryFd, string name, LinuxStat fallback)
+    {
+        if (StatX(directoryFd, name, AT_SYMLINK_NOFOLLOW, STATX_BTIME, out var extended) == 0 &&
+            (extended.Mask & STATX_BTIME) != 0)
+        {
+            return ToTimestamp(new LinuxTimespec
+            {
+                Seconds = extended.Birth.Seconds,
+                Nanoseconds = extended.Birth.Nanoseconds
+            });
+        }
+
+        var change = fallback.StCtim;
+        var modified = fallback.StMtim;
+        var older = change.Seconds < modified.Seconds ||
+            (change.Seconds == modified.Seconds && change.Nanoseconds <= modified.Nanoseconds)
+            ? change
+            : modified;
+        return ToTimestamp(older);
     }
 
     private static LinuxStat ReadEntryStat(int directoryFd, string name)
@@ -867,6 +889,21 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         internal long Nanoseconds;
     }
 
+    [StructLayout(LayoutKind.Explicit, Size = 256)]
+    private struct LinuxStatX
+    {
+        [FieldOffset(0)] internal uint Mask;
+        [FieldOffset(80)] internal LinuxStatXTimestamp Birth;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LinuxStatXTimestamp
+    {
+        internal long Seconds;
+        internal uint Nanoseconds;
+        internal int Reserved;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct LinuxStat
     {
@@ -918,6 +955,14 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         string path,
         out LinuxStat stat,
         int flags);
+
+    [DllImport("libc", SetLastError = true, EntryPoint = "statx")]
+    private static extern int StatX(
+        int directoryFd,
+        string path,
+        int flags,
+        uint mask,
+        out LinuxStatX stat);
 
     [DllImport("libc", SetLastError = true, EntryPoint = "syscall")]
     private static extern long SyscallOpenAt2(
