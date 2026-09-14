@@ -46,10 +46,10 @@ internal static class ScannerSettingsEndpointHandlers
                     title: "Обнаружение сканеров недоступно");
             }
 
-            var scanner = discovery.FirstOrDefault(candidate =>
+            var registered = discovery.FirstOrDefault(candidate =>
                 string.Equals(candidate.Id, scannerId, StringComparison.Ordinal));
 
-            if (scanner is null)
+            if (registered is null)
             {
                 var backendUnavailable = discovery.Warnings.Any(warning =>
                     warning.Backend == requestedBackend &&
@@ -62,6 +62,14 @@ internal static class ScannerSettingsEndpointHandlers
                     : Results.Problem(
                         statusCode: StatusCodes.Status404NotFound,
                         title: "Сканер не найден");
+            }
+
+            var scanner = await adapter.GetScannerCapabilitiesAsync(scannerId, cancellationToken);
+            if (scanner is null)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status404NotFound,
+                    title: "Сканер не найден");
             }
 
             var modes = ScannerCapabilityProjection.BuildModes(scanner);
@@ -77,7 +85,10 @@ internal static class ScannerSettingsEndpointHandlers
         }
         catch (Exception exception)
         {
-            logger.LogError(exception, "Не удалось получить настройки сканера");
+            logger.LogError(
+                exception,
+                "Не удалось получить capabilities выбранного сканера scannerId={ScannerId}",
+                scannerId);
             return Results.Problem(
                 statusCode: StatusCodes.Status502BadGateway,
                 title: "Ошибка получения настроек сканера");
@@ -88,7 +99,6 @@ internal static class ScannerSettingsEndpointHandlers
     {
         var defaultColor = ScannerCapabilityProjection.DefaultColorMode(mode.Settings);
         var defaultPaperSize = ScannerCapabilityProjection.DefaultPaperSize(mode.Settings);
-
         return new
         {
             mode = ScannerCapabilityProjection.PublicModeName(mode.Mode),
