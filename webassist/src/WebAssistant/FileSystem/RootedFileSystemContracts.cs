@@ -161,8 +161,8 @@ internal static class FileSystemPathPolicy
     {
         if (string.IsNullOrEmpty(name) ||
             name is "." or ".." ||
-            name.Contains('/', StringComparison.Ordinal) ||
-            name.Contains('\0', StringComparison.Ordinal))
+            name.Contains("/", StringComparison.Ordinal) ||
+            name.Contains("\0", StringComparison.Ordinal))
         {
             throw InvalidPath("Имя файлового объекта недопустимо.");
         }
@@ -179,10 +179,10 @@ internal static class FileSystemPathPolicy
             return;
         }
 
-        if (name.Contains('\\', StringComparison.Ordinal) ||
+        if (name.Contains("\\", StringComparison.Ordinal) ||
             name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
-            name.EndsWith('.', StringComparison.Ordinal) ||
-            name.EndsWith(' ', StringComparison.Ordinal))
+            name.EndsWith(".", StringComparison.Ordinal) ||
+            name.EndsWith(" ", StringComparison.Ordinal))
         {
             throw InvalidPath("Имя файлового объекта недопустимо в Windows.");
         }
@@ -216,7 +216,7 @@ internal static class FileSystemPathPolicy
 
     private static bool LooksAbsoluteOnSupportedPlatform(string path)
     {
-        if (path.StartsWith('/', StringComparison.Ordinal) ||
+        if (path.StartsWith("/", StringComparison.Ordinal) ||
             path.StartsWith("\\\\", StringComparison.Ordinal))
         {
             return true;
@@ -229,7 +229,8 @@ internal static class FileSystemPathPolicy
             return true;
         }
 
-        return OperatingSystem.IsWindows() && path.StartsWith('\\');
+        return OperatingSystem.IsWindows() &&
+            path.StartsWith("\\", StringComparison.Ordinal);
     }
 
     private static FileSystemOperationException InvalidPath(string message) =>
