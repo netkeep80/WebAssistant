@@ -77,9 +77,62 @@ Not exposed in the MVP:
 - file execution, parsing, conversion or preview;
 - changing RootDirectory through the HTTP API.
 
-## 4. Directory entry representation
+## 4. Public HTTP surface
 
-Each listing entry contains at least:
+The initial API uses one explicit namespace and root-relative paths carried in query/JSON fields rather than catch-all host paths.
+
+```text
+GET    /v1/filesystem/list?path=<relative>&cursor=<opaque>&limit=<n>
+GET    /v1/filesystem/file?path=<relative>
+PUT    /v1/filesystem/file?path=<relative>
+DELETE /v1/filesystem/file?path=<relative>
+POST   /v1/filesystem/directory
+DELETE /v1/filesystem/directory?path=<relative>
+POST   /v1/filesystem/move
+```
+
+Bodies:
+
+```json
+POST /v1/filesystem/directory
+{
+  "path": "incoming/2026"
+}
+```
+
+```json
+POST /v1/filesystem/move
+{
+  "sourcePath": "incoming/a.pdf",
+  "destinationPath": "done/a.pdf"
+}
+```
+
+`PUT /v1/filesystem/file` streams the raw request body as opaque bytes; `application/octet-stream` is the canonical content type. A zero-length body is valid.
+
+`GET /v1/filesystem/file` always returns file-transfer semantics:
+
+```text
+Content-Type: application/octet-stream
+Content-Disposition: attachment
+X-Content-Type-Options: nosniff
+```
+
+The service never derives response rendering behavior from the filename extension.
+
+## 5. Directory listing and pagination
+
+A listing response contains the normalized current path, entries, and an optional continuation cursor:
+
+```json
+{
+  "path": "incoming/2026",
+  "entries": [],
+  "nextCursor": null
+}
+```
+
+Each entry contains:
 
 ```text
 name
@@ -87,6 +140,7 @@ kind = file | directory | link
 size
 createdAt
 lastModifiedAt
+restrictionCode = null | active_extension | link | hardlink
 ```
 
 `createdAt` and `lastModifiedAt` are UTC timestamps on the wire.
@@ -95,7 +149,16 @@ For directories and links, `size` may be `null`; clients must not infer type fro
 
 The API never returns the host absolute path.
 
-## 5. Path and name policy
+Listing is paged to keep memory and response size bounded:
+
+```text
+default limit = 200
+maximum limit = 1000
+```
+
+`cursor` is opaque to clients and valid only for the same directory path. Because external mutation is normal, pagination is not a snapshot guarantee: entries may move between pages while another process mutates the directory. A browser refresh starts a new listing from the beginning.
+
+## 6. Path and name policy
 
 Input paths are root-relative and segment based.
 
@@ -106,13 +169,14 @@ Rejected:
 - empty interior segments;
 - NUL;
 - a path separator embedded inside a single name field;
-- names invalid on the current operating system.
+- names invalid on the current operating system;
+- any reserved internal staging path/name.
 
 The service follows native platform naming rules rather than forcing an artificial Windows/Linux common subset. This is deliberate because the exchange directory integrates with native third-party software.
 
 The browser test page displays only the root-relative virtual path, with the top represented as `Root`.
 
-## 6. Destructive semantics
+## 7. Destructive semantics
 
 The following behavior is normative:
 
@@ -127,7 +191,27 @@ implicit overwrite / replace           -> never
 
 There is no `exists -> then mutate` decision pattern for destructive operations. Conflict behavior is enforced atomically by the underlying filesystem operation.
 
-## 7. Atomic file publication
+## 8. Normalized errors
+
+Filesystem errors use `application/problem+json` plus a stable machine-readable `code` field.
+
+Initial normalization:
+
+```text
+400 invalid_path
+404 not_found
+409 destination_exists
+409 directory_not_empty
+409 unsafe_link
+409 hardlink_rejected
+422 blocked_file_type
+423 locked
+503 filesystem_unavailable
+```
+
+The browser page displays a human-readable message while retaining the machine code for diagnostic visibility.
+
+## 9. Atomic file publication
 
 Upload is an atomic publication operation for integration with directory-watching software.
 
@@ -144,11 +228,12 @@ HTTP body stream
 
 Before the commit point, the final filename must not exist because of this upload. After the commit point, the final filename refers to the complete uploaded byte sequence.
 
+The implementation owns a reserved internal staging area under RootDirectory, for example `.webassistant-staging`, with the exact name centralized in code. The staging area is not part of the public namespace: it cannot be addressed through the public API and is excluded from public listings.
+
 The staging object:
 
 - lives on the same filesystem as the destination so publication can be a rename, not copy+delete;
-- uses a reserved internal name that cannot be addressed through the public API;
-- is excluded from normal public directory listings;
+- uses an unpredictable internal filename;
 - is removed on ordinary cancellation/failure when possible;
 - may be cleaned up on later service startup if a crash left it orphaned.
 
@@ -156,9 +241,9 @@ Atomic publication is a visibility guarantee, not a power-loss durability guaran
 
 Concurrent uploads to the same final path use atomic no-replace commit: exactly one may succeed; all losers receive `409 Conflict`. Existing destination content is never replaced.
 
-A zero-byte request body is valid and creates an empty file through the same staging/commit path. No separate empty-file primitive is required.
+A zero-byte request body with a valid destination path creates an empty file through the same staging/commit path. No separate empty-file primitive is required.
 
-## 8. Atomic move/rename
+## 10. Atomic move/rename
 
 Move/rename operates only within RootDirectory and must use an atomic same-filesystem rename with no replacement.
 
@@ -166,7 +251,7 @@ If the destination exists, return `409 Conflict`.
 
 The implementation must not silently emulate move with copy+delete. Because source and destination are under one RootDirectory, a cross-filesystem move indicates an invalid root/filesystem topology and is rejected rather than weakened.
 
-## 9. Opaque content model and active-file deny policy
+## 11. Opaque content model and active-file deny policy
 
 Canonical rule:
 
@@ -175,9 +260,9 @@ USER FILE = UNTRUSTED OPAQUE BYTES
 USER FILE != WEB RESOURCE
 ```
 
-WebAssistant does not execute, parse, transform or render uploaded content. Downloads use attachment/file-transfer semantics and anti-sniffing headers. RootDirectory is never mapped as a static web tree.
+WebAssistant does not execute, parse, transform or render uploaded content. RootDirectory is never mapped as a static web tree.
 
-The initial standalone active-file deny policy is extension based and case-insensitive. The following final extensions are rejected for upload/create and for a rename/move that would give an existing object one of these final extensions:
+The initial standalone active-file deny policy is extension based and case-insensitive. The following final extensions are restricted:
 
 ```text
 .exe .com .bat .cmd
@@ -193,13 +278,19 @@ The initial standalone active-file deny policy is extension based and case-insen
 .svg
 ```
 
-The policy evaluates the final extension, so `document.pdf.exe` is rejected.
+The policy evaluates the final extension, so `document.pdf.exe` is restricted.
+
+For API-created content, a restricted destination extension is rejected before writing begins with `422 blocked_file_type`.
+
+If third-party software creates a restricted file directly under RootDirectory, listing may show it with `restrictionCode=active_extension`, but WebAssistant does not download or rename/move it. Deletion of that directory entry is allowed so the browser can clean an unsafe exchange artifact without exposing its bytes.
+
+A rename/move to a restricted destination extension is rejected. A rename/move from an already restricted source is also rejected so the API cannot turn an externally introduced active file into an apparently benign downloadable filename.
 
 This is not content inspection. A renamed executable such as `payload.txt` is not claimed to be detected. Embedded JavaScript/macros inside PDF/DOC/XLS family documents are outside this MVP and those documents remain opaque bytes.
 
 Antivirus/content sanitization is not part of #196.
 
-## 10. Streaming and resource usage
+## 12. Streaming and resource usage
 
 There is no product-level maximum file size in the MVP.
 
@@ -207,51 +298,55 @@ Upload and download must stream with bounded buffering/backpressure. The impleme
 
 Security/path checks happen before the first content byte is exposed to the file handle used for the operation.
 
-## 11. External mutation and races
+Directory listing is bounded by the pagination limits in section 5.
+
+## 13. External mutation, locking and races
 
 A listing is advisory current state, not a stable snapshot for a later mutation.
 
 Expected race normalization:
 
 ```text
-source disappeared                 -> 404 Not Found
-destination appeared               -> 409 Conflict
-object changed into unsafe link    -> reject as unsafe object
-OS/share lock prevents operation   -> 423 Locked
-root/capability temporarily unusable -> 503 Service Unavailable
+source disappeared                    -> 404 not_found
+destination appeared                  -> 409 destination_exists
+object changed into unsafe link       -> 409 unsafe_link
+hard-link alias detected              -> 409 hardlink_rejected
+OS/share lock prevents operation      -> 423 locked
+root/capability temporarily unusable  -> 503 filesystem_unavailable
 ```
 
-The API does not automatically retry locked destructive operations. The caller may refresh state and retry explicitly.
+The API does not automatically wait or retry locked destructive operations. The caller may refresh state and retry explicitly.
 
-## 12. Symlink, junction, reparse and hard-link policy
+## 14. Symlink, junction, reparse and hard-link policy
 
 Externally created symbolic links, junctions and other reparse/link objects may be visible in a directory listing as:
 
 ```text
 kind = link
+restrictionCode = link
 ```
 
 They are diagnostic entries only. The public API does not traverse, read, download, upload-through, rename/move-through or delete them in the MVP.
 
 A path containing a link/reparse component is rejected.
 
-Hard links are treated fail-closed. If the platform reports a regular file link count greater than one, public read/download and destructive operations are rejected. This prevents an in-root directory entry from becoming an alias to content also reachable outside RootDirectory.
+Hard links are treated fail-closed. If the platform reports a regular file link count greater than one, listing may surface the entry with `restrictionCode=hardlink`, but public read/download and destructive operations are rejected. This prevents an in-root directory entry from becoming an alias to content also reachable outside RootDirectory.
 
 The MVP does not attempt a global filesystem search to prove that every hard-link alias is inside RootDirectory.
 
-## 13. Root lifecycle
+## 15. Root lifecycle
 
-`RootDirectory` is administrator owned configuration. The browser/API cannot change it.
+`RootDirectory` is administrator-owned configuration. The browser/API cannot change it.
 
 Configuration changes take effect after service restart.
 
 At startup the service validates the configured root. The root itself must be a real directory and must not be a symlink/junction/reparse point.
 
-If the filesystem capability cannot safely open/validate the configured root, WebAssistant remains available for unrelated capabilities (for example diagnostics/scanning), but filesystem endpoints return `503 Service Unavailable` and diagnostics expose filesystem capability state as unavailable. The service must not silently switch to another directory.
+If the filesystem capability cannot safely open/validate the configured root, WebAssistant remains available for unrelated capabilities (for example diagnostics/scanning), but filesystem endpoints return `503 filesystem_unavailable` and diagnostics expose filesystem capability state as unavailable. The service must not silently switch to another directory.
 
 Platform/default installation may create the normal default data directory as part of installation/bootstrap; runtime API requests do not invent a replacement root.
 
-## 14. Security implementation boundary
+## 16. Security implementation boundary
 
 The existing string-returning `RootedPathResolver` is not a sufficient mutation security boundary under concurrent external mutation.
 
@@ -270,7 +365,7 @@ IRootedFileSystem
 
 HTTP handlers pass root-relative paths only. They never receive or construct trusted absolute paths for security decisions.
 
-### Linux
+### 16.1 Linux
 
 Use a root directory descriptor and descriptor-relative operations. Prefer `openat2` with:
 
@@ -282,7 +377,7 @@ RESOLVE_NO_MAGICLINKS
 
 and `*at` family operations for mutation. `renameat2(..., RENAME_NOREPLACE)` is the required no-replace primitive when available on the supported target.
 
-### Windows
+### 16.2 Windows
 
 Use handle-relative traversal rooted in an opened RootDirectory handle, rejecting reparse components while parent handles remain pinned. `NtCreateFile` with `OBJECT_ATTRIBUTES.RootDirectory` is the intended strong primitive where ordinary .NET path APIs cannot provide the invariant.
 
@@ -290,7 +385,7 @@ Rename/delete/listing remain handle-relative/handle-based rather than validating
 
 A narrow native interop layer is preferred over weakening containment.
 
-## 15. HTTP/browser security
+## 17. HTTP/browser security
 
 Existing platform security remains:
 
@@ -301,13 +396,22 @@ loopback-only listener
 + least-privilege service identity
 ```
 
-State-changing/sensitive browser operations must require normal browser preflight; wildcard CORS is forbidden.
+CORS intentionally allows the methods required by section 4:
 
-CORS methods must be intentionally extended for the chosen filesystem HTTP methods. The implementation must not weaken preflight by selecting unsafe/simple-request shapes merely to avoid OPTIONS.
+```text
+GET
+POST
+PUT
+DELETE
+```
+
+State-changing cross-origin browser requests require normal browser preflight. `POST` mutation bodies use `application/json`; upload uses `application/octet-stream`; wildcard CORS is forbidden.
+
+The implementation must not choose simple-request shapes merely to bypass OPTIONS.
 
 Protection from arbitrary native local processes is a separate future authentication/threat-model transaction.
 
-## 16. Logging
+## 18. Logging
 
 Filesystem request logs contain technical operation/result information only.
 
@@ -315,7 +419,7 @@ Default application logs must not contain file contents or base64/file previews.
 
 Security/debug evidence may record synthetic test paths in tests, but production default logging does not turn filenames into a durable audit trail.
 
-## 17. Test filesystem web page
+## 19. Test filesystem web page
 
 A dedicated repository-owned page is provided at:
 
@@ -329,7 +433,7 @@ The page is a real client of the public filesystem API. It has no private endpoi
 
 It is a small visual file manager constrained to RootDirectory, not a collection of disconnected API forms.
 
-### 17.1 Navigation UX
+### 19.1 Navigation UX
 
 The page visibly represents the current root-relative location.
 
@@ -349,7 +453,7 @@ The absolute host path (`C:\...`, `/var/lib/...`) is not shown.
 
 Navigation state is held in browser JavaScript and every API request sends the complete current root-relative path. The server does not acquire session/current-directory state.
 
-### 17.2 Directory table
+### 19.2 Directory table
 
 The current directory view visibly includes at least:
 
@@ -361,11 +465,13 @@ createdAt
 lastModifiedAt
 ```
 
-Directories are visually distinguishable from files. `kind=link` entries are visibly marked unsafe/inaccessible and have no action that traverses them.
+Directories are visually distinguishable from files. Restricted entries are visibly marked and unavailable actions are disabled.
+
+The page renders the first listing page and provides `Показать ещё` while `nextCursor` is present. A full refresh restarts pagination from the beginning.
 
 The user can refresh after third-party changes and immediately see current filesystem state.
 
-### 17.3 Operations exposed by the page
+### 19.3 Operations exposed by the page
 
 The page must allow a human to exercise every filesystem MVP operation:
 
@@ -374,7 +480,7 @@ The page must allow a human to exercise every filesystem MVP operation:
 - navigate to parent/root;
 - create directory;
 - upload a local file into the current directory;
-- create a zero-byte file by uploading an empty body/name;
+- create a zero-byte file by submitting a valid destination name with zero bytes;
 - download a file;
 - rename an entry;
 - move an entry to another root-relative destination;
@@ -385,7 +491,7 @@ Every operation shows success or the normalized API error in the page. Destructi
 
 No user file is previewed or rendered inline, including PDF, HTML or SVG. Download remains download/attachment behavior.
 
-### 17.4 External-integration visibility
+### 19.4 External-integration visibility
 
 The page must support the real integration use case rather than assuming exclusive ownership of the tree.
 
@@ -393,11 +499,11 @@ If a third-party process creates, renames, modifies or removes an object directl
 
 No client-side cache is treated as filesystem authority.
 
-## 18. Browser integration acceptance
+## 20. Browser integration acceptance
 
 The test page is covered by real browser-level integration tests, not only static source assertions.
 
-Use a headless browser (Playwright/Chromium in CI) against a running WebAssistant instance configured with an isolated temporary RootDirectory.
+Use a headless Chromium browser through Playwright in CI against a running WebAssistant instance configured with an isolated temporary RootDirectory.
 
 The primary browser scenario is:
 
@@ -434,7 +540,7 @@ breadcrumb -> child
 На уровень вверх at Root -> still Root
 ```
 
-### 18.1 External mutation browser scenario
+### 20.1 External mutation browser scenario
 
 While the page is open, the integration test directly changes the isolated RootDirectory through host filesystem APIs:
 
@@ -446,16 +552,16 @@ external delete -> Refresh -> entry disappears
 
 This is mandatory evidence for the third-party integration use case.
 
-### 18.2 Browser negative scenarios
+### 20.2 Browser negative scenarios
 
 Browser integration verifies at least:
 
-- duplicate create/upload destination -> visible `409` and original bytes unchanged;
-- prohibited active extension -> visible rejection and no final object created;
-- delete non-empty directory -> rejection and tree unchanged;
-- object externally deleted between listing and requested operation -> visible `404` and refresh recovers.
+- duplicate create/upload destination -> visible `409 destination_exists` and original bytes unchanged;
+- prohibited active extension -> visible `422 blocked_file_type` and no final object created;
+- delete non-empty directory -> visible `409 directory_not_empty` and tree unchanged;
+- object externally deleted between listing and requested operation -> visible `404 not_found` and refresh recovers.
 
-## 19. Non-browser integration/security tests
+## 21. Non-browser integration/security tests
 
 Browser E2E does not replace lower-level filesystem proofs.
 
@@ -470,17 +576,20 @@ Backend/platform integration tests separately prove:
 - traversal/link/reparse escape attempts cannot cross RootDirectory;
 - TOCTOU replacement probes cannot redirect an operation outside RootDirectory;
 - hard-link aliases are rejected according to this design;
-- streaming does not require full-file memory buffering.
+- streaming does not require full-file memory buffering;
+- pagination remains bounded and cursors cannot switch directory authority.
 
 Windows and Linux each require executable platform evidence for their native containment layer.
 
-## 20. Candidate contract/conformance
+## 22. Candidate contract/conformance
 
 Filesystem routes, responses and error semantics are an observable API delta.
 
 Implementation therefore updates candidate v0.3 contract/conformance (or the then-current candidate) with falsification vectors for:
 
 - root-relative containment;
+- exact HTTP surface;
+- bounded listing/pagination;
 - no overwrite;
 - empty-directory-only delete;
 - atomic publish;
@@ -492,14 +601,14 @@ Implementation therefore updates candidate v0.3 contract/conformance (or the the
 
 Accepted v0.2 remains immutable until a separate explicit promotion transaction.
 
-## 21. Completion criteria
+## 23. Completion criteria
 
 #196 implementation is ready for semantic acceptance only when all of the following are true:
 
 - every MVP filesystem operation works through the public API;
 - root containment has platform-specific executable evidence on Windows and Linux;
 - atomic publication and no-replace semantics are proven under concurrency;
-- filesystem.html provides complete visual RootDirectory navigation and all MVP operations;
+- `/filesystem.html` provides complete visual RootDirectory navigation and all MVP operations;
 - headless browser integration exercises the real page end-to-end;
 - external host mutation is reflected after page refresh;
 - prohibited/unsafe content and link classes fail closed as specified;
