@@ -45,10 +45,11 @@ public sealed class WindowsScannerDiscoveryRegressionTests
     }
 
     [Fact]
-    public async Task Discovery_LogsPerBackendGetDeviceListOutcomeDurationAndFailureDetails()
+    public async Task Discovery_LogsPerBackendGetDeviceListOutcomeDurationWithoutNativeIds()
     {
         var logger = new CaptureLogger();
         const string nativeId = "machine-specific-native-id";
+        const string backendFailureMessage = "twain enumeration boom";
 
         var result = await WindowsScanAdapter.DiscoverAsync(
             driver => driver switch
@@ -58,7 +59,7 @@ public sealed class WindowsScannerDiscoveryRegressionTests
                     new(Driver.Wia, nativeId, "Registered WIA scanner")
                 }),
                 Driver.Twain => Task.FromException<List<ScanDevice>>(
-                    new InvalidOperationException("twain enumeration boom")),
+                    new InvalidOperationException(backendFailureMessage)),
                 _ => throw new ArgumentOutOfRangeException(nameof(driver), driver, null)
             },
             logger);
@@ -76,10 +77,11 @@ public sealed class WindowsScannerDiscoveryRegressionTests
                 StringComparison.Ordinal) &&
             message.Contains("durationMs=", StringComparison.Ordinal) &&
             message.Contains("exceptionType=InvalidOperationException", StringComparison.Ordinal) &&
-            message.Contains("hresult=0x", StringComparison.Ordinal) &&
-            message.Contains("message=twain enumeration boom", StringComparison.Ordinal));
+            message.Contains("hresult=0x", StringComparison.Ordinal));
         Assert.DoesNotContain(logger.Messages, message =>
             message.Contains(nativeId, StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Messages, message =>
+            message.Contains(backendFailureMessage, StringComparison.Ordinal));
     }
 
     [Fact]
