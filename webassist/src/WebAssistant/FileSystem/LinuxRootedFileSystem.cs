@@ -81,6 +81,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         try
         {
             EnsureStagingDirectory();
+            CleanupOrphanedStagingFiles();
         }
         catch
         {
@@ -443,6 +444,60 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         }
 
         using var staging = OpenStagingDirectory();
+    }
+
+    private void CleanupOrphanedStagingFiles()
+    {
+        using var staging = OpenStagingDirectory();
+        var stagingFd = GetFd(staging);
+        var stagingPath = $"/proc/self/fd/{stagingFd}";
+
+        try
+        {
+            foreach (var entryPath in Directory.EnumerateFileSystemEntries(stagingPath))
+            {
+                var name = Path.GetFileName(entryPath);
+                if (string.IsNullOrEmpty(name) ||
+                    !FileSystemInternalNames.IsOwnedStagingFileName(name))
+                {
+                    continue;
+                }
+
+                if (FStatAt(
+                        stagingFd,
+                        name,
+                        out var stat,
+                        AT_SYMLINK_NOFOLLOW) != 0)
+                {
+                    if (Marshal.GetLastPInvokeError() == ENOENT)
+                    {
+                        continue;
+                    }
+
+                    continue;
+                }
+
+                if ((stat.StMode & S_IFMT) != S_IFREG || stat.StNlink != 1)
+                {
+                    continue;
+                }
+
+                if (UnlinkAt(stagingFd, name, 0) != 0 &&
+                    Marshal.GetLastPInvokeError() != ENOENT)
+                {
+                    // Startup cleanup is best effort. Unsafe/unremovable entries remain isolated.
+                }
+            }
+        }
+        catch (DirectoryNotFoundException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+        catch (IOException)
+        {
+        }
     }
 
     private SafeFileHandle OpenStagingDirectory()
