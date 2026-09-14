@@ -119,12 +119,42 @@
     {
       "id": "WA-FS-001",
       "kind": "required",
-      "statement": "Filesystem capability имеет configured RootDirectory и path resolver, который принимает только относительные пути внутри root и отвергает navigation segments, absolute paths и существующие symlink/reparse-point components."
+      "statement": "Filesystem capability имеет configured RootDirectory и принимает только explicit root-relative paths; absolute paths, navigation segments, выход за root, symlink/junction/reparse traversal, hard-link aliasing и check/use race не могут расширить authority за configured RootDirectory."
     },
     {
       "id": "WA-FS-002",
-      "kind": "boundary",
-      "statement": "В текущем accepted baseline browser-facing filesystem routes не опубликованы; добавление таких routes требует отдельного contract/conformance change и сохранения rooted filesystem boundary."
+      "kind": "required",
+      "statement": "Candidate v0.3 публикует GET /v1/filesystem/list, GET/PUT/DELETE /v1/filesystem/file, POST/DELETE /v1/filesystem/directory и POST /v1/filesystem/move. Browser filesystem API stateless: caller владеет текущей директорией и каждый запрос несёт explicit root-relative path."
+    },
+    {
+      "id": "WA-FS-003",
+      "kind": "required",
+      "statement": "Filesystem destructive semantics fail-closed: create/upload при существующем destination получает 409 destination_exists; move/rename является atomic no-replace и при существующем destination получает 409 destination_exists; directory delete разрешён только для пустого каталога и иначе получает 409 directory_not_empty; append, recursive delete и implicit replace не публикуются."
+    },
+    {
+      "id": "WA-FS-004",
+      "kind": "required",
+      "statement": "PUT /v1/filesystem/file принимает opaque streaming body и публикует final name атомарно через same-filesystem internal staging + complete write/close + atomic no-replace commit; final name отсутствует до commit и после commit содержит полный byte sequence. Staging namespace не является public API namespace."
+    },
+    {
+      "id": "WA-FS-005",
+      "kind": "required",
+      "statement": "GET /v1/filesystem/file возвращает opaque application/octet-stream attachment с X-Content-Type-Options=nosniff и не рендерит пользовательские файлы как web resources. Standalone active extensions блокируются extension policy с 422 blocked_file_type; externally-created restricted entries могут быть видимы в listing, но не скачиваются/не переименовываются через API."
+    },
+    {
+      "id": "WA-FS-006",
+      "kind": "required",
+      "statement": "Directory listing возвращает name, kind, size, createdAt, lastModifiedAt и restrictionCode; default page limit=200, maximum limit=1000, cursor opaque. External mutation другими локальными приложениями является штатным сценарием и listing не обещает snapshot между страницами."
+    },
+    {
+      "id": "WA-FS-007",
+      "kind": "required",
+      "statement": "Filesystem errors используют application/problem+json и stable code vocabulary: invalid_path, not_found, destination_exists, directory_not_empty, unsafe_link, hardlink_rejected, blocked_file_type, locked, filesystem_unavailable. Unsafe link/reparse и hard-link entries fail-closed; OS/share lock не имеет hidden retry и получает 423 locked."
+    },
+    {
+      "id": "WA-FS-008",
+      "kind": "required",
+      "statement": "Repository-owned /filesystem.html является visual browser client только public filesystem API: наглядно показывает Root-relative breadcrumb, В корень, На уровень вверх, Обновить, paged directory table и позволяет проверить все MVP file operations без отображения absolute host path или inline preview пользовательских файлов. Реальный Playwright/Chromium integration test проверяет page navigation, all MVP operations и external mutation RootDirectory сторонним host process."
     },
     {
       "id": "WA-DEPS-001",
