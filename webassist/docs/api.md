@@ -431,6 +431,12 @@ Upload в blocked extension и move из/в такой filename возвраща
 
 Это filename policy, а не antivirus/content inspection; переименованный executable под разрешённым расширением не заявляется как обнаруживаемый.
 
+### Visual browser client
+
+`/filesystem.html` — repository-owned visual client того же public filesystem API. У страницы нет private/test-only privilege: все операции выполняются через перечисленные выше `/v1/filesystem/*` routes.
+
+Страница показывает только Root-relative breadcrumb/navigation (`Root`, переход в подкаталог, `В корень`, `На уровень вверх`, `Обновить`) и текущий paged listing. Absolute host path не отображается, а пользовательские файлы не рендерятся inline и не preview-ятся как web content.
+
 ### Ошибки filesystem API
 
 Filesystem errors имеют `Content-Type: application/problem+json` и stable top-level machine-readable `code`.
