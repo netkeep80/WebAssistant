@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using WebAssistant.Scanning;
 using Xunit;
 
@@ -87,12 +88,53 @@ public sealed class WindowsScannerLifetimeTests
     }
 
     [Fact]
-    public void HostedService_DependsOnlyOnHolder_NotOnScanAdapter()
+    public async Task HostedShutdown_LogsDurationAndOutcomeWithoutCreatingUnusedAdapter()
+    {
+        var created = 0;
+        var logger = new CaptureLogger<WindowsScannerShutdownHostedService>();
+        var holder = new WindowsScanAdapterHolder(() =>
+        {
+            Interlocked.Increment(ref created);
+            return new FakeScanAdapter();
+        });
+        var hostedService = new WindowsScannerShutdownHostedService(holder, logger);
+
+        await hostedService.StopAsync(CancellationToken.None);
+
+        Assert.Equal(0, created);
+        Assert.Contains(logger.Messages, message =>
+            message.Contains("scanner.shutdown", StringComparison.Ordinal) &&
+            message.Contains("outcome=notCreated", StringComparison.Ordinal) &&
+            message.Contains("durationMs=", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task HostedShutdown_LogsSuccessfulOwnedAdapterDisposal()
+    {
+        var adapter = new FakeScanAdapter();
+        var logger = new CaptureLogger<WindowsScannerShutdownHostedService>();
+        var holder = new WindowsScanAdapterHolder(() => adapter);
+        Assert.Same(adapter, holder.GetOrCreate());
+        var hostedService = new WindowsScannerShutdownHostedService(holder, logger);
+
+        await hostedService.StopAsync(CancellationToken.None);
+
+        Assert.Equal(1, adapter.DisposeCalls);
+        Assert.Contains(logger.Messages, message =>
+            message.Contains("scanner.shutdown", StringComparison.Ordinal) &&
+            message.Contains("outcome=success", StringComparison.Ordinal) &&
+            message.Contains("durationMs=", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void HostedService_DependsOnHolderAndLogger_NotOnScanAdapter()
     {
         var constructor = Assert.Single(typeof(WindowsScannerShutdownHostedService).GetConstructors());
-        var parameter = Assert.Single(constructor.GetParameters());
+        var parameters = constructor.GetParameters();
 
-        Assert.Equal(typeof(WindowsScanAdapterHolder), parameter.ParameterType);
+        Assert.Equal(2, parameters.Length);
+        Assert.Equal(typeof(WindowsScanAdapterHolder), parameters[0].ParameterType);
+        Assert.Equal(typeof(ILogger<WindowsScannerShutdownHostedService>), parameters[1].ParameterType);
     }
 
     private sealed class FakeScanAdapter : IScanAdapter, IDisposable
@@ -108,5 +150,23 @@ public sealed class WindowsScannerLifetimeTests
             Task.FromResult<Stream>(new MemoryStream());
 
         public void Dispose() => Interlocked.Increment(ref disposeCalls);
+    }
+
+    private sealed class CaptureLogger<T> : ILogger<T>
+    {
+        internal List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Messages.Add(formatter(state, exception));
     }
 }
