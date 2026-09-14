@@ -115,6 +115,56 @@ public sealed class FilePublicationTests : IDisposable
         Assert.Equal(0, new FileInfo(path).Length);
     }
 
+    [Fact]
+    public async Task StartupCleanup_RemovesOnlyOwnedOrphanUploadFiles()
+    {
+        var cleanupRoot = Path.Combine(
+            Path.GetTempPath(),
+            "webassistant-staging-cleanup-tests",
+            Guid.NewGuid().ToString("N"));
+        var stagingDirectory = Path.Combine(
+            cleanupRoot,
+            FileSystemInternalNames.StagingDirectory);
+        Directory.CreateDirectory(stagingDirectory);
+
+        var orphan = Path.Combine(
+            stagingDirectory,
+            string.Concat(
+                FileSystemInternalNames.StagingFilePrefix,
+                Guid.NewGuid().ToString("N")));
+        var foreignFile = Path.Combine(stagingDirectory, "keep.txt");
+        var prefixDirectory = Path.Combine(
+            stagingDirectory,
+            string.Concat(
+                FileSystemInternalNames.StagingFilePrefix,
+                "foreign-directory"));
+
+        await File.WriteAllTextAsync(orphan, "ORPHAN");
+        await File.WriteAllTextAsync(foreignFile, "KEEP");
+        Directory.CreateDirectory(prefixDirectory);
+
+        IDisposable? cleanupFileSystem = null;
+        try
+        {
+            cleanupFileSystem = CreateFileSystem(cleanupRoot) as IDisposable;
+
+            Assert.False(File.Exists(orphan));
+            Assert.True(File.Exists(foreignFile));
+            Assert.True(Directory.Exists(prefixDirectory));
+        }
+        finally
+        {
+            cleanupFileSystem?.Dispose();
+            try
+            {
+                Directory.Delete(cleanupRoot, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
     private static async Task<Exception?> CaptureAsync(Func<Task> action)
     {
         try
