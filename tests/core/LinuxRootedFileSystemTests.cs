@@ -79,6 +79,8 @@ public sealed class LinuxRootedFileSystemTests : IDisposable
         var path=Path.Combine(root,"created.txt");await File.WriteAllTextAsync(path,"x");using var fileSystem=new LinuxRootedFileSystem(root);var before=Assert.Single((await fileSystem.ListAsync("",200,null)).Entries).CreatedAt;await Task.Delay(30);var mode=File.GetUnixFileMode(path);File.SetUnixFileMode(path,mode^UnixFileMode.OtherRead);var after=Assert.Single((await fileSystem.ListAsync("",200,null)).Entries).CreatedAt;Assert.Equal(before,after);
     }
 
+    [Fact] public void LinuxImplementation_DoesNotDependOnProcFdMagicLinks()=>Assert.DoesNotContain("/proc/self/fd",File.ReadAllText(Path.Combine(Directory.GetCurrentDirectory(),"webassist","src","WebAssistant","FileSystem","LinuxRootedFileSystem.cs")),StringComparison.Ordinal);
+
     [Fact]
     public async Task LinuxRootedFileSystem_SymlinkParentAndFinalObjectAreRejected()
     {
