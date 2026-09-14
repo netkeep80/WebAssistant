@@ -73,6 +73,13 @@ public sealed class LinuxRootedFileSystemTests : IDisposable
     }
 
     [Fact]
+    public async Task LinuxListing_CreatedAtSurvivesMetadataChange()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var path=Path.Combine(root,"created.txt");await File.WriteAllTextAsync(path,"x");using var fileSystem=new LinuxRootedFileSystem(root);var before=Assert.Single((await fileSystem.ListAsync("",200,null)).Entries).CreatedAt;await Task.Delay(30);var mode=File.GetUnixFileMode(path);File.SetUnixFileMode(path,mode^UnixFileMode.OtherRead);var after=Assert.Single((await fileSystem.ListAsync("",200,null)).Entries).CreatedAt;Assert.Equal(before,after);
+    }
+
+    [Fact]
     public async Task LinuxRootedFileSystem_SymlinkParentAndFinalObjectAreRejected()
     {
         if (!OperatingSystem.IsLinux())
