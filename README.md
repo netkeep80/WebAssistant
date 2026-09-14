@@ -8,7 +8,7 @@ WebAssistant — локальная machine-wide служба для browser-fac
 
 Canonical product version хранится в [`webassist/VERSION`](webassist/VERSION) и переносится вместе с product root без `.git`. Build, assembly metadata, package metadata и runtime diagnostics используют это persisted значение как единственный product-version authority; Git history и CI run numbers не заменяют его.
 
-Runtime configuration загружается из JSON. CORS по умолчанию выключен и включается только явным allowlist. Filesystem boundary уже включает configured root directory и fail-closed path resolver; browser-facing filesystem routes в текущем accepted baseline отсутствуют.
+Runtime configuration загружается из JSON. CORS по умолчанию выключен и включается только явным allowlist. Текущий runtime/candidate v0.3 также предоставляет rooted filesystem exchange: public API начинается с `GET /v1/filesystem/list`, остальные filesystem operations остаются внутри configured `RootDirectory`, а visual client доступен по `/filesystem.html`. Это не означает promotion semantic authority: current accepted contract/conformance pair по-прежнему v0.2, а v0.3 остаётся candidate.
 
 Продуктовая документация: [`webassist/README.md`](webassist/README.md) и [`webassist/docs/api.md`](webassist/docs/api.md).
 
