@@ -82,7 +82,7 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
         try
         {
             var discovery = await adapter.GetScannersAsync(cancellationToken);
-            logger.LogInformation("Обнаружено сканеров: {ScannerCount}", discovery.Count);
+            logger.LogInformation("Обнаружено зарегистрированных scanner endpoints: {ScannerCount}", discovery.Count);
 
             if (!discovery.IsAvailable)
             {
@@ -92,10 +92,10 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
                     title: "Обнаружение сканеров недоступно");
             }
 
-            selected = discovery.FirstOrDefault(device =>
+            var registered = discovery.FirstOrDefault(device =>
                 string.Equals(device.Id, scannerId, StringComparison.Ordinal));
 
-            if (selected is null)
+            if (registered is null)
             {
                 var backendUnavailable = discovery.Warnings.Any(warning =>
                     warning.Backend == requestedBackend &&
@@ -114,6 +114,17 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
                     : Results.Problem(
                         statusCode: StatusCodes.Status404NotFound,
                         title: "Сканер не найден");
+            }
+
+            selected = await adapter.GetScannerCapabilitiesAsync(scannerId, cancellationToken);
+            if (selected is null)
+            {
+                logger.LogWarning(
+                    "Зарегистрированный scannerId исчез до capability probe: {ScannerId}",
+                    SafeLogText(scannerId));
+                return Results.Problem(
+                    statusCode: StatusCodes.Status404NotFound,
+                    title: "Сканер не найден");
             }
 
             ScanSource source;
