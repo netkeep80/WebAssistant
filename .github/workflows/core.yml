@@ -21,7 +21,9 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - run: dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release
+      - run: dotnet build tests/core/WebAssistant.CoreTests.csproj --configuration Release
+      - run: pwsh tests/core/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
+      - run: dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release --no-build
 
   windows-rooted-filesystem:
     runs-on: windows-latest
