@@ -70,7 +70,7 @@ public sealed class FileSystemCandidateContractTests
             "Playwright",
             "/filesystem.html",
             "external mutation",
-            "tests/core/FileSystemCandidateContractTests.cs"
+            "tests/core/FileSystemCandidateContractTests.cs", "tests/core/LinuxRootedFileSystemTests.cs", "tests/core/WindowsRootedFileSystemTests.cs", "tests/core/HttpFileSystemContractTests.cs", "tests/core/FilePublicationTests.cs", "tests/core/FileSystemPageContractTests.cs", "tests/core/FileSystemBrowserTests.cs"
         };
 
         foreach (var fragment in requiredFragments)
