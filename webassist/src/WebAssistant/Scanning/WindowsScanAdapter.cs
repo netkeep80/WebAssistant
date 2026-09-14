@@ -126,9 +126,11 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         }
 
         var driver = MapDriver(backend);
-        cancellationToken.ThrowIfCancellationRequested();
-        var devices = await getDevices(driver);
-        cancellationToken.ThrowIfCancellationRequested();
+        var devices = await EnumerateSelectedBackendAsync(
+            backend,
+            driver,
+            getDevices,
+            cancellationToken);
 
         var matches = devices
             .Where(candidate => string.Equals(
@@ -180,8 +182,11 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         }
 
         var driver = MapDriver(backend);
-        var devices = await controller.GetDeviceList(driver);
-        cancellationToken.ThrowIfCancellationRequested();
+        var devices = await EnumerateSelectedBackendAsync(
+            backend,
+            driver,
+            selectedDriver => controller.GetDeviceList(selectedDriver),
+            cancellationToken);
         var matches = devices
             .Where(candidate => string.Equals(
                 ScannerIdentity.Create(backend, candidate.ID),
@@ -260,6 +265,29 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             {
                 image.Dispose();
             }
+        }
+    }
+
+    private static async Task<List<ScanDevice>> EnumerateSelectedBackendAsync(
+        ScannerBackend backend,
+        Driver driver,
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var devices = await getDevices(driver);
+            cancellationToken.ThrowIfCancellationRequested();
+            return devices;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new ScannerBackendUnavailableException(backend, exception);
         }
     }
 
