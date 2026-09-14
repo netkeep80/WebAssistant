@@ -10,8 +10,21 @@ internal interface IScanAdapter
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(scannerId);
         var discovery = await GetScannersAsync(cancellationToken);
-        return discovery.FirstOrDefault(scanner =>
-            string.Equals(scanner.Id, scannerId, StringComparison.Ordinal));
+        var scanner = discovery.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, scannerId, StringComparison.Ordinal));
+        if (scanner is not null)
+        {
+            return scanner;
+        }
+
+        if (ScannerIdentity.TryParse(scannerId, out var backend) &&
+            discovery.Warnings.Any(warning =>
+                warning.Backend == backend && warning.Code == "enumerationFailed"))
+        {
+            throw new ScannerBackendUnavailableException(backend);
+        }
+
+        return null;
     }
 
     Task<Stream> ScanAsync(string scannerId, CancellationToken cancellationToken = default);
