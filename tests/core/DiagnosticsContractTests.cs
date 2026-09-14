@@ -89,11 +89,11 @@ public sealed class DiagnosticsContractTests
     [Fact]
     public async Task FileSystem_WritesTechnicalLogsWithoutPathContentOrRoot()
     {
-        using var fixture=CreateFixture();using var client=fixture.Factory.CreateClient();var marker=$"private-{Guid.NewGuid():N}.bin";var moved=$"moved-{Guid.NewGuid():N}.bin";var bytes=$"secret-{Guid.NewGuid():N}"u8.ToArray();
+        using var fixture=CreateFixture();using var client=fixture.Factory.CreateClient();var marker=$"private-{Guid.NewGuid():N}.bin";var moved=$"moved-{Guid.NewGuid():N}.bin";var content=$"secret-{Guid.NewGuid():N}";var bytes=System.Text.Encoding.UTF8.GetBytes(content);
         using(var put=new HttpRequestMessage(HttpMethod.Put,$"/v1/filesystem/file?path={marker}"){Content=new ByteArrayContent(bytes)})Assert.Equal(HttpStatusCode.NoContent,(await client.SendAsync(put)).StatusCode);
         Assert.Equal(HttpStatusCode.OK,(await client.GetAsync("/v1/filesystem/list?path=")).StatusCode);Assert.Equal(HttpStatusCode.OK,(await client.GetAsync($"/v1/filesystem/file?path={marker}")).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent,(await client.PostAsJsonAsync("/v1/filesystem/move",new{sourcePath=marker,destinationPath=moved})).StatusCode);Assert.Equal(HttpStatusCode.NoContent,(await client.DeleteAsync($"/v1/filesystem/file?path={moved}")).StatusCode);
-        var log=await ReadTodayLogAsync(fixture.LogDirectory);Assert.Contains("/v1/filesystem/",log);Assert.DoesNotContain(marker,log);Assert.DoesNotContain(moved,log);Assert.DoesNotContain(System.Text.Encoding.UTF8.GetString(bytes),log);Assert.DoesNotContain(Convert.ToBase64String(bytes),log);Assert.DoesNotContain(fixture.FileSystemRoot,log);
+        var log=await ReadTodayLogAsync(fixture.LogDirectory);Assert.Contains("/v1/filesystem/",log);Assert.DoesNotContain(marker,log);Assert.DoesNotContain(moved,log);Assert.DoesNotContain(content,log);Assert.DoesNotContain(Convert.ToBase64String(bytes),log);Assert.DoesNotContain(fixture.FileSystemRoot,log);
     }
 
     [Fact]
