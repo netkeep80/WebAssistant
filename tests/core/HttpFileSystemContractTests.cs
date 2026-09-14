@@ -98,13 +98,12 @@ public sealed class HttpFileSystemContractTests : IDisposable
             Assert.Equal(HttpStatusCode.NoContent, deleteDirectory.StatusCode);
         }
 
-        Assert.Empty(
-            Directory.EnumerateFileSystemEntries(root)
-                .Where(path =>
-                    !string.Equals(
-                        Path.GetFileName(path),
-                        ".webassistant-staging",
-                        StringComparison.OrdinalIgnoreCase)));
+        Assert.DoesNotContain(
+            Directory.EnumerateFileSystemEntries(root),
+            path => !string.Equals(
+                Path.GetFileName(path),
+                ".webassistant-staging",
+                StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
