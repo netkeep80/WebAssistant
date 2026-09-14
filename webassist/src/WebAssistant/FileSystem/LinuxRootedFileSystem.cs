@@ -6,6 +6,9 @@ namespace WebAssistant.FileSystem;
 internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
 {
     private const int O_RDONLY = 0;
+    private const int O_WRONLY = 1;
+    private const int O_CREAT = 0x40;
+    private const int O_EXCL = 0x80;
     private const int O_DIRECTORY = 0x10000;
     private const int O_NOFOLLOW = 0x20000;
     private const int O_CLOEXEC = 0x80000;
@@ -43,6 +46,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
 
     private const long SYS_openat2 = 437;
     private const string InternalPrefix = ".webassistant-";
+    private const int StreamBufferSize = 64 * 1024;
 
     private readonly SafeFileHandle rootHandle;
     private bool disposed;
@@ -73,6 +77,15 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         }
 
         rootHandle = Own(descriptor);
+        try
+        {
+            EnsureStagingDirectory();
+        }
+        catch
+        {
+            rootHandle.Dispose();
+            throw;
+        }
     }
 
     public ValueTask<RootedFileSystemPage> ListAsync(
@@ -177,7 +190,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
             Stream stream = new FileStream(
                 handle,
                 FileAccess.Read,
-                bufferSize: 64 * 1024,
+                bufferSize: StreamBufferSize,
                 isAsync: false);
             handle = null!;
             return ValueTask.FromResult(stream);
@@ -188,14 +201,75 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         }
     }
 
-    public ValueTask PublishNewFileAsync(
+    public async ValueTask PublishNewFileAsync(
         string relativePath,
         Stream source,
         CancellationToken cancellationToken = default)
     {
-        return ValueTask.FromException(
-            new NotSupportedException(
-                "Atomic publication будет добавлена отдельным TDD-срезом #196."));
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(source);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var destination = FileSystemPathPolicy.Parse(relativePath, allowRoot: false);
+        FileSystemPathPolicy.EnsureFileTypeAllowed(destination.Segments[^1]);
+
+        using var destinationParent = OpenParent(destination, out var destinationName);
+        using var stagingDirectory = OpenStagingDirectory();
+        var stagingName = FileSystemInternalNames.CreateStagingFileName();
+        var stagingCreated = false;
+        var committed = false;
+
+        try
+        {
+            var descriptor = OpenAt2(
+                GetFd(stagingDirectory),
+                stagingName,
+                O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+                SecureResolveFlags,
+                mode: 0x180);
+            if (descriptor < 0)
+            {
+                throw MapMutationError(
+                    Marshal.GetLastPInvokeError(),
+                    "Не удалось создать staging-файл.");
+            }
+
+            stagingCreated = true;
+            await using (var stagingStream = new FileStream(
+                Own(descriptor),
+                FileAccess.Write,
+                bufferSize: StreamBufferSize,
+                isAsync: true))
+            {
+                await source.CopyToAsync(
+                    stagingStream,
+                    StreamBufferSize,
+                    cancellationToken);
+                await stagingStream.FlushAsync(cancellationToken);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (RenameAt2(
+                    GetFd(stagingDirectory),
+                    stagingName,
+                    GetFd(destinationParent),
+                    destinationName,
+                    RENAME_NOREPLACE) != 0)
+            {
+                throw MapRenameError(
+                    Marshal.GetLastPInvokeError(),
+                    "Не удалось опубликовать staging-файл.");
+            }
+
+            committed = true;
+        }
+        finally
+        {
+            if (stagingCreated && !committed)
+            {
+                _ = UnlinkAt(GetFd(stagingDirectory), stagingName, 0);
+            }
+        }
     }
 
     public ValueTask MoveNoReplaceAsync(
@@ -334,6 +408,42 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         rootHandle.Dispose();
     }
 
+    private void EnsureStagingDirectory()
+    {
+        if (MkdirAt(
+                GetFd(rootHandle),
+                FileSystemInternalNames.StagingDirectory,
+                0x1C0) != 0)
+        {
+            var errno = Marshal.GetLastPInvokeError();
+            if (errno != EEXIST)
+            {
+                throw MapMutationError(
+                    errno,
+                    "Не удалось создать staging-каталог.");
+            }
+        }
+
+        using var staging = OpenStagingDirectory();
+    }
+
+    private SafeFileHandle OpenStagingDirectory()
+    {
+        var descriptor = OpenAt2(
+            GetFd(rootHandle),
+            FileSystemInternalNames.StagingDirectory,
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW,
+            SecureResolveFlags);
+        if (descriptor < 0)
+        {
+            throw MapOpenError(
+                Marshal.GetLastPInvokeError(),
+                "Не удалось открыть staging-каталог.");
+        }
+
+        return Own(descriptor);
+    }
+
     private SafeFileHandle OpenDirectory(RootedRelativePath path)
     {
         if (path.Segments.Count == 0)
@@ -401,12 +511,13 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         int directoryFd,
         string relativePath,
         int flags,
-        ulong resolve)
+        ulong resolve,
+        ulong mode = 0)
     {
         var how = new OpenHow
         {
             Flags = unchecked((ulong)flags),
-            Mode = 0,
+            Mode = mode,
             Resolve = resolve
         };
 
