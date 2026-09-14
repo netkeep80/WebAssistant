@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NAPS2.Scan;
 using WebAssistant.Scanning;
 using Xunit;
@@ -41,6 +42,137 @@ public sealed class WindowsScannerDiscoveryRegressionTests
             scanner.Backend == ScannerBackend.Wia && scanner.Name == "Registered WIA scanner");
         Assert.Contains(result.Scanners, scanner =>
             scanner.Backend == ScannerBackend.Twain && scanner.Name == "Registered TWAIN scanner");
+    }
+
+    [Fact]
+    public async Task Discovery_LogsPerBackendGetDeviceListOutcomeDurationAndFailureDetails()
+    {
+        var logger = new CaptureLogger();
+        const string nativeId = "machine-specific-native-id";
+
+        var result = await WindowsScanAdapter.DiscoverAsync(
+            driver => driver switch
+            {
+                Driver.Wia => Task.FromResult(new List<ScanDevice>
+                {
+                    new(Driver.Wia, nativeId, "Registered WIA scanner")
+                }),
+                Driver.Twain => Task.FromException<List<ScanDevice>>(
+                    new InvalidOperationException("twain enumeration boom")),
+                _ => throw new ArgumentOutOfRangeException(nameof(driver), driver, null)
+            },
+            logger);
+
+        Assert.True(result.IsAvailable);
+        Assert.Contains(logger.Messages, message =>
+            message.Contains(
+                "scanner.discovery backend=wia stage=getDeviceList outcome=success",
+                StringComparison.Ordinal) &&
+            message.Contains("durationMs=", StringComparison.Ordinal) &&
+            message.Contains("deviceCount=1", StringComparison.Ordinal));
+        Assert.Contains(logger.Messages, message =>
+            message.Contains(
+                "scanner.discovery backend=twain stage=getDeviceList outcome=failure",
+                StringComparison.Ordinal) &&
+            message.Contains("durationMs=", StringComparison.Ordinal) &&
+            message.Contains("exceptionType=InvalidOperationException", StringComparison.Ordinal) &&
+            message.Contains("hresult=0x", StringComparison.Ordinal) &&
+            message.Contains("message=twain enumeration boom", StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Messages, message =>
+            message.Contains(nativeId, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SelectedCapabilities_LogsSelectedBackendStagesWithOpaqueScannerIdOnly()
+    {
+        var logger = new CaptureLogger();
+        const string nativeId = "machine-specific-selected-native-id";
+        var scannerId = ScannerIdentity.Create(ScannerBackend.Wia, nativeId);
+
+        var scanner = await WindowsScanAdapter.ResolveCapabilitiesAsync(
+            scannerId,
+            driver => Task.FromResult(driver == Driver.Wia
+                ? new List<ScanDevice>
+                {
+                    new(Driver.Wia, nativeId, "Selected WIA scanner")
+                }
+                : throw new InvalidOperationException("unrelated backend must not run")),
+            (_, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.FromResult(new ScanCaps
+                {
+                    PaperSourceCaps = new PaperSourceCaps
+                    {
+                        SupportsFlatbed = true
+                    }
+                });
+            },
+            logger);
+
+        Assert.NotNull(scanner);
+        Assert.Contains(logger.Messages, message =>
+            message.Contains(
+                $"scanner.capabilities backend=wia scannerId={scannerId} stage=getDeviceList outcome=success",
+                StringComparison.Ordinal) &&
+            message.Contains("durationMs=", StringComparison.Ordinal));
+        Assert.Contains(logger.Messages, message =>
+            message.Contains(
+                $"scanner.capabilities backend=wia scannerId={scannerId} stage=getCaps outcome=success",
+                StringComparison.Ordinal) &&
+            message.Contains("durationMs=", StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Messages, message =>
+            message.Contains(nativeId, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SelectedCapabilities_GetCapsFailureLogsExceptionDetailsWithoutNativeId()
+    {
+        var logger = new CaptureLogger();
+        const string nativeId = "machine-specific-failing-native-id";
+        var scannerId = ScannerIdentity.Create(ScannerBackend.Wia, nativeId);
+
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+            WindowsScanAdapter.ResolveCapabilitiesAsync(
+                scannerId,
+                driver => Task.FromResult(driver == Driver.Wia
+                    ? new List<ScanDevice>
+                    {
+                        new(Driver.Wia, nativeId, "Selected WIA scanner")
+                    }
+                    : throw new InvalidOperationException("unrelated backend must not run")),
+                (_, _) => Task.FromException<ScanCaps>(
+                    new TimeoutException("selected capability timeout")),
+                logger));
+
+        Assert.Contains(logger.Messages, message =>
+            message.Contains(
+                $"scanner.capabilities backend=wia scannerId={scannerId} stage=getCaps outcome=failure",
+                StringComparison.Ordinal) &&
+            message.Contains("durationMs=", StringComparison.Ordinal) &&
+            message.Contains("exceptionType=TimeoutException", StringComparison.Ordinal) &&
+            message.Contains("hresult=0x", StringComparison.Ordinal) &&
+            message.Contains("message=selected capability timeout", StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Messages, message =>
+            message.Contains(nativeId, StringComparison.Ordinal));
+    }
+
+    private sealed class CaptureLogger : ILogger
+    {
+        internal List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Messages.Add(formatter(state, exception));
     }
 }
 
