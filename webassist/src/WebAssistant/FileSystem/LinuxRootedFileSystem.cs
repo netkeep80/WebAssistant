@@ -224,7 +224,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
                 handle,
                 FileAccess.Read,
                 bufferSize: 64 * 1024,
-                isAsync: true);
+                isAsync: false);
             handle = null!;
             return ValueTask.FromResult(stream);
         }
