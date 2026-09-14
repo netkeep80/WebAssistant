@@ -1,152 +1,85 @@
 # Windows Scanner Discovery Regression Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Preserve usable scanner endpoints when one Windows scanner capability probe fails and make WIA/TWAIN discovery hangs diagnosable from the normal WebAssistant log.
+**Goal:** Make scanner listing fast and independent from slow/offline scanner capability probes, while increasing Windows scanner diagnostics enough to localize WIA/TWAIN delays.
 
-**Architecture:** Keep the existing independent WIA + TWAIN discovery contract and public warning shape. Split backend enumeration failure from per-device capability failure, so a failed `GetCaps` skips only that endpoint and records the existing backend `enumerationFailed` warning without discarding already valid endpoints. Inject `ILogger<WindowsScanAdapter>` lazily through `WindowsScanAdapterHolder` and emit stage/duration/outcome diagnostics for `GetDeviceList`, per-device `GetCaps`, total backend discovery, and adapter shutdown; do not invent a timeout until real stage evidence identifies the blocking call.
+**Architecture:** `GET /v1/scanners` enumerates registered endpoints only (`scannerId`, `name`, `backend`) and never calls `GetCaps` for every device. `GET /v1/scanners/{scannerId}/settings` resolves exactly the selected endpoint and performs the deep capability probe only for that scanner. `POST /v1/scan` likewise resolves capabilities only for the selected scanner before source/settings validation. Registered-but-physically-offline devices may remain in the list. WIA and TWAIN remain independent endpoints. Stage-level logs cover enumeration, selected-device capability probing, exceptions and shutdown duration.
 
 **Tech Stack:** .NET 10, ASP.NET Core, NAPS2 SDK/Win32 worker, xUnit, Microsoft.Extensions.Logging.
 
-**Spec:** `docs/superpowers/specs/2026-09-10-scanner-api-stable-id-auto-design.md` plus reopened GitHub Issue #163 real Windows pilot evidence.
+**Spec:** `docs/superpowers/specs/2026-09-10-scanner-api-stable-id-auto-design.md`, candidate contract v0.3 scanner requirements, and reopened Issue #163 physical Windows evidence.
 
 ## Global Constraints
 
-- Current base is exact `main=ee22fcee400e17bca222c5be3e157e3eccd2e3d1`, `webassist/VERSION=0.3.30`.
-- Accepted contract/conformance v0.2 remain immutable; this regression fix does not promote candidate v0.3.
-- WIA and TWAIN remain independently enumerated; one backend failure must not hide the other backend.
-- No arbitrary discovery timeout in this transaction before stage-level physical evidence identifies the blocking call.
-- Do not log raw backend-native scanner IDs; use backend, ordinal and public opaque `scannerId` where device correlation is required.
-- Exception diagnostics must include type, HRESULT and message in the technical log.
+- Base at start: `main=ee22fcee400e17bca222c5be3e157e3eccd2e3d1`, `webassist/VERSION=0.3.30`.
+- Accepted contract/conformance v0.2 are immutable; candidate v0.3 may be synchronized only if required.
+- `/v1/scanners` means registered endpoints known to the backend, not a liveness/health check.
+- One offline endpoint must not force capability probing of unrelated endpoints.
+- No arbitrary timeout before the exact blocking stage is proven from physical logs.
+- Do not log raw backend-native IDs. Public opaque `scannerId`, backend, scanner name, stage, duration, exception type/HRESULT/message are allowed.
 - Every production behavior change follows RED -> observed failure -> minimal GREEN.
-- Filesystem implementation is out of scope except for conflict/rebase handling before merge.
+- Filesystem work remains out of scope except for rebase/conflict handling before merge.
 
 ---
 
-### Task 1: Isolate per-device capability failures
+### Task 1: RED — prove the list/capability boundary
 
 **Files:**
-- Create: `tests/core/WindowsScannerDiscoveryRegressionTests.cs`
-- Modify: `webassist/src/WebAssistant/Scanning/WindowsScanAdapter.cs`
+- `tests/core/WindowsScannerDiscoveryRegressionTests.cs`
+- `tests/core/ScannerCapabilityBoundaryTests.cs`
 
-**Interfaces:**
-- Consumes: existing `WindowsScanAdapter.DiscoverAsync(...)` and `ScannerDiscoveryResult`.
-- Produces: discovery behavior where a `GetCaps` exception skips only that device, preserves other endpoints from the same backend, marks the backend available after successful `GetDeviceList`, and records one `enumerationFailed` warning.
+- [x] Add regression asserting Windows listing does not invoke capability probes.
+- [x] Add HTTP contract regression asserting `/v1/scanners` returns identity fields without `sources`.
+- [x] Add HTTP regression asserting `/v1/scanners/{scannerId}/settings` probes exactly the selected scanner.
+- [ ] Observe CI RED on test-only head.
 
-- [ ] **Step 1: Write the failing regression test**
-
-Add a test with two TWAIN devices. Return valid caps for the first and throw `InvalidOperationException` for the second. Assert the first TWAIN endpoint survives, discovery remains available, and one TWAIN `enumerationFailed` warning is returned.
-
-- [ ] **Step 2: Run the focused test and verify RED**
-
-Run:
-
-```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --filter FullyQualifiedName~WindowsScannerDiscoveryRegressionTests.Discovery_OneDeviceCapsFailurePreservesOtherDeviceFromSameBackend
-```
-
-Expected on the current implementation: FAIL because the backend-level catch discards the already-normalized TWAIN endpoint and does not count that backend as successful.
-
-- [ ] **Step 3: Implement minimal per-device isolation**
-
-Keep `GetDeviceList` inside a backend-level try/catch. After successful enumeration, process each non-ambiguous device in its own capability try/catch. On per-device failure, append/deduplicate the existing `enumerationFailed` warning for that backend and continue. Add successful normalized devices directly to the backend result and count the backend as successful once enumeration itself succeeded.
-
-- [ ] **Step 4: Run focused + existing scanner adapter tests**
-
-Run:
-
-```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj --filter "FullyQualifiedName~WindowsScannerDiscoveryRegressionTests|FullyQualifiedName~WindowsScanAdapterTests"
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-Commit message:
-
-```text
-#163: isolate scanner capability probe failures
-```
-
-### Task 2: Add stage-level scanner discovery diagnostics
+### Task 2: Split registered-endpoint enumeration from selected capabilities
 
 **Files:**
-- Modify: `tests/core/WindowsScannerDiscoveryRegressionTests.cs`
-- Modify: `webassist/src/WebAssistant/Scanning/WindowsScanAdapter.cs`
-- Modify: `webassist/src/WebAssistant/Scanning/WindowsScanAdapterHolder.cs`
-- Modify: `webassist/src/WebAssistant/Program.cs`
+- `webassist/src/WebAssistant/Scanning/IScanAdapter.cs`
+- `webassist/src/WebAssistant/Scanning/WindowsScanAdapter.cs`
+- `webassist/src/WebAssistant/Scanning/LinuxScanAdapter.cs`
+- `webassist/src/WebAssistant/Http/ScannerEndpointHandlers.cs`
+- `webassist/src/WebAssistant/Http/ScannerSettingsEndpointHandlers.cs`
+- `webassist/src/WebAssistant/Http/ScanCoordinator.cs`
+- affected scanner tests
 
-**Interfaces:**
-- Consumes: `ILogger<WindowsScanAdapter>` from the ASP.NET Core logging pipeline.
-- Produces: technical log entries for `GetDeviceList` start/success/failure, `GetCaps` start/success/failure per endpoint, backend completion, discovery completion, and scanner-context disposal duration.
+- [ ] Add `GetScannerCapabilitiesAsync(scannerId, cancellationToken)` to the adapter boundary with a compatibility default for test/fake adapters.
+- [ ] Make Windows `GetScannersAsync` perform only WIA/TWAIN `GetDeviceList` enumeration and deterministic identity normalization.
+- [ ] Make Linux `GetScannersAsync` perform only SANE `GetDeviceList` enumeration.
+- [ ] Implement selected-endpoint capability resolution on Windows/Linux: enumerate the requested backend, resolve exact persistent ID, call `GetCaps` only for the selected device, return the enriched `ScannerDevice`.
+- [ ] Remove `sources` from `/v1/scanners`; capabilities are represented only by the selected settings endpoint.
+- [ ] Update settings handler and scan coordinator to use selected capabilities.
+- [ ] Run focused scanner tests and obtain GREEN.
 
-- [ ] **Step 1: Write failing diagnostics tests**
-
-Add a small in-memory `ILogger<WindowsScanAdapter>` test sink. Assert that a simulated TWAIN capability failure produces log messages containing `backend=twain`, `stage=getCaps`, public opaque scanner ID, duration, exception type, HRESULT and message, while no explicitly logged field contains the raw native ID. Add a successful enumeration assertion containing `stage=getDeviceList`, device count and duration.
-
-- [ ] **Step 2: Run focused diagnostics tests and verify RED**
-
-Run the regression test class only. Expected: compile/test failure because `DiscoverAsync` does not yet accept a logger and emits no stage diagnostics.
-
-- [ ] **Step 3: Implement minimal structured diagnostics**
-
-Add optional logger plumbing without changing the public HTTP contract. Use `Stopwatch` around backend enumeration, capability probes and total backend work. Emit Information for start/success, Warning for failures, and include exception `GetType().FullName`, `HResult` formatted as hex, and `Message`. Use only the public `scannerId` for device correlation.
-
-- [ ] **Step 4: Wire the production logger lazily**
-
-Construct `WindowsScanAdapter` from `WindowsScanAdapterHolder` through the existing DI registration using `ILogger<WindowsScanAdapter>`, preserving lazy scanner-context creation and current shutdown ownership.
-
-- [ ] **Step 5: Verify scanner and logging tests**
-
-Run focused regression, existing `WindowsScanAdapterTests`, `WindowsScannerLifetimeTests`, and `RequestLoggingMiddlewareTests`. Expected: PASS.
-
-- [ ] **Step 6: Commit**
-
-Commit message:
-
-```text
-#163: add Windows scanner discovery stage diagnostics
-```
-
-### Task 3: Version, documentation and CI/physical handoff
+### Task 3: Add high-information scanner diagnostics
 
 **Files:**
-- Modify: `webassist/VERSION`
-- Modify: `webassist/docs/api.md` only if operational warning/log wording is documented there and requires synchronization.
-- Modify: candidate conformance only if existing repository policy requires evidence-path synchronization; accepted v0.2 files remain untouched.
+- `webassist/src/WebAssistant/Scanning/WindowsScanAdapter.cs`
+- `webassist/src/WebAssistant/Scanning/WindowsScanAdapterHolder.cs` or DI factory in `Program.cs`
+- diagnostics tests
 
-**Interfaces:**
-- Produces: one testable Windows artifact whose log can localize the real ~50 second TWAIN stall to `GetDeviceList` or one endpoint's `GetCaps`.
+- [ ] RED tests for log events.
+- [ ] Log per backend `getDeviceList.start/success/failure` with duration and device count.
+- [ ] Log selected `getCaps.start/success/failure` with public scannerId, scanner name, duration, exception type, HRESULT and message.
+- [ ] Log adapter/scanning-context shutdown start/end/duration.
+- [ ] Keep adapter creation lazy under Windows Service lifetime ownership.
+- [ ] Run focused logging/lifetime tests GREEN.
 
-- [ ] **Step 1: Run the full core test suite before version transition**
+### Task 4: Documentation, version and physical acceptance
 
-```bash
-dotnet test tests/core/WebAssistant.CoreTests.csproj
-```
+**Files:**
+- `webassist/docs/api.md`
+- `webassist/VERSION`
+- candidate contract/conformance only if synchronization is required by repository policy
 
-Expected: all tests PASS.
-
-- [ ] **Step 2: Apply the repository-required single VERSION transition**
-
-Advance `webassist/VERSION` exactly once according to the current product version policy after implementation is green.
-
-- [ ] **Step 3: Run version/policy-sensitive tests**
-
-Run the full core suite again and repository governance/CI through the PR.
-
-- [ ] **Step 4: Build canonical Windows installer through normal CI**
-
-Use the repository's canonical Windows producer; do not create a parallel packaging path.
-
-- [ ] **Step 5: Repeat physical evidence on Vadim's machine**
-
-On a fresh service process invoke `/v1/scanners` once and collect the normal `/v1/diag/logs` excerpt. The log must identify exactly which TWAIN stage consumes ~40–50 seconds and whether one specific endpoint capability probe fails.
-
-- [ ] **Step 6: Decide the root-cause follow-up from evidence**
-
-If `GetDeviceList(Twain)` is the blocker, investigate/fix the NAPS2 worker/DSM enumeration boundary. If only one `GetCaps` is the blocker, isolate/fix that data-source capability path. Do not infer either before the physical log proves it.
-
-- [ ] **Step 7: Commit and Ready review**
-
-Commit the version/evidence synchronization, move the PR Ready only after exact-head CI/repo-guard is green, then perform the normal merge gate.
+- [ ] Document `/v1/scanners` as registered identity enumeration and `/settings` as selected capability probe.
+- [ ] Run full core suite.
+- [ ] Advance VERSION exactly once after implementation is green.
+- [ ] Make repo-guard and exact-head CI green.
+- [ ] Produce canonical Windows installer through the existing producer.
+- [ ] On Vadim's machine verify `/v1/scanners` returns promptly even with broken/offline MF4500 registered and still returns MF220.
+- [ ] Select MF220 and verify its settings return promptly.
+- [ ] Select MF4500 separately and collect stage logs; if it blocks, the delay is now isolated to that selected operation and the log identifies `GetDeviceList` vs `GetCaps`.
+- [ ] Decide any timeout/worker/driver follow-up only from this evidence.
