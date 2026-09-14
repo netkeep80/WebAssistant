@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Text;
 using Microsoft.Win32.SafeHandles;
 
 namespace WebAssistant.FileSystem;
@@ -85,32 +84,22 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (limit is < 1 or > 1000)
-        {
-            throw new FileSystemOperationException(
-                FileSystemErrorCodes.InvalidPath,
-                "Параметр limit должен быть от 1 до 1000.");
-        }
-
         var parsed = FileSystemPathPolicy.Parse(relativePath, allowRoot: true);
         using var directory = OpenDirectory(parsed);
         var directoryFd = GetFd(directory);
         var directoryPath = $"/proc/self/fd/{directoryFd}";
-        var afterName = DecodeCursor(cursor);
 
-        string[] names;
         try
         {
-            names = Directory
-                .EnumerateFileSystemEntries(directoryPath)
-                .Select(Path.GetFileName)
-                .Where(name => !string.IsNullOrEmpty(name))
-                .Select(name => name!)
-                .Where(name => !name.StartsWith(
-                    InternalPrefix,
-                    StringComparison.OrdinalIgnoreCase))
-                .OrderBy(name => name, StringComparer.Ordinal)
-                .ToArray();
+            var page = FileSystemListingPolicy.CreatePage(
+                parsed.Value,
+                EnumerateEntries(
+                    directoryFd,
+                    directoryPath,
+                    cancellationToken),
+                limit,
+                cursor);
+            return ValueTask.FromResult(page);
         }
         catch (DirectoryNotFoundException exception)
         {
@@ -133,41 +122,6 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
                 "Не удалось перечислить содержимое каталога.",
                 exception);
         }
-
-        if (afterName is not null)
-        {
-            names = names
-                .Where(name => string.CompareOrdinal(name, afterName) > 0)
-                .ToArray();
-        }
-
-        var entries = new List<RootedFileSystemEntry>(Math.Min(limit, names.Length));
-        var hasMore = false;
-
-        foreach (var name in names)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (entries.Count == limit)
-            {
-                hasMore = true;
-                break;
-            }
-
-            if (!TryReadEntry(directoryFd, name, out var entry))
-            {
-                continue;
-            }
-
-            entries.Add(entry);
-        }
-
-        var nextCursor = hasMore && entries.Count > 0
-            ? EncodeCursor(entries[^1].Name)
-            : null;
-
-        return ValueTask.FromResult(
-            new RootedFileSystemPage(entries, nextCursor));
     }
 
     public ValueTask CreateDirectoryAsync(
@@ -468,6 +422,31 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
             : checked((int)result);
     }
 
+    private static IEnumerable<RootedFileSystemEntry> EnumerateEntries(
+        int directoryFd,
+        string directoryPath,
+        CancellationToken cancellationToken)
+    {
+        foreach (var entryPath in Directory.EnumerateFileSystemEntries(directoryPath))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var name = Path.GetFileName(entryPath);
+            if (string.IsNullOrEmpty(name) ||
+                name.StartsWith(
+                    InternalPrefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (TryReadEntry(directoryFd, name, out var entry))
+            {
+                yield return entry;
+            }
+        }
+    }
+
     private static bool TryReadEntry(
         int directoryFd,
         string name,
@@ -588,29 +567,6 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         catch (ArgumentOutOfRangeException)
         {
             return DateTimeOffset.UnixEpoch;
-        }
-    }
-
-    private static string EncodeCursor(string name) =>
-        Convert.ToBase64String(Encoding.UTF8.GetBytes(name));
-
-    private static string? DecodeCursor(string? cursor)
-    {
-        if (string.IsNullOrEmpty(cursor))
-        {
-            return null;
-        }
-
-        try
-        {
-            return Encoding.UTF8.GetString(Convert.FromBase64String(cursor));
-        }
-        catch (FormatException exception)
-        {
-            throw new FileSystemOperationException(
-                FileSystemErrorCodes.InvalidPath,
-                "Cursor каталога имеет недопустимый формат.",
-                exception);
         }
     }
 
