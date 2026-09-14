@@ -30,16 +30,22 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         CancellationToken cancellationToken = default) =>
         DiscoverAsync(
             driver => controller.GetDeviceList(driver),
+            cancellationToken);
+
+    public Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+        string scannerId,
+        CancellationToken cancellationToken = default) =>
+        ResolveCapabilitiesAsync(
+            scannerId,
+            driver => controller.GetDeviceList(driver),
             (device, token) => controller.GetCaps(device, token),
             cancellationToken);
 
     internal static async Task<ScannerDiscoveryResult> DiscoverAsync(
         Func<Driver, Task<List<ScanDevice>>> getDevices,
-        Func<ScanDevice, CancellationToken, Task<ScanCaps>> getCaps,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(getDevices);
-        ArgumentNullException.ThrowIfNull(getCaps);
 
         var scanners = new List<ScannerDevice>();
         var warnings = new List<ScannerDiscoveryWarning>();
@@ -48,13 +54,33 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         foreach (var driver in new[] { Driver.Wia, Driver.Twain })
         {
             var backend = MapBackend(driver);
-            List<ScanDevice> devices;
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                devices = await getDevices(driver);
+                var devices = await getDevices(driver);
                 cancellationToken.ThrowIfCancellationRequested();
                 successfulBackends++;
+
+                var duplicateIds = devices
+                    .GroupBy(device => device.ID, StringComparer.Ordinal)
+                    .Where(group => group.Count() > 1)
+                    .Select(group => group.Key)
+                    .ToHashSet(StringComparer.Ordinal);
+
+                if (duplicateIds.Count > 0)
+                {
+                    AddWarningOnce(warnings, backend, "ambiguousNativeIdentity");
+                }
+
+                foreach (var device in devices)
+                {
+                    if (duplicateIds.Contains(device.ID))
+                    {
+                        continue;
+                    }
+
+                    scanners.Add(CreateRegisteredEndpoint(device, backend));
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -63,51 +89,6 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             catch
             {
                 AddWarningOnce(warnings, backend, "enumerationFailed");
-                continue;
-            }
-
-            var duplicateIds = devices
-                .GroupBy(device => device.ID, StringComparer.Ordinal)
-                .Where(group => group.Count() > 1)
-                .Select(group => group.Key)
-                .ToHashSet(StringComparer.Ordinal);
-
-            if (duplicateIds.Count > 0)
-            {
-                AddWarningOnce(warnings, backend, "ambiguousNativeIdentity");
-            }
-
-            foreach (var device in devices)
-            {
-                if (duplicateIds.Contains(device.ID))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    var caps = await getCaps(device, cancellationToken);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var paperSourceCaps = caps.PaperSourceCaps;
-
-                    scanners.Add(new ScannerDevice(
-                        ScannerIdentity.Create(backend, device.ID),
-                        device.Name,
-                        backend,
-                        paperSourceCaps?.SupportsFlatbed ?? false,
-                        paperSourceCaps?.SupportsFeeder ?? false,
-                        paperSourceCaps?.SupportsDuplex ?? false,
-                        MapFeederPaperState(paperSourceCaps?.FeederHasPaper),
-                        Naps2ScannerCapabilityMapper.From(caps)));
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch
-                {
-                    AddWarningOnce(warnings, backend, "enumerationFailed");
-                }
             }
         }
 
@@ -115,6 +96,62 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             scanners,
             warnings,
             isAvailable: successfulBackends > 0);
+    }
+
+    // Compatibility overload used by regression tests that prove capability probes are not part of listing.
+    internal static Task<ScannerDiscoveryResult> DiscoverAsync(
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        Func<ScanDevice, CancellationToken, Task<ScanCaps>> getCaps,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(getCaps);
+        return DiscoverAsync(getDevices, cancellationToken);
+    }
+
+    internal static async Task<ScannerDevice?> ResolveCapabilitiesAsync(
+        string scannerId,
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        Func<ScanDevice, CancellationToken, Task<ScanCaps>> getCaps,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scannerId);
+        ArgumentNullException.ThrowIfNull(getDevices);
+        ArgumentNullException.ThrowIfNull(getCaps);
+
+        if (!ScannerIdentity.TryParse(scannerId, out var backend) ||
+            backend is not (ScannerBackend.Wia or ScannerBackend.Twain))
+        {
+            throw new InvalidOperationException(
+                $"ScannerId '{scannerId}' не принадлежит Windows scanner backend.");
+        }
+
+        var driver = MapDriver(backend);
+        cancellationToken.ThrowIfCancellationRequested();
+        var devices = await getDevices(driver);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var matches = devices
+            .Where(candidate => string.Equals(
+                ScannerIdentity.Create(backend, candidate.ID),
+                scannerId,
+                StringComparison.Ordinal))
+            .ToArray();
+
+        if (matches.Length == 0)
+        {
+            return null;
+        }
+
+        if (matches.Length > 1)
+        {
+            throw new InvalidOperationException(
+                $"ScannerId '{scannerId}' неоднозначен внутри backend '{backend}'.");
+        }
+
+        var device = matches[0];
+        var caps = await getCaps(device, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return CreateCapableEndpoint(device, backend, caps);
     }
 
     public Task<Stream> ScanAsync(string scannerId, CancellationToken cancellationToken = default) =>
@@ -224,6 +261,36 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
                 image.Dispose();
             }
         }
+    }
+
+    private static ScannerDevice CreateRegisteredEndpoint(
+        ScanDevice device,
+        ScannerBackend backend) =>
+        new(
+            ScannerIdentity.Create(backend, device.ID),
+            device.Name,
+            backend,
+            SupportsFlatbed: false,
+            SupportsFeeder: false,
+            SupportsDuplex: false,
+            FeederPaperState.Unknown,
+            Capabilities: null);
+
+    private static ScannerDevice CreateCapableEndpoint(
+        ScanDevice device,
+        ScannerBackend backend,
+        ScanCaps caps)
+    {
+        var paperSourceCaps = caps.PaperSourceCaps;
+        return new ScannerDevice(
+            ScannerIdentity.Create(backend, device.ID),
+            device.Name,
+            backend,
+            paperSourceCaps?.SupportsFlatbed ?? false,
+            paperSourceCaps?.SupportsFeeder ?? false,
+            paperSourceCaps?.SupportsDuplex ?? false,
+            MapFeederPaperState(paperSourceCaps?.FeederHasPaper),
+            Naps2ScannerCapabilityMapper.From(caps));
     }
 
     private static void AddWarningOnce(
