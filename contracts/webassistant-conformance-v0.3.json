@@ -79,6 +79,7 @@
     "tests/core/ConfigurationOwnershipTests.cs",
     "tests/core/RootedPathResolverTests.cs",
     "tests/core/FileSystemCandidateContractTests.cs",
+    "tests/core/FileSystemPolicyTests.cs", "tests/core/LinuxRootedFileSystemTests.cs", "tests/core/WindowsRootedFileSystemTests.cs", "tests/core/HttpFileSystemContractTests.cs", "tests/core/FileSystemLifecycleTests.cs", "tests/core/FilePublicationTests.cs", "tests/core/FileSystemPageContractTests.cs", "tests/core/FileSystemBrowserTests.cs",
     "tests/core/DependencyOwnershipTests.cs",
     "webassist/vendor/naps2/README.md",
     "tests/core/DistributionContractCandidateTests.cs",
