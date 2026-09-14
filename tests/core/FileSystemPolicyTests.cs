@@ -149,4 +149,60 @@ public sealed class FileSystemPolicyTests
             Assert.Equal(FileSystemErrorCodes.InvalidPath, error.Code);
         }
     }
+
+    [Fact]
+    public void ListingPage_ConsumesOnlyLimitPlusOneEntries()
+    {
+        var consumed = 0;
+
+        IEnumerable<RootedFileSystemEntry> Entries()
+        {
+            for (var index = 0; index < 100; index++)
+            {
+                consumed++;
+                yield return Entry($"file-{index:D3}.bin");
+            }
+        }
+
+        var page = FileSystemListingPolicy.CreatePage(
+            "incoming",
+            Entries(),
+            limit: 1,
+            cursor: null);
+
+        Assert.Single(page.Entries);
+        Assert.Equal("file-000.bin", page.Entries[0].Name);
+        Assert.NotNull(page.NextCursor);
+        Assert.Equal(2, consumed);
+    }
+
+    [Fact]
+    public void ListingCursor_IsValidOnlyForTheSameDirectoryPath()
+    {
+        var firstPage = FileSystemListingPolicy.CreatePage(
+            "alpha",
+            new[] { Entry("a.bin"), Entry("b.bin") },
+            limit: 1,
+            cursor: null);
+
+        Assert.NotNull(firstPage.NextCursor);
+
+        var error = Assert.Throws<FileSystemOperationException>(() =>
+            FileSystemListingPolicy.CreatePage(
+                "beta",
+                new[] { Entry("c.bin") },
+                limit: 1,
+                cursor: firstPage.NextCursor));
+
+        Assert.Equal(FileSystemErrorCodes.InvalidPath, error.Code);
+    }
+
+    private static RootedFileSystemEntry Entry(string name) =>
+        new(
+            name,
+            RootedEntryKind.File,
+            1,
+            DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch,
+            null);
 }
