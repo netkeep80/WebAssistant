@@ -17,12 +17,18 @@ Canonical package producer:
 создаёт:
 
 ```text
+<installerBaseName>-linux-x64-<VERSION>.zip
+```
+
+где `<VERSION>` равен exact content файла `VERSION`, а `<installerBaseName>` берётся из effective product metadata. Public default `installerBaseName` равен `WebAssistant`, поэтому без override имя имеет вид:
+
+```text
 WebAssistant-linux-x64-<VERSION>.zip
 ```
 
-где `<VERSION>` равен exact content файла `VERSION`. Рядом создаются `.sha256` и `.provenance.json` для final ZIP.
+Рядом создаются `.sha256` и `.provenance.json` для final ZIP.
 
-ZIP содержит self-contained `linux-x64` application, `VERSION`, package-owned `appsettings.json`, `install.sh`, `uninstall.sh` и `webassist.service`.
+ZIP содержит self-contained `linux-x64` application, `VERSION`, package-owned `appsettings.json`, `install.sh`, `uninstall.sh` и `webassist.service`. Build-time display metadata не меняет stable technical identity systemd unit `webassist.service`.
 
 ## Package-owned configuration
 
@@ -43,10 +49,12 @@ src/WebAssistant/appsettings.json существует
 Распакуйте:
 
 ```text
-WebAssistant-linux-x64-<VERSION>.zip
+<installerBaseName>-linux-x64-<VERSION>.zip
 ```
 
-и из распакованного каталога запустите:
+При public default это `WebAssistant-linux-x64-<VERSION>.zip`.
+
+Из распакованного каталога запустите:
 
 ```bash
 sudo ./install.sh
@@ -85,6 +93,8 @@ logs:        /var/log/webassistant
 data:        /var/lib/webassistant
 unit:        /etc/systemd/system/webassist.service
 ```
+
+`/var/lib/webassistant` является default `WebAssistant:FileSystem:RootDirectory`. Environment-specific package configuration может задать другой root; browser API сам `RootDirectory` не меняет.
 
 `/var/log/webassistant` и `/var/lib/webassistant` принадлежат service identity и сохраняются по умолчанию при uninstall.
 
