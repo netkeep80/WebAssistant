@@ -550,15 +550,15 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
 
     private static IEnumerable<string> EnumerateNames(int directoryFd)
     {
-        var descriptor = Dup(directoryFd);
+        var descriptor = OpenAt2(directoryFd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW, SecureResolveFlags);
         if (descriptor < 0)
         {
             throw new FileSystemOperationException(
                 FileSystemErrorCodes.FileSystemUnavailable,
-                "Не удалось дублировать дескриптор каталога.");
+                "Не удалось открыть независимый дескриптор каталога.");
         }
 
-        using var duplicate = Own(descriptor);
+        using var ownedDescriptor = Own(descriptor);
         var directory = FdOpenDir(descriptor);
         if (directory == IntPtr.Zero)
         {
@@ -567,7 +567,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
                 $"Не удалось открыть поток каталога (errno={Marshal.GetLastPInvokeError()}).");
         }
 
-        duplicate.SetHandleAsInvalid();
+        ownedDescriptor.SetHandleAsInvalid();
         try
         {
             while (true)
