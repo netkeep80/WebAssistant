@@ -35,4 +35,4 @@ jobs:
       - run: >-
           dotnet test tests/core/WebAssistant.CoreTests.csproj
           --configuration Release
-          --filter FullyQualifiedName~WindowsRootedFileSystemTests
+          --filter "FullyQualifiedName~WindowsRootedFileSystemTests|FullyQualifiedName~FilePublicationTests"
