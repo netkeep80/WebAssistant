@@ -67,11 +67,17 @@ if (runtimeOptions.CorsEnabled)
     app.UseCors(policy =>
     {
         policy.SetIsOriginAllowed(runtimeOptions.AllowedOrigins.Contains);
-        policy.WithMethods(HttpMethods.Get, HttpMethods.Post);
+        policy.WithMethods(
+            HttpMethods.Get,
+            HttpMethods.Post,
+            HttpMethods.Put,
+            HttpMethods.Delete);
+        policy.WithHeaders("Content-Type");
     });
 }
 
 var api = app.MapGroup(ApiVersion.CurrentPrefix);
+FileSystemEndpointHandlers.Map(api);
 
 api.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 api.MapGet("/scanners", async (
