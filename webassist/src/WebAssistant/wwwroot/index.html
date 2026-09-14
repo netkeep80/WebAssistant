@@ -157,21 +157,20 @@
         discoveredScanners=payload.scanners||[];
         const warnings=payload.warnings||[];
         scannerSelect.replaceChildren();
+        if(discoveredScanners.length===0){
+          scannerSelect.append(new Option("Сканеры не найдены",""));
+          scannerStatus.textContent=warnings.length?`Зарегистрированных сканеров нет. Предупреждений: ${warnings.length}.`:"Зарегистрированных сканеров нет.";
+          return;
+        }
+        scannerSelect.append(new Option("Выберите сканер",""));
         for(const scanner of discoveredScanners){
           const option=document.createElement("option");
           option.value=scanner.scannerId;
           option.textContent=`${scanner.name||scanner.scannerId} [${scanner.backend}]`;
           scannerSelect.append(option);
         }
-        if(discoveredScanners.length===0){
-          scannerSelect.append(new Option("Сканеры не найдены",""));
-          scannerStatus.textContent=warnings.length?`Доступных сканеров нет. Предупреждений: ${warnings.length}.`:"Доступных сканеров нет.";
-          return;
-        }
         scannerSelect.disabled=false;
-        scannerInfoButton.disabled=false;
-        scannerStatus.textContent=warnings.length?`Обнаружено сканеров: ${discoveredScanners.length}. Предупреждений: ${warnings.length}.`:`Обнаружено сканеров: ${discoveredScanners.length}`;
-        await refreshSelectedScannerSettings();
+        scannerStatus.textContent=warnings.length?`Зарегистрировано scanner endpoints: ${discoveredScanners.length}. Предупреждений: ${warnings.length}.`:`Зарегистрировано scanner endpoints: ${discoveredScanners.length}. Выберите сканер для чтения capabilities.`;
       }catch(error){
         scannerSelect.replaceChildren(new Option("Ошибка обнаружения",""));
         scannerStatus.textContent=error.message;
@@ -183,24 +182,29 @@
       scannerProjection=null;
       scannerMode.replaceChildren(new Option("—",""));
       scannerMode.disabled=true;
+      scannerInfoButton.disabled=true;
       scanButton.disabled=true;
       scannerSettingsControls.replaceChildren();
       scannerInfoOutput.hidden=true;
       if(!scannerId)return;
 
+      scannerStatus.textContent="Чтение capabilities выбранного сканера…";
       try{
         const response=await fetch(scannerSettingsEndpoint(scannerId),{cache:"no-store"});
         if(!response.ok)throw new Error(await errorText(response));
         scannerProjection=await response.json();
+        scannerInfoButton.disabled=false;
         scannerMode.replaceChildren();
         for(const mode of scannerProjection.modes||[]){
           scannerMode.append(new Option(modeLabel(mode.mode),mode.mode));
         }
         if(!scannerProjection.modes?.length){
           scannerMode.append(new Option("Нет доступных режимов",""));
+          scannerStatus.textContent="Сканер выбран, но доступные режимы не обнаружены.";
           return;
         }
         scannerMode.disabled=false;
+        scannerStatus.textContent="Capabilities выбранного сканера получены.";
         renderSettingsControls();
       }catch(error){
         scannerStatus.textContent=`Ошибка capabilities: ${error.message}`;
