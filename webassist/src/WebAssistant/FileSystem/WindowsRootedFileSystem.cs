@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
@@ -21,6 +22,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
 
     private const uint FILE_OPEN = 1;
     private const uint FILE_CREATE = 2;
+    private const uint FILE_OPEN_IF = 3;
     private const uint FILE_DIRECTORY_FILE = 0x00000001;
     private const uint FILE_SYNCHRONOUS_IO_NONALERT = 0x00000020;
     private const uint FILE_NON_DIRECTORY_FILE = 0x00000040;
@@ -54,6 +56,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
 
     private const string InternalPrefix = ".webassistant-";
     private const int DirectoryBufferSize = 64 * 1024;
+    private const int StreamBufferSize = 64 * 1024;
     private const int FileIdBothDirectoryFileNameOffset = 104;
 
     private readonly SafeFileHandle rootHandle;
@@ -92,6 +95,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         {
             EnsureNotReparse(rootHandle, "RootDirectory не может быть reparse point.");
             EnsureDirectory(rootHandle);
+            EnsureStagingDirectory();
         }
         catch
         {
@@ -171,7 +175,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
             Stream stream = new FileStream(
                 file,
                 FileAccess.Read,
-                bufferSize: 64 * 1024,
+                bufferSize: StreamBufferSize,
                 isAsync: false);
             file = null!;
             return ValueTask.FromResult(stream);
@@ -182,14 +186,103 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         }
     }
 
-    public ValueTask PublishNewFileAsync(
+    public async ValueTask PublishNewFileAsync(
         string relativePath,
         Stream source,
         CancellationToken cancellationToken = default)
     {
-        return ValueTask.FromException(
-            new NotSupportedException(
-                "Atomic publication будет добавлена отдельным TDD-срезом #196."));
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(source);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var destination = FileSystemPathPolicy.Parse(relativePath, allowRoot: false);
+        FileSystemPathPolicy.EnsureFileTypeAllowed(destination.Segments[^1]);
+
+        using var destinationParent = OpenParent(destination, out var destinationName);
+        using var stagingDirectory = OpenStagingDirectory();
+        var stagingName = FileSystemInternalNames.CreateStagingFileName();
+        var stagingCreated = false;
+        var committed = false;
+
+        try
+        {
+            var stagingFile = OpenInternalRelative(
+                stagingDirectory,
+                stagingName,
+                GENERIC_WRITE | DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+                FILE_CREATE,
+                0,
+                FILE_NON_DIRECTORY_FILE |
+                FILE_OPEN_REPARSE_POINT |
+                FILE_SYNCHRONOUS_IO_NONALERT,
+                "Не удалось создать staging-файл.");
+            stagingCreated = true;
+
+            try
+            {
+                EnsureNotReparse(stagingFile, "Staging-файл неожиданно является reparse point.");
+                EnsureSingleLink(stagingFile);
+                using var stagingStream = new FileStream(
+                    stagingFile,
+                    FileAccess.Write,
+                    bufferSize: StreamBufferSize,
+                    isAsync: false);
+                stagingFile = null!;
+
+                var buffer = ArrayPool<byte>.Shared.Rent(StreamBufferSize);
+                try
+                {
+                    while (true)
+                    {
+                        var read = await source.ReadAsync(
+                            buffer.AsMemory(0, StreamBufferSize),
+                            cancellationToken);
+                        if (read == 0)
+                        {
+                            break;
+                        }
+
+                        stagingStream.Write(buffer, 0, read);
+                    }
+
+                    stagingStream.Flush();
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                }
+            }
+            finally
+            {
+                stagingFile?.Dispose();
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            using var readyToCommit = OpenInternalRelative(
+                stagingDirectory,
+                stagingName,
+                DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+                FILE_OPEN,
+                0,
+                FILE_NON_DIRECTORY_FILE |
+                FILE_OPEN_REPARSE_POINT |
+                FILE_SYNCHRONOUS_IO_NONALERT,
+                "Не удалось открыть staging-файл для публикации.");
+            EnsureNotReparse(readyToCommit, "Staging-файл изменился на reparse point.");
+            EnsureSingleLink(readyToCommit);
+            RenameRelativeNoReplace(
+                readyToCommit,
+                destinationParent,
+                destinationName);
+            committed = true;
+        }
+        finally
+        {
+            if (stagingCreated && !committed)
+            {
+                TryDeleteInternalFile(stagingDirectory, stagingName);
+            }
+        }
     }
 
     public ValueTask MoveNoReplaceAsync(
@@ -284,6 +377,77 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
 
         disposed = true;
         rootHandle.Dispose();
+    }
+
+    private void EnsureStagingDirectory()
+    {
+        using var staging = OpenInternalRelative(
+            rootHandle,
+            FileSystemInternalNames.StagingDirectory,
+            GENERIC_READ | GENERIC_WRITE | DELETE | SYNCHRONIZE,
+            FILE_OPEN_IF,
+            FILE_ATTRIBUTE_DIRECTORY,
+            FILE_DIRECTORY_FILE |
+            FILE_OPEN_REPARSE_POINT |
+            FILE_SYNCHRONOUS_IO_NONALERT,
+            "Не удалось создать или открыть staging-каталог.");
+        EnsureNotReparse(staging, "Staging-каталог не может быть reparse point.");
+        EnsureDirectory(staging);
+    }
+
+    private SafeFileHandle OpenStagingDirectory()
+    {
+        var staging = OpenInternalRelative(
+            rootHandle,
+            FileSystemInternalNames.StagingDirectory,
+            GENERIC_READ | GENERIC_WRITE | DELETE | SYNCHRONIZE,
+            FILE_OPEN,
+            0,
+            FILE_DIRECTORY_FILE |
+            FILE_OPEN_REPARSE_POINT |
+            FILE_SYNCHRONOUS_IO_NONALERT,
+            "Не удалось открыть staging-каталог.");
+        try
+        {
+            EnsureNotReparse(staging, "Staging-каталог изменился на reparse point.");
+            EnsureDirectory(staging);
+            return staging;
+        }
+        catch
+        {
+            staging.Dispose();
+            throw;
+        }
+    }
+
+    private static void TryDeleteInternalFile(
+        SafeFileHandle stagingDirectory,
+        string stagingName)
+    {
+        try
+        {
+            using var file = OpenInternalRelative(
+                stagingDirectory,
+                stagingName,
+                DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+                FILE_OPEN,
+                0,
+                FILE_NON_DIRECTORY_FILE |
+                FILE_OPEN_REPARSE_POINT |
+                FILE_SYNCHRONOUS_IO_NONALERT,
+                "Не удалось открыть staging-файл для очистки.");
+            EnsureNotReparse(file, "Staging-файл изменился на reparse point.");
+            EnsureSingleLink(file);
+            MarkDelete(file);
+        }
+        catch (FileSystemOperationException error) when (
+            error.Code == FileSystemErrorCodes.NotFound)
+        {
+        }
+        catch
+        {
+            // Cleanup is best effort; the original publication error remains authoritative.
+        }
     }
 
     private IEnumerable<RootedFileSystemEntry> EnumerateEntries(
@@ -496,6 +660,53 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         string message)
     {
         FileSystemPathPolicy.ValidateEntryName(name);
+        return OpenRelativeCore(
+            parent,
+            name,
+            desiredAccess,
+            disposition,
+            fileAttributes,
+            createOptions,
+            message);
+    }
+
+    private static SafeFileHandle OpenInternalRelative(
+        SafeFileHandle parent,
+        string name,
+        uint desiredAccess,
+        uint disposition,
+        uint fileAttributes,
+        uint createOptions,
+        string message)
+    {
+        if (string.IsNullOrEmpty(name) ||
+            name is "." or ".." ||
+            name.Contains('/', StringComparison.Ordinal) ||
+            name.Contains('\\', StringComparison.Ordinal) ||
+            name.Contains('\0', StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Недопустимое внутреннее имя filesystem staging.");
+        }
+
+        return OpenRelativeCore(
+            parent,
+            name,
+            desiredAccess,
+            disposition,
+            fileAttributes,
+            createOptions,
+            message);
+    }
+
+    private static SafeFileHandle OpenRelativeCore(
+        SafeFileHandle parent,
+        string name,
+        uint desiredAccess,
+        uint disposition,
+        uint fileAttributes,
+        uint createOptions,
+        string message)
+    {
         var nameBuffer = Marshal.StringToHGlobalUni(name);
         var unicodeStringPointer = Marshal.AllocHGlobal(Marshal.SizeOf<UnicodeString>());
         try
