@@ -30,7 +30,7 @@ public sealed class HttpScanContractTests
     }
 
     [Fact]
-    public async Task Scanners_ReturnsNormalizedEnvelopeCapabilitiesAndWarnings()
+    public async Task Scanners_ReturnsNormalizedIdentityEnvelopeAndWarnings()
     {
         var scanner = CreateScanner(
             ScannerBackend.Wia,
@@ -58,10 +58,7 @@ public sealed class HttpScanContractTests
         Assert.Equal(scanner.Id, item.GetProperty("scannerId").GetString());
         Assert.Equal("Первый", item.GetProperty("name").GetString());
         Assert.Equal("wia", item.GetProperty("backend").GetString());
-        var sources = item.GetProperty("sources");
-        Assert.True(sources.GetProperty("flatbed").GetBoolean());
-        Assert.True(sources.GetProperty("feeder").GetBoolean());
-        Assert.True(sources.GetProperty("duplex").GetBoolean());
+        Assert.False(item.TryGetProperty("sources", out _));
 
         var warning = Assert.Single(document.RootElement.GetProperty("warnings").EnumerateArray().ToArray());
         Assert.Equal("twain", warning.GetProperty("backend").GetString());
