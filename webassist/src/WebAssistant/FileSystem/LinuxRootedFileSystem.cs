@@ -49,6 +49,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
     private const long SYS_openat2 = 437;
     private const string InternalPrefix = ".webassistant-";
     private const int StreamBufferSize = 64 * 1024;
+    private static readonly int DirentNameOffset = checked((int)Marshal.OffsetOf<LinuxDirent>(nameof(LinuxDirent.Name)));
 
     private readonly SafeFileHandle rootHandle;
     private bool disposed;
@@ -102,42 +103,12 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
 
         var parsed = FileSystemPathPolicy.Parse(relativePath, allowRoot: true);
         using var directory = OpenDirectory(parsed);
-        var directoryFd = GetFd(directory);
-        var directoryPath = $"/proc/self/fd/{directoryFd}";
-
-        try
-        {
-            var page = FileSystemListingPolicy.CreatePage(
-                parsed.Value,
-                EnumerateEntries(
-                    directoryFd,
-                    directoryPath,
-                    cancellationToken),
-                limit,
-                cursor);
-            return ValueTask.FromResult(page);
-        }
-        catch (DirectoryNotFoundException exception)
-        {
-            throw new FileSystemOperationException(
-                FileSystemErrorCodes.NotFound,
-                "Каталог больше не существует.",
-                exception);
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            throw new FileSystemOperationException(
-                FileSystemErrorCodes.Locked,
-                "Нет доступа к каталогу.",
-                exception);
-        }
-        catch (IOException exception)
-        {
-            throw new FileSystemOperationException(
-                FileSystemErrorCodes.FileSystemUnavailable,
-                "Не удалось перечислить содержимое каталога.",
-                exception);
-        }
+        var page = FileSystemListingPolicy.CreatePage(
+            parsed.Value,
+            EnumerateEntries(GetFd(directory), cancellationToken),
+            limit,
+            cursor);
+        return ValueTask.FromResult(page);
     }
 
     public ValueTask CreateDirectoryAsync(
@@ -451,52 +422,22 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
     {
         using var staging = OpenStagingDirectory();
         var stagingFd = GetFd(staging);
-        var stagingPath = $"/proc/self/fd/{stagingFd}";
-
         try
         {
-            foreach (var entryPath in Directory.EnumerateFileSystemEntries(stagingPath))
+            foreach (var name in EnumerateNames(stagingFd))
             {
-                var name = Path.GetFileName(entryPath);
-                if (string.IsNullOrEmpty(name) ||
-                    !FileSystemInternalNames.IsOwnedStagingFileName(name))
+                if (!FileSystemInternalNames.IsOwnedStagingFileName(name) ||
+                    FStatAt(stagingFd, name, out var stat, AT_SYMLINK_NOFOLLOW) != 0 ||
+                    (stat.StMode & S_IFMT) != S_IFREG ||
+                    stat.StNlink != 1)
                 {
                     continue;
                 }
 
-                if (FStatAt(
-                        stagingFd,
-                        name,
-                        out var stat,
-                        AT_SYMLINK_NOFOLLOW) != 0)
-                {
-                    if (Marshal.GetLastPInvokeError() == ENOENT)
-                    {
-                        continue;
-                    }
-
-                    continue;
-                }
-
-                if ((stat.StMode & S_IFMT) != S_IFREG || stat.StNlink != 1)
-                {
-                    continue;
-                }
-
-                if (UnlinkAt(stagingFd, name, 0) != 0 &&
-                    Marshal.GetLastPInvokeError() != ENOENT)
-                {
-                    // Startup cleanup is best effort. Unsafe/unremovable entries remain isolated.
-                }
+                _ = UnlinkAt(stagingFd, name, 0);
             }
         }
-        catch (DirectoryNotFoundException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-        catch (IOException)
+        catch (FileSystemOperationException)
         {
         }
     }
@@ -607,18 +548,67 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
             : checked((int)result);
     }
 
+    private static IEnumerable<string> EnumerateNames(int directoryFd)
+    {
+        var descriptor = Dup(directoryFd);
+        if (descriptor < 0)
+        {
+            throw new FileSystemOperationException(
+                FileSystemErrorCodes.FileSystemUnavailable,
+                "Не удалось дублировать дескриптор каталога.");
+        }
+
+        using var duplicate = Own(descriptor);
+        var directory = FdOpenDir(descriptor);
+        if (directory == IntPtr.Zero)
+        {
+            throw new FileSystemOperationException(
+                FileSystemErrorCodes.FileSystemUnavailable,
+                $"Не удалось открыть поток каталога (errno={Marshal.GetLastPInvokeError()}).");
+        }
+
+        duplicate.SetHandleAsInvalid();
+        try
+        {
+            while (true)
+            {
+                Marshal.SetLastPInvokeError(0);
+                var entry = ReadDir(directory);
+                if (entry == IntPtr.Zero)
+                {
+                    var errno = Marshal.GetLastPInvokeError();
+                    if (errno != 0)
+                    {
+                        throw new FileSystemOperationException(
+                            FileSystemErrorCodes.FileSystemUnavailable,
+                            $"Не удалось перечислить каталог (errno={errno}).");
+                    }
+
+                    yield break;
+                }
+
+                var name = Marshal.PtrToStringUTF8(IntPtr.Add(entry, DirentNameOffset));
+                if (!string.IsNullOrEmpty(name) && name != "." && name != "..")
+                {
+                    yield return name;
+                }
+            }
+        }
+        finally
+        {
+            _ = CloseDir(directory);
+        }
+    }
+
     private static IEnumerable<RootedFileSystemEntry> EnumerateEntries(
         int directoryFd,
-        string directoryPath,
         CancellationToken cancellationToken)
     {
-        foreach (var entryPath in Directory.EnumerateFileSystemEntries(directoryPath))
+        foreach (var name in EnumerateNames(directoryFd))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var name = Path.GetFileName(entryPath);
-            if (string.IsNullOrEmpty(name) ||
-                name.StartsWith(
+            if (name.StartsWith(
                     InternalPrefix,
                     StringComparison.OrdinalIgnoreCase))
             {
@@ -889,6 +879,16 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         internal long Nanoseconds;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LinuxDirent
+    {
+        internal ulong Inode;
+        internal long Offset;
+        internal ushort RecordLength;
+        internal byte Type;
+        internal byte Name;
+    }
+
     [StructLayout(LayoutKind.Explicit, Size = 256)]
     private struct LinuxStatX
     {
@@ -931,6 +931,15 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
 
     [DllImport("libc", SetLastError = true, EntryPoint = "dup")]
     private static extern int Dup(int oldFd);
+
+    [DllImport("libc", SetLastError = true, EntryPoint = "fdopendir")]
+    private static extern IntPtr FdOpenDir(int fd);
+
+    [DllImport("libc", SetLastError = true, EntryPoint = "readdir")]
+    private static extern IntPtr ReadDir(IntPtr directory);
+
+    [DllImport("libc", SetLastError = true, EntryPoint = "closedir")]
+    private static extern int CloseDir(IntPtr directory);
 
     [DllImport("libc", SetLastError = true, EntryPoint = "mkdirat")]
     private static extern int MkdirAt(int directoryFd, string path, uint mode);
