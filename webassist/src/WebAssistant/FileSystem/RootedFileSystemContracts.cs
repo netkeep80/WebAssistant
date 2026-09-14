@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text;
+
 namespace WebAssistant.FileSystem;
 
 internal static class FileSystemErrorCodes
@@ -83,6 +86,97 @@ internal interface IRootedFileSystem
     ValueTask DeleteEmptyDirectoryAsync(
         string relativePath,
         CancellationToken cancellationToken = default);
+}
+
+internal static class FileSystemListingPolicy
+{
+    internal static RootedFileSystemPage CreatePage(
+        string relativePath,
+        IEnumerable<RootedFileSystemEntry> entries,
+        int limit,
+        string? cursor)
+    {
+        if (limit is < 1 or > 1000)
+        {
+            throw InvalidPath("Параметр limit должен быть от 1 до 1000.");
+        }
+
+        var offset = DecodeOffset(relativePath, cursor);
+        using var enumerator = entries.GetEnumerator();
+
+        for (var skipped = 0; skipped < offset; skipped++)
+        {
+            if (!enumerator.MoveNext())
+            {
+                return new RootedFileSystemPage(
+                    Array.Empty<RootedFileSystemEntry>(),
+                    null);
+            }
+        }
+
+        var pageEntries = new List<RootedFileSystemEntry>(limit);
+        while (pageEntries.Count < limit && enumerator.MoveNext())
+        {
+            pageEntries.Add(enumerator.Current);
+        }
+
+        var hasMore = enumerator.MoveNext();
+        var nextCursor = hasMore
+            ? EncodeCursor(relativePath, checked(offset + pageEntries.Count))
+            : null;
+
+        return new RootedFileSystemPage(pageEntries, nextCursor);
+    }
+
+    private static string EncodeCursor(string relativePath, int offset)
+    {
+        var payload = string.Concat(
+            relativePath,
+            "\0",
+            offset.ToString(CultureInfo.InvariantCulture));
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(payload));
+    }
+
+    private static int DecodeOffset(string relativePath, string? cursor)
+    {
+        if (string.IsNullOrEmpty(cursor))
+        {
+            return 0;
+        }
+
+        string payload;
+        try
+        {
+            payload = Encoding.UTF8.GetString(Convert.FromBase64String(cursor));
+        }
+        catch (FormatException exception)
+        {
+            throw InvalidPath("Cursor каталога имеет недопустимый формат.", exception);
+        }
+
+        var separator = payload.IndexOf('\0');
+        if (separator < 0 ||
+            !string.Equals(
+                payload[..separator],
+                relativePath,
+                StringComparison.Ordinal) ||
+            !int.TryParse(
+                payload[(separator + 1)..],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var offset) ||
+            offset < 0)
+        {
+            throw InvalidPath("Cursor не принадлежит запрошенному каталогу.");
+        }
+
+        return offset;
+    }
+
+    private static FileSystemOperationException InvalidPath(
+        string message,
+        Exception? innerException = null) =>
+        new(FileSystemErrorCodes.InvalidPath, message, innerException);
 }
 
 internal static class FileSystemPathPolicy
