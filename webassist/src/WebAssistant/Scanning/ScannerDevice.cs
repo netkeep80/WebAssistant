@@ -14,6 +14,19 @@ internal sealed record ScannerDevice(
 
 internal sealed record ScannerDiscoveryWarning(ScannerBackend Backend, string Code);
 
+internal sealed class ScannerBackendUnavailableException : Exception
+{
+    internal ScannerBackendUnavailableException(
+        ScannerBackend backend,
+        Exception? innerException = null)
+        : base($"Scanner backend '{backend}' недоступен.", innerException)
+    {
+        Backend = backend;
+    }
+
+    internal ScannerBackend Backend { get; }
+}
+
 internal sealed class ScannerDiscoveryResult : IReadOnlyList<ScannerDevice>
 {
     internal ScannerDiscoveryResult(
