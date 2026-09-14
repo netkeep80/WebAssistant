@@ -16,6 +16,15 @@ internal static class FileSystemErrorCodes
     internal const string FileSystemUnavailable = "filesystem_unavailable";
 }
 
+internal static class FileSystemInternalNames
+{
+    internal const string StagingDirectory = ".webassistant-staging";
+    internal const string StagingFilePrefix = "upload-";
+
+    internal static string CreateStagingFileName() =>
+        string.Concat(StagingFilePrefix, Guid.NewGuid().ToString("N"));
+}
+
 internal sealed class FileSystemOperationException : Exception
 {
     internal FileSystemOperationException(
