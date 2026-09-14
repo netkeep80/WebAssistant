@@ -64,19 +64,41 @@ WebAssistant устанавливается как machine-wide системна
 
 Текущий scanner module:
 
-- перечисляет доступные сканеры;
-- позволяет явно выбрать `scannerId`;
-- поддерживает glass, feeder и duplex operations без скрытого fallback на другой source;
+- перечисляет доступные scanner endpoints и позволяет явно выбрать persistent `scannerId`;
+- на Windows WIA и TWAIN перечисляются независимо; успешные endpoints обоих backend объединяются, а частичный backend failure не скрывает успешную часть;
+- поддерживает `auto`, explicit flatbed, feeder и duplex semantics через единый `POST /v1/scan`;
+- явно заданный `flatbed` или `feeder` не имеет скрытого fallback на другой source;
+- для `auto` есть одна узкая recovery-семантика: если был выбран feeder, он оказался пуст именно во время acquisition и flatbed доступен, WebAssistant один раз повторяет acquisition через flatbed;
 - выполняет не более одного physical acquisition одновременно;
 - возвращает один raw `application/pdf`, содержащий все страницы acquisition;
 - не использует Base64, JSON document envelope или ZIP/raster envelope как scanner document transport;
 - после передачи PDF вызывающей стороне не хранит завершённый scan document как long-term scanner storage.
 
-На Windows сначала используется WIA; переход на TWAIN происходит только если WIA не вернул ни одного устройства. На Linux используется direct SANE SDK path через NAPS2, без CLI orchestration.
+На Linux используется direct SANE SDK path через NAPS2, без CLI orchestration. Caller владеет scanner preferences и передаёт их в каждом request; WebAssistant не хранит mutable per-user/per-scanner profile.
 
 Scanner operation ограничена acquisition → PDF. Она сама не выполняет edit/merge/split PDF, OCR/annotation/watermark/deskew или другую semantic document transformation, signing/encryption, business/backend upload и не требует business authentication или per-user business profile.
 
-Описание REST API: [`docs/api.md`](docs/api.md).
+### Файловый обмен
+
+Filesystem capability предоставляет browser/local integration только внутри administrator-configured `WebAssistant:FileSystem:RootDirectory`. Public API принимает root-relative paths и остаётся stateless: текущая директория принадлежит caller, абсолютный host path наружу не публикуется.
+
+Public filesystem routes:
+
+```text
+GET    /v1/filesystem/list
+GET    /v1/filesystem/file
+PUT    /v1/filesystem/file
+DELETE /v1/filesystem/file
+POST   /v1/filesystem/directory
+DELETE /v1/filesystem/directory
+POST   /v1/filesystem/move
+```
+
+Upload и move используют atomic no-replace semantics: существующий destination не перезаписывается. Symlink/junction/reparse traversal и hard-link alias operations fail-closed. Standalone active file extensions блокируются для upload/download/move согласно filename policy. Download всегда имеет file-transfer semantics как opaque `application/octet-stream` attachment и не превращает `RootDirectory` в static web tree.
+
+Repository-owned `/filesystem.html` — обычный visual client того же public filesystem API без private/test-only privilege. Он показывает только Root-relative navigation и не выполняет inline preview пользовательских файлов.
+
+Точные REST schemas, status/error codes, scanner capability model и filesystem policy: [`docs/api.md`](docs/api.md).
 
 ## Runtime configuration и package-time ownership
 
@@ -92,9 +114,9 @@ src/WebAssistant/appsettings.json отсутствует
 
 После формирования canonical artifact `appsettings.json` является package-owned payload. Installer не генерирует, не заменяет и не патчит packaged configuration.
 
-Repository default configuration выключает CORS и использует platform defaults для log/data roots. При включении CORS разрешены только явно заданные exact HTTP/HTTPS origins; wildcard `*` не допускается.
+Repository default configuration выключает CORS и использует platform defaults для log/data roots. При включении CORS разрешены только явно заданные exact HTTP/HTTPS origins; wildcard `*` не допускается. Для current filesystem API intentional CORS methods — `GET`, `POST`, `PUT`, `DELETE`; cross-origin mutations проходят обычный browser preflight.
 
-`FileSystem.RootDirectory` задаёт rooted filesystem boundary. В текущей версии browser-facing filesystem endpoints отсутствуют. Внутренний path resolver принимает только относительные пути внутри root и отвергает navigation segments, absolute paths и существующие symlink/reparse-point components.
+`WebAssistant:FileSystem:RootDirectory` задаёт единственную filesystem authority. Platform default: `%ProgramData%\WebAssistant\data` на Windows и `/var/lib/webassistant` на Linux. Browser/API не могут менять root; containment обеспечивается native handle/descriptor-relative operations с no-follow/fail-closed policy, а не повторным открытием уже проверенного абсолютного pathname.
 
 WebAssistant пишет собственные технические события в суточные log files. В журналы не записываются PDF bytes, Base64 и содержимое страниц/документов. Current service сам не выполняет automatic retention/delete старых daily logs.
 
