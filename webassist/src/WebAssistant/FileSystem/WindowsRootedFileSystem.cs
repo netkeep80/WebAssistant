@@ -108,28 +108,16 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
     {
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
-        if (limit is < 1 or > 1000)
-        {
-            throw InvalidPath("Параметр limit должен быть от 1 до 1000.");
-        }
 
         var parsed = FileSystemPathPolicy.Parse(relativePath, allowRoot: true);
         using var directory = OpenDirectoryPath(parsed.Segments);
-        var afterName = DecodeCursor(cursor);
-        var all = EnumerateEntries(directory, cancellationToken)
-            .Where(entry =>
-                afterName is null ||
-                string.CompareOrdinal(entry.Name, afterName) > 0)
-            .OrderBy(entry => entry.Name, StringComparer.Ordinal)
-            .ToArray();
+        var page = FileSystemListingPolicy.CreatePage(
+            parsed.Value,
+            EnumerateEntries(directory, cancellationToken),
+            limit,
+            cursor);
 
-        var entries = all.Take(limit).ToArray();
-        var nextCursor = all.Length > entries.Length && entries.Length > 0
-            ? EncodeCursor(entries[^1].Name)
-            : null;
-
-        return ValueTask.FromResult(
-            new RootedFileSystemPage(entries, nextCursor));
+        return ValueTask.FromResult(page);
     }
 
     public ValueTask CreateDirectoryAsync(
@@ -298,11 +286,10 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         rootHandle.Dispose();
     }
 
-    private IReadOnlyList<RootedFileSystemEntry> EnumerateEntries(
+    private IEnumerable<RootedFileSystemEntry> EnumerateEntries(
         SafeFileHandle directory,
         CancellationToken cancellationToken)
     {
-        var result = new List<RootedFileSystemEntry>();
         var buffer = Marshal.AllocHGlobal(DirectoryBufferSize);
         try
         {
@@ -319,7 +306,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
                     var error = Marshal.GetLastPInvokeError();
                     if (error == ERROR_NO_MORE_FILES)
                     {
-                        break;
+                        yield break;
                     }
 
                     throw MapWin32Error(error, "Не удалось перечислить каталог.");
@@ -343,13 +330,13 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
                     if (name is not "." and not ".." &&
                         !name.StartsWith(InternalPrefix, StringComparison.OrdinalIgnoreCase))
                     {
-                        result.Add(CreateListingEntry(
+                        yield return CreateListingEntry(
                             directory,
                             name,
                             attributes,
                             endOfFile,
                             creationTime,
-                            lastWriteTime));
+                            lastWriteTime);
                     }
 
                     if (nextOffset == 0)
@@ -365,8 +352,6 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         {
             Marshal.FreeHGlobal(buffer);
         }
-
-        return result;
     }
 
     private RootedFileSystemEntry CreateListingEntry(
@@ -720,29 +705,6 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         catch (ArgumentOutOfRangeException)
         {
             return DateTimeOffset.UnixEpoch;
-        }
-    }
-
-    private static string EncodeCursor(string name) =>
-        Convert.ToBase64String(Encoding.UTF8.GetBytes(name));
-
-    private static string? DecodeCursor(string? cursor)
-    {
-        if (string.IsNullOrEmpty(cursor))
-        {
-            return null;
-        }
-
-        try
-        {
-            return Encoding.UTF8.GetString(Convert.FromBase64String(cursor));
-        }
-        catch (FormatException exception)
-        {
-            throw new FileSystemOperationException(
-                FileSystemErrorCodes.InvalidPath,
-                "Cursor каталога имеет недопустимый формат.",
-                exception);
         }
     }
 
