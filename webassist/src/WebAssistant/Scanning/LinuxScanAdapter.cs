@@ -58,8 +58,7 @@ internal sealed class LinuxScanAdapter : IScanAdapter, IDisposable
                 $"ScannerId '{scannerId}' не принадлежит SANE backend.");
         }
 
-        var devices = await controller.GetDeviceList(Driver.Sane);
-        cancellationToken.ThrowIfCancellationRequested();
+        var devices = await EnumerateSelectedBackendAsync(cancellationToken);
         var matches = devices
             .Where(candidate => string.Equals(
                 ScannerIdentity.Create(ScannerBackend.Sane, candidate.ID),
@@ -117,8 +116,7 @@ internal sealed class LinuxScanAdapter : IScanAdapter, IDisposable
                 $"ScannerId '{scannerId}' не принадлежит SANE backend.");
         }
 
-        var devices = await controller.GetDeviceList(Driver.Sane);
-        cancellationToken.ThrowIfCancellationRequested();
+        var devices = await EnumerateSelectedBackendAsync(cancellationToken);
         var matches = devices
             .Where(candidate => string.Equals(
                 ScannerIdentity.Create(ScannerBackend.Sane, candidate.ID),
@@ -202,6 +200,26 @@ internal sealed class LinuxScanAdapter : IScanAdapter, IDisposable
             {
                 image.Dispose();
             }
+        }
+    }
+
+    private async Task<List<ScanDevice>> EnumerateSelectedBackendAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var devices = await controller.GetDeviceList(Driver.Sane);
+            cancellationToken.ThrowIfCancellationRequested();
+            return devices;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new ScannerBackendUnavailableException(ScannerBackend.Sane, exception);
         }
     }
 
