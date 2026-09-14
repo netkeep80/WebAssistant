@@ -96,6 +96,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
             EnsureNotReparse(rootHandle, "RootDirectory не может быть reparse point.");
             EnsureDirectory(rootHandle);
             EnsureStagingDirectory();
+            CleanupOrphanedStagingFiles();
         }
         catch
         {
@@ -393,6 +394,19 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
             "Не удалось создать или открыть staging-каталог.");
         EnsureNotReparse(staging, "Staging-каталог не может быть reparse point.");
         EnsureDirectory(staging);
+    }
+
+    private void CleanupOrphanedStagingFiles()
+    {
+        using var staging = OpenStagingDirectory();
+        foreach (var entry in EnumerateEntries(staging, CancellationToken.None))
+        {
+            if (entry.Kind == RootedEntryKind.File &&
+                FileSystemInternalNames.IsOwnedStagingFileName(entry.Name))
+            {
+                TryDeleteInternalFile(staging, entry.Name);
+            }
+        }
     }
 
     private SafeFileHandle OpenStagingDirectory()
