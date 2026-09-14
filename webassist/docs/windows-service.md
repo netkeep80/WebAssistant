@@ -11,12 +11,18 @@ build\windows\package.bat
 Он создаёт пользовательский installation artifact:
 
 ```text
+<installerBaseName>-win-x64-<VERSION>.exe
+```
+
+где `<VERSION>` равен exact content файла `VERSION`, а `<installerBaseName>` берётся из effective product metadata. Public default `installerBaseName` равен `WebAssistant`, поэтому без override имя имеет вид:
+
+```text
 WebAssistant-win-x64-<VERSION>.exe
 ```
 
-где `<VERSION>` равен exact content файла `VERSION`. Рядом создаются `.sha256` и `.provenance.json` для final EXE.
+Рядом создаются `.sha256` и `.provenance.json` для final EXE.
 
-Producer сначала собирает self-contained `win-x64` application payload, затем внутренний MSI и финальный WiX 7 Burn bundle. Внутренний MSI — build intermediate; устанавливать вручную его не требуется.
+Producer сначала собирает self-contained `win-x64` application payload, затем внутренний MSI и финальный WiX 7 Burn bundle. Внутренний MSI — build intermediate; устанавливать вручную его не требуется. Build-time display metadata не меняет stable technical identities: executable `WebAssistant.exe` и Windows Service `WebAssistant` остаются прежними.
 
 ## Package-owned configuration
 
@@ -39,8 +45,10 @@ src/WebAssistant/appsettings.json существует
 Запустите от имени пользователя, который может подтвердить UAC elevation:
 
 ```text
-WebAssistant-win-x64-<VERSION>.exe
+<installerBaseName>-win-x64-<VERSION>.exe
 ```
+
+При public default это `WebAssistant-win-x64-<VERSION>.exe`.
 
 Canonical installer:
 
@@ -50,7 +58,7 @@ Canonical installer:
 - регистрирует Windows Service `WebAssistant`;
 - задаёт automatic service start;
 - запускает service после установки;
-- регистрирует WebAssistant в Installed Apps / Programs and Features;
+- регистрирует effective product display identity в Installed Apps / Programs and Features;
 - записывает DisplayVersion, совпадающий с product `VERSION`.
 
 Installed application использует package-owned `appsettings.json` без installer-side regeneration.
@@ -75,7 +83,7 @@ http://127.0.0.1:17654/v1/health
 Invoke-WebRequest http://127.0.0.1:17654/v1/health
 ```
 
-В Installed Apps / Programs and Features должен присутствовать `WebAssistant` с ожидаемым DisplayVersion.
+В Installed Apps / Programs and Features должен присутствовать effective application display name с ожидаемым DisplayVersion.
 
 ## Runtime state
 
@@ -86,11 +94,13 @@ Machine-wide state расположен отдельно от Program Files:
 %ProgramData%\WebAssistant\data
 ```
 
+`%ProgramData%\WebAssistant\data` является default `WebAssistant:FileSystem:RootDirectory`. Environment-specific package configuration может задать другой root; browser API сам `RootDirectory` не меняет.
+
 Служба слушает только `127.0.0.1`; default port — `17654`.
 
 ## Удаление
 
-Используйте стандартное удаление WebAssistant через Installed Apps / Programs and Features либо штатный uninstall canonical bundle.
+Используйте стандартное удаление effective WebAssistant product через Installed Apps / Programs and Features либо штатный uninstall canonical bundle.
 
 Uninstall останавливает и удаляет Windows Service, product registration и установленные application files. `%ProgramData%\WebAssistant\logs` и `%ProgramData%\WebAssistant\data` по текущей state policy сохраняются.
 
