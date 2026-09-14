@@ -48,39 +48,49 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         foreach (var driver in new[] { Driver.Wia, Driver.Twain })
         {
             var backend = MapBackend(driver);
+            List<ScanDevice> devices;
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var devices = await getDevices(driver);
+                devices = await getDevices(driver);
                 cancellationToken.ThrowIfCancellationRequested();
+                successfulBackends++;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                AddWarningOnce(warnings, backend, "enumerationFailed");
+                continue;
+            }
 
-                var duplicateIds = devices
-                    .GroupBy(device => device.ID, StringComparer.Ordinal)
-                    .Where(group => group.Count() > 1)
-                    .Select(group => group.Key)
-                    .ToHashSet(StringComparer.Ordinal);
+            var duplicateIds = devices
+                .GroupBy(device => device.ID, StringComparer.Ordinal)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .ToHashSet(StringComparer.Ordinal);
 
-                var backendWarnings = new List<ScannerDiscoveryWarning>();
-                if (duplicateIds.Count > 0)
+            if (duplicateIds.Count > 0)
+            {
+                AddWarningOnce(warnings, backend, "ambiguousNativeIdentity");
+            }
+
+            foreach (var device in devices)
+            {
+                if (duplicateIds.Contains(device.ID))
                 {
-                    backendWarnings.Add(new ScannerDiscoveryWarning(
-                        backend,
-                        "ambiguousNativeIdentity"));
+                    continue;
                 }
 
-                var normalized = new List<ScannerDevice>();
-                foreach (var device in devices)
+                try
                 {
-                    if (duplicateIds.Contains(device.ID))
-                    {
-                        continue;
-                    }
-
                     var caps = await getCaps(device, cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
                     var paperSourceCaps = caps.PaperSourceCaps;
 
-                    normalized.Add(new ScannerDevice(
+                    scanners.Add(new ScannerDevice(
                         ScannerIdentity.Create(backend, device.ID),
                         device.Name,
                         backend,
@@ -90,18 +100,14 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
                         MapFeederPaperState(paperSourceCaps?.FeederHasPaper),
                         Naps2ScannerCapabilityMapper.From(caps)));
                 }
-
-                scanners.AddRange(normalized);
-                warnings.AddRange(backendWarnings);
-                successfulBackends++;
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch
-            {
-                warnings.Add(new ScannerDiscoveryWarning(backend, "enumerationFailed"));
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    AddWarningOnce(warnings, backend, "enumerationFailed");
+                }
             }
         }
 
@@ -217,6 +223,18 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             {
                 image.Dispose();
             }
+        }
+    }
+
+    private static void AddWarningOnce(
+        ICollection<ScannerDiscoveryWarning> warnings,
+        ScannerBackend backend,
+        string code)
+    {
+        var warning = new ScannerDiscoveryWarning(backend, code);
+        if (!warnings.Contains(warning))
+        {
+            warnings.Add(warning);
         }
     }
 
