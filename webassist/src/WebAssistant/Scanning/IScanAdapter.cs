@@ -4,6 +4,16 @@ internal interface IScanAdapter
 {
     Task<ScannerDiscoveryResult> GetScannersAsync(CancellationToken cancellationToken = default);
 
+    async Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+        string scannerId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scannerId);
+        var discovery = await GetScannersAsync(cancellationToken);
+        return discovery.FirstOrDefault(scanner =>
+            string.Equals(scanner.Id, scannerId, StringComparison.Ordinal));
+    }
+
     Task<Stream> ScanAsync(string scannerId, CancellationToken cancellationToken = default);
 
     Task<Stream> ScanAsync(
