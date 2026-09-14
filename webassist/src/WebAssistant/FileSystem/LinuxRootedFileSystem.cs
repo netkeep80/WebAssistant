@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
@@ -235,17 +236,34 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
             }
 
             stagingCreated = true;
-            await using (var stagingStream = new FileStream(
+            using (var stagingStream = new FileStream(
                 Own(descriptor),
                 FileAccess.Write,
                 bufferSize: StreamBufferSize,
-                isAsync: true))
+                isAsync: false))
             {
-                await source.CopyToAsync(
-                    stagingStream,
-                    StreamBufferSize,
-                    cancellationToken);
-                await stagingStream.FlushAsync(cancellationToken);
+                var buffer = ArrayPool<byte>.Shared.Rent(StreamBufferSize);
+                try
+                {
+                    while (true)
+                    {
+                        var read = await source.ReadAsync(
+                            buffer.AsMemory(0, StreamBufferSize),
+                            cancellationToken);
+                        if (read == 0)
+                        {
+                            break;
+                        }
+
+                        stagingStream.Write(buffer, 0, read);
+                    }
+
+                    stagingStream.Flush();
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                }
             }
 
             cancellationToken.ThrowIfCancellationRequested();
