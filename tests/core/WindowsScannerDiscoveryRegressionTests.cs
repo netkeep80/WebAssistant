@@ -9,50 +9,38 @@ namespace WebAssistant.CoreTests;
 public sealed class WindowsScannerDiscoveryRegressionTests
 {
     [Fact]
-    public async Task Discovery_OneDeviceCapsFailurePreservesOtherDeviceFromSameBackend()
+    public async Task Discovery_ListingDoesNotProbeCapabilities()
     {
+        var capabilityCalls = 0;
+
         var result = await WindowsScanAdapter.DiscoverAsync(
             driver => Task.FromResult(driver switch
             {
-                Driver.Wia => new List<ScanDevice>(),
+                Driver.Wia => new List<ScanDevice>
+                {
+                    new(Driver.Wia, "wia-registered-1", "Registered WIA scanner")
+                },
                 Driver.Twain => new List<ScanDevice>
                 {
-                    new(Driver.Twain, "twain-good-native", "TWAIN good scanner"),
-                    new(Driver.Twain, "twain-offline-native", "TWAIN offline scanner")
+                    new(Driver.Twain, "twain-registered-1", "Registered TWAIN scanner")
                 },
                 _ => throw new ArgumentOutOfRangeException(nameof(driver), driver, null)
             }),
-            (device, cancellationToken) =>
+            (_, _) =>
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (device.ID == "twain-offline-native")
-                {
-                    return Task.FromException<ScanCaps>(
-                        new InvalidOperationException("offline network scanner capability probe failed"));
-                }
-
-                return Task.FromResult(new ScanCaps
-                {
-                    PaperSourceCaps = new PaperSourceCaps
-                    {
-                        SupportsFlatbed = true,
-                        SupportsFeeder = false,
-                        SupportsDuplex = false
-                    }
-                });
+                Interlocked.Increment(ref capabilityCalls);
+                return Task.FromException<ScanCaps>(
+                    new TimeoutException("capability probe must not run while listing"));
             });
 
         Assert.True(result.IsAvailable);
-        var scanner = Assert.Single(result.Scanners);
-        Assert.Equal(ScannerBackend.Twain, scanner.Backend);
-        Assert.Equal("TWAIN good scanner", scanner.Name);
-        Assert.Equal(
-            ScannerIdentity.Create(ScannerBackend.Twain, "twain-good-native"),
-            scanner.Id);
-
-        var warning = Assert.Single(result.Warnings);
-        Assert.Equal(ScannerBackend.Twain, warning.Backend);
-        Assert.Equal("enumerationFailed", warning.Code);
+        Assert.Equal(2, result.Scanners.Count);
+        Assert.Empty(result.Warnings);
+        Assert.Equal(0, capabilityCalls);
+        Assert.Contains(result.Scanners, scanner =>
+            scanner.Backend == ScannerBackend.Wia && scanner.Name == "Registered WIA scanner");
+        Assert.Contains(result.Scanners, scanner =>
+            scanner.Backend == ScannerBackend.Twain && scanner.Name == "Registered TWAIN scanner");
     }
 }
 
