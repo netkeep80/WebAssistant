@@ -22,7 +22,7 @@ internal static class ScannerSettingsEndpointHandlers
         ILogger logger,
         CancellationToken cancellationToken)
     {
-        if (!ScannerIdentity.TryParse(scannerId, out var requestedBackend))
+        if (!ScannerIdentity.TryParse(scannerId, out _))
         {
             return Results.Problem(
                 statusCode: StatusCodes.Status400BadRequest,
@@ -38,32 +38,6 @@ internal static class ScannerSettingsEndpointHandlers
 
         try
         {
-            var discovery = await adapter.GetScannersAsync(cancellationToken);
-            if (!discovery.IsAvailable)
-            {
-                return Results.Problem(
-                    statusCode: StatusCodes.Status503ServiceUnavailable,
-                    title: "Обнаружение сканеров недоступно");
-            }
-
-            var registered = discovery.FirstOrDefault(candidate =>
-                string.Equals(candidate.Id, scannerId, StringComparison.Ordinal));
-
-            if (registered is null)
-            {
-                var backendUnavailable = discovery.Warnings.Any(warning =>
-                    warning.Backend == requestedBackend &&
-                    string.Equals(warning.Code, "enumerationFailed", StringComparison.Ordinal));
-
-                return backendUnavailable
-                    ? Results.Problem(
-                        statusCode: StatusCodes.Status503ServiceUnavailable,
-                        title: "Backend сканера недоступен")
-                    : Results.Problem(
-                        statusCode: StatusCodes.Status404NotFound,
-                        title: "Сканер не найден");
-            }
-
             var scanner = await adapter.GetScannerCapabilitiesAsync(scannerId, cancellationToken);
             if (scanner is null)
             {
@@ -78,6 +52,17 @@ internal static class ScannerSettingsEndpointHandlers
                 scannerId = scanner.Id,
                 modes = modes.Select(ModeResponse).ToArray()
             });
+        }
+        catch (ScannerBackendUnavailableException exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Backend выбранного сканера недоступен backend={Backend} scannerId={ScannerId}",
+                exception.Backend,
+                scannerId);
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Backend сканера недоступен");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
