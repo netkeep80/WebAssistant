@@ -29,7 +29,9 @@ public sealed class WindowsScannerLifetimeTests
             Interlocked.Increment(ref created);
             return new FakeScanAdapter();
         });
-        var hostedService = new WindowsScannerShutdownHostedService(holder);
+        var hostedService = new WindowsScannerShutdownHostedService(
+            holder,
+            new CaptureLogger<WindowsScannerShutdownHostedService>());
 
         await hostedService.StopAsync(CancellationToken.None);
 
