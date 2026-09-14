@@ -13,11 +13,7 @@ on:
 
 jobs:
   test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,3 +22,17 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - run: dotnet test tests/core/WebAssistant.CoreTests.csproj --configuration Release
+
+  windows-rooted-filesystem:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: >-
+          dotnet test tests/core/WebAssistant.CoreTests.csproj
+          --configuration Release
+          --filter FullyQualifiedName~WindowsRootedFileSystemTests
