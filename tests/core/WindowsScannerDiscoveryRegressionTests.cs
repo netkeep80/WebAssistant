@@ -159,6 +159,31 @@ public sealed class WindowsScannerDiscoveryRegressionTests
             message.Contains(nativeId, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task SelectedCapabilities_RedactsNativeIdBeforeMessageTruncation()
+    {
+        var logger = new CaptureLogger();
+        const string nativeId = "machine-specific-boundary-native-id";
+        var scannerId = ScannerIdentity.Create(ScannerBackend.Wia, nativeId);
+        var boundaryMessage = new string('x', 492) + nativeId;
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            WindowsScanAdapter.ResolveCapabilitiesAsync(
+                scannerId,
+                driver => Task.FromResult(driver == Driver.Wia
+                    ? new List<ScanDevice>
+                    {
+                        new(Driver.Wia, nativeId, "Selected WIA scanner")
+                    }
+                    : throw new InvalidOperationException("unrelated backend must not run")),
+                (_, _) => Task.FromException<ScanCaps>(
+                    new InvalidOperationException(boundaryMessage)),
+                logger));
+
+        Assert.DoesNotContain(logger.Messages, message =>
+            message.Contains(nativeId[..8], StringComparison.OrdinalIgnoreCase));
+    }
+
     private sealed class CaptureLogger : ILogger
     {
         internal List<string> Messages { get; } = [];
