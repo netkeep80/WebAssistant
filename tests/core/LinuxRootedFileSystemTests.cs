@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Text;
 using WebAssistant.FileSystem;
 using Xunit;
 
@@ -44,7 +43,7 @@ public sealed class LinuxRootedFileSystemTests : IDisposable
         Assert.Null(entry.RestrictionCode);
 
         await using (var stream = await fileSystem.OpenReadAsync("incoming/a.bin"))
-        using (var reader = new StreamReader(stream, Encoding.UTF8))
+        using (var reader = new StreamReader(stream))
         {
             Assert.Equal("payload", await reader.ReadToEndAsync());
         }
@@ -149,7 +148,7 @@ public sealed class LinuxRootedFileSystemTests : IDisposable
                 try
                 {
                     await using var stream = await fileSystem.OpenReadAsync("slot/sentinel.txt");
-                    using var reader = new StreamReader(stream, Encoding.UTF8);
+                    using var reader = new StreamReader(stream);
                     var content = await reader.ReadToEndAsync();
                     Assert.NotEqual("OUTSIDE-SENTINEL", content);
                 }
