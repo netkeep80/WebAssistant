@@ -84,6 +84,19 @@ public sealed class ScannerCapabilityBoundaryTests
     }
 
     [Fact]
+    public async Task DefaultCapabilityResolution_FailsClosedWithoutGlobalListing()
+    {
+        var adapter = new DefaultCapabilityFakeAdapter();
+        IScanAdapter contract = adapter;
+
+        var error = await Assert.ThrowsAsync<NotSupportedException>(
+            () => contract.GetScannerCapabilitiesAsync(adapter.ScannerId));
+
+        Assert.Contains("capabil", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, adapter.ListCalls);
+    }
+
+    [Fact]
     public async Task SelectedScannerSettings_BackendFailure_DoesNotAttachRawDriverExceptionToLogger()
     {
         const string nativeSecret = "machine-specific-native-id";
@@ -253,6 +266,29 @@ public sealed class ScannerCapabilityBoundaryTests
             Interlocked.Increment(ref scanCalls);
             return Task.FromResult<Stream>(new MemoryStream("%PDF-1.7\n%%EOF"u8.ToArray(), writable: false));
         }
+    }
+
+    private sealed class DefaultCapabilityFakeAdapter : IScanAdapter
+    {
+        private int listCalls;
+
+        internal string ScannerId { get; } =
+            ScannerIdentity.Create(ScannerBackend.Wia, "default-capability-1");
+        internal int ListCalls => Volatile.Read(ref listCalls);
+
+        public Task<ScannerDiscoveryResult> GetScannersAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref listCalls);
+            return Task.FromResult(new ScannerDiscoveryResult(
+                [new ScannerDevice(ScannerId, "Default capability scanner", ScannerBackend.Wia)]));
+        }
+
+        public Task<Stream> ScanAsync(
+            string scannerId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<Stream>(new MemoryStream("%PDF-1.7\n%%EOF"u8.ToArray(), writable: false));
     }
 
     private sealed class ThrowingCapabilityAdapter(Exception exception) : IScanAdapter
