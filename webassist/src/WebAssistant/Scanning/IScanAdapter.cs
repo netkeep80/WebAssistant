@@ -4,27 +4,15 @@ internal interface IScanAdapter
 {
     Task<ScannerDiscoveryResult> GetScannersAsync(CancellationToken cancellationToken = default);
 
-    async Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+    Task<ScannerDevice?> GetScannerCapabilitiesAsync(
         string scannerId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(scannerId);
-        var discovery = await GetScannersAsync(cancellationToken);
-        var scanner = discovery.FirstOrDefault(candidate =>
-            string.Equals(candidate.Id, scannerId, StringComparison.Ordinal));
-        if (scanner is not null)
-        {
-            return scanner;
-        }
-
-        if (ScannerIdentity.TryParse(scannerId, out var backend) &&
-            discovery.Warnings.Any(warning =>
-                warning.Backend == backend && warning.Code == "enumerationFailed"))
-        {
-            throw new ScannerBackendUnavailableException(backend);
-        }
-
-        return null;
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromException<ScannerDevice?>(
+            new NotSupportedException(
+                "Адаптер обязан явно реализовать получение capabilities выбранного scanner endpoint без global discovery fallback."));
     }
 
     Task<Stream> ScanAsync(string scannerId, CancellationToken cancellationToken = default);
