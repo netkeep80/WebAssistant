@@ -31,24 +31,65 @@ internal sealed class LinuxScanAdapter : IScanAdapter, IDisposable
         var devices = await controller.GetDeviceList(Driver.Sane);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var scanners = new List<ScannerDevice>(devices.Count);
-        foreach (var device in devices)
-        {
-            var caps = await controller.GetCaps(device, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            var paperSourceCaps = caps.PaperSourceCaps;
-            scanners.Add(new ScannerDevice(
+        var scanners = devices
+            .Select(device => new ScannerDevice(
                 ScannerIdentity.Create(ScannerBackend.Sane, device.ID),
                 device.Name,
                 ScannerBackend.Sane,
-                paperSourceCaps?.SupportsFlatbed ?? false,
-                paperSourceCaps?.SupportsFeeder ?? false,
-                paperSourceCaps?.SupportsDuplex ?? false,
-                MapFeederPaperState(paperSourceCaps?.FeederHasPaper),
-                Naps2ScannerCapabilityMapper.From(caps)));
+                SupportsFlatbed: false,
+                SupportsFeeder: false,
+                SupportsDuplex: false,
+                FeederPaperState.Unknown,
+                Capabilities: null))
+            .ToArray();
+        return new ScannerDiscoveryResult(scanners);
+    }
+
+    public async Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+        string scannerId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scannerId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!ScannerIdentity.TryParse(scannerId, out var backend) || backend != ScannerBackend.Sane)
+        {
+            throw new InvalidOperationException(
+                $"ScannerId '{scannerId}' не принадлежит SANE backend.");
         }
 
-        return new ScannerDiscoveryResult(scanners);
+        var devices = await EnumerateSelectedBackendAsync(cancellationToken);
+        var matches = devices
+            .Where(candidate => string.Equals(
+                ScannerIdentity.Create(ScannerBackend.Sane, candidate.ID),
+                scannerId,
+                StringComparison.Ordinal))
+            .ToArray();
+
+        if (matches.Length == 0)
+        {
+            return null;
+        }
+
+        if (matches.Length > 1)
+        {
+            throw new InvalidOperationException(
+                $"ScannerId '{scannerId}' неоднозначен внутри SANE backend.");
+        }
+
+        var device = matches[0];
+        var caps = await controller.GetCaps(device, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        var paperSourceCaps = caps.PaperSourceCaps;
+        return new ScannerDevice(
+            scannerId,
+            device.Name,
+            ScannerBackend.Sane,
+            paperSourceCaps?.SupportsFlatbed ?? false,
+            paperSourceCaps?.SupportsFeeder ?? false,
+            paperSourceCaps?.SupportsDuplex ?? false,
+            MapFeederPaperState(paperSourceCaps?.FeederHasPaper),
+            Naps2ScannerCapabilityMapper.From(caps));
     }
 
     public Task<Stream> ScanAsync(string scannerId, CancellationToken cancellationToken = default) =>
@@ -75,8 +116,7 @@ internal sealed class LinuxScanAdapter : IScanAdapter, IDisposable
                 $"ScannerId '{scannerId}' не принадлежит SANE backend.");
         }
 
-        var devices = await controller.GetDeviceList(Driver.Sane);
-        cancellationToken.ThrowIfCancellationRequested();
+        var devices = await EnumerateSelectedBackendAsync(cancellationToken);
         var matches = devices
             .Where(candidate => string.Equals(
                 ScannerIdentity.Create(ScannerBackend.Sane, candidate.ID),
@@ -160,6 +200,26 @@ internal sealed class LinuxScanAdapter : IScanAdapter, IDisposable
             {
                 image.Dispose();
             }
+        }
+    }
+
+    private async Task<List<ScanDevice>> EnumerateSelectedBackendAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var devices = await controller.GetDeviceList(Driver.Sane);
+            cancellationToken.ThrowIfCancellationRequested();
+            return devices;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new ScannerBackendUnavailableException(ScannerBackend.Sane, exception);
         }
     }
 

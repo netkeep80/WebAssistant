@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using NAPS2.Images;
 using NAPS2.Images.Gdi;
 using NAPS2.Pdf;
@@ -12,34 +14,65 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
 {
     private readonly ScanningContext scanningContext;
     private readonly ScanController controller;
+    private readonly ILogger? logger;
     private int disposed;
 
-    internal WindowsScanAdapter()
+    internal WindowsScanAdapter(ILogger<WindowsScanAdapter>? logger = null)
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(7))
         {
             throw new PlatformNotSupportedException("Windows scanner adapter доступен только на Windows.");
         }
 
+        this.logger = logger;
         scanningContext = new ScanningContext(new GdiImageContext());
         scanningContext.SetUpWin32Worker();
         controller = new ScanController(scanningContext);
     }
 
     public Task<ScannerDiscoveryResult> GetScannersAsync(
-        CancellationToken cancellationToken = default) =>
-        DiscoverAsync(
-            driver => controller.GetDeviceList(driver),
-            (device, token) => controller.GetCaps(device, token),
-            cancellationToken);
-
-    internal static async Task<ScannerDiscoveryResult> DiscoverAsync(
-        Func<Driver, Task<List<ScanDevice>>> getDevices,
-        Func<ScanDevice, CancellationToken, Task<ScanCaps>> getCaps,
         CancellationToken cancellationToken = default)
     {
+        Func<Driver, Task<List<ScanDevice>>> getDevices =
+            driver => controller.GetDeviceList(driver);
+        return logger is null
+            ? DiscoverAsync(getDevices, cancellationToken)
+            : DiscoverAsync(getDevices, logger, cancellationToken);
+    }
+
+    public Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+        string scannerId,
+        CancellationToken cancellationToken = default)
+    {
+        Func<Driver, Task<List<ScanDevice>>> getDevices =
+            driver => controller.GetDeviceList(driver);
+        Func<ScanDevice, CancellationToken, Task<ScanCaps>> getCaps =
+            (device, token) => controller.GetCaps(device, token);
+        return logger is null
+            ? ResolveCapabilitiesAsync(scannerId, getDevices, getCaps, cancellationToken)
+            : ResolveCapabilitiesAsync(scannerId, getDevices, getCaps, logger, cancellationToken);
+    }
+
+    internal static Task<ScannerDiscoveryResult> DiscoverAsync(
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        CancellationToken cancellationToken = default) =>
+        DiscoverCoreAsync(getDevices, logger: null, cancellationToken);
+
+    internal static Task<ScannerDiscoveryResult> DiscoverAsync(
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        ILogger logger,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        return DiscoverCoreAsync(getDevices, logger, cancellationToken);
+    }
+
+    private static async Task<ScannerDiscoveryResult> DiscoverCoreAsync(
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        ILogger? logger,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(getDevices);
-        ArgumentNullException.ThrowIfNull(getCaps);
 
         var scanners = new List<ScannerDevice>();
         var warnings = new List<ScannerDiscoveryWarning>();
@@ -48,11 +81,20 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         foreach (var driver in new[] { Driver.Wia, Driver.Twain })
         {
             var backend = MapBackend(driver);
+            var stopwatch = Stopwatch.StartNew();
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var devices = await getDevices(driver);
                 cancellationToken.ThrowIfCancellationRequested();
+                stopwatch.Stop();
+                successfulBackends++;
+
+                logger?.LogInformation(
+                    "scanner.discovery backend={Backend} stage=getDeviceList outcome=success durationMs={DurationMs} deviceCount={DeviceCount}",
+                    BackendName(backend),
+                    stopwatch.ElapsedMilliseconds,
+                    devices.Count);
 
                 var duplicateIds = devices
                     .GroupBy(device => device.ID, StringComparer.Ordinal)
@@ -60,15 +102,11 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
                     .Select(group => group.Key)
                     .ToHashSet(StringComparer.Ordinal);
 
-                var backendWarnings = new List<ScannerDiscoveryWarning>();
                 if (duplicateIds.Count > 0)
                 {
-                    backendWarnings.Add(new ScannerDiscoveryWarning(
-                        backend,
-                        "ambiguousNativeIdentity"));
+                    AddWarningOnce(warnings, backend, "ambiguousNativeIdentity");
                 }
 
-                var normalized = new List<ScannerDevice>();
                 foreach (var device in devices)
                 {
                     if (duplicateIds.Contains(device.ID))
@@ -76,32 +114,23 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
                         continue;
                     }
 
-                    var caps = await getCaps(device, cancellationToken);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var paperSourceCaps = caps.PaperSourceCaps;
-
-                    normalized.Add(new ScannerDevice(
-                        ScannerIdentity.Create(backend, device.ID),
-                        device.Name,
-                        backend,
-                        paperSourceCaps?.SupportsFlatbed ?? false,
-                        paperSourceCaps?.SupportsFeeder ?? false,
-                        paperSourceCaps?.SupportsDuplex ?? false,
-                        MapFeederPaperState(paperSourceCaps?.FeederHasPaper),
-                        Naps2ScannerCapabilityMapper.From(caps)));
+                    scanners.Add(CreateRegisteredEndpoint(device, backend));
                 }
-
-                scanners.AddRange(normalized);
-                warnings.AddRange(backendWarnings);
-                successfulBackends++;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
-            catch
+            catch (Exception exception)
             {
-                warnings.Add(new ScannerDiscoveryWarning(backend, "enumerationFailed"));
+                stopwatch.Stop();
+                logger?.LogWarning(
+                    "scanner.discovery backend={Backend} stage=getDeviceList outcome=failure durationMs={DurationMs} exceptionType={ExceptionType} hresult={HResult}",
+                    BackendName(backend),
+                    stopwatch.ElapsedMilliseconds,
+                    exception.GetType().Name,
+                    FormatHResult(exception));
+                AddWarningOnce(warnings, backend, "enumerationFailed");
             }
         }
 
@@ -109,6 +138,123 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             scanners,
             warnings,
             isAvailable: successfulBackends > 0);
+    }
+
+    // Compatibility overload used by regression tests that prove capability probes are not part of listing.
+    internal static Task<ScannerDiscoveryResult> DiscoverAsync(
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        Func<ScanDevice, CancellationToken, Task<ScanCaps>> getCaps,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(getCaps);
+        return DiscoverAsync(getDevices, cancellationToken);
+    }
+
+    internal static Task<ScannerDevice?> ResolveCapabilitiesAsync(
+        string scannerId,
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        Func<ScanDevice, CancellationToken, Task<ScanCaps>> getCaps,
+        CancellationToken cancellationToken = default) =>
+        ResolveCapabilitiesCoreAsync(
+            scannerId,
+            getDevices,
+            getCaps,
+            logger: null,
+            cancellationToken);
+
+    internal static Task<ScannerDevice?> ResolveCapabilitiesAsync(
+        string scannerId,
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        Func<ScanDevice, CancellationToken, Task<ScanCaps>> getCaps,
+        ILogger logger,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        return ResolveCapabilitiesCoreAsync(
+            scannerId,
+            getDevices,
+            getCaps,
+            logger,
+            cancellationToken);
+    }
+
+    private static async Task<ScannerDevice?> ResolveCapabilitiesCoreAsync(
+        string scannerId,
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        Func<ScanDevice, CancellationToken, Task<ScanCaps>> getCaps,
+        ILogger? logger,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scannerId);
+        ArgumentNullException.ThrowIfNull(getDevices);
+        ArgumentNullException.ThrowIfNull(getCaps);
+
+        if (!ScannerIdentity.TryParse(scannerId, out var backend) ||
+            backend is not (ScannerBackend.Wia or ScannerBackend.Twain))
+        {
+            throw new InvalidOperationException(
+                $"ScannerId '{scannerId}' не принадлежит Windows scanner backend.");
+        }
+
+        var driver = MapDriver(backend);
+        var devices = await EnumerateSelectedBackendAsync(
+            "scanner.capabilities",
+            scannerId,
+            backend,
+            driver,
+            getDevices,
+            logger,
+            cancellationToken);
+
+        var matches = devices
+            .Where(candidate => string.Equals(
+                ScannerIdentity.Create(backend, candidate.ID),
+                scannerId,
+                StringComparison.Ordinal))
+            .ToArray();
+
+        if (matches.Length == 0)
+        {
+            return null;
+        }
+
+        if (matches.Length > 1)
+        {
+            throw new InvalidOperationException(
+                $"ScannerId '{scannerId}' неоднозначен внутри backend '{backend}'.");
+        }
+
+        var device = matches[0];
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            var caps = await getCaps(device, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            stopwatch.Stop();
+            logger?.LogInformation(
+                "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps outcome=success durationMs={DurationMs}",
+                BackendName(backend),
+                scannerId,
+                stopwatch.ElapsedMilliseconds);
+            return CreateCapableEndpoint(device, backend, caps);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            stopwatch.Stop();
+            logger?.LogWarning(
+                "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps outcome=failure durationMs={DurationMs} exceptionType={ExceptionType} hresult={HResult} message={Message}",
+                BackendName(backend),
+                scannerId,
+                stopwatch.ElapsedMilliseconds,
+                exception.GetType().Name,
+                FormatHResult(exception),
+                SafeExceptionMessage(exception, device.ID));
+            throw;
+        }
     }
 
     public Task<Stream> ScanAsync(string scannerId, CancellationToken cancellationToken = default) =>
@@ -137,8 +283,14 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         }
 
         var driver = MapDriver(backend);
-        var devices = await controller.GetDeviceList(driver);
-        cancellationToken.ThrowIfCancellationRequested();
+        var devices = await EnumerateSelectedBackendAsync(
+            "scanner.scan",
+            scannerId,
+            backend,
+            driver,
+            selectedDriver => controller.GetDeviceList(selectedDriver),
+            logger,
+            cancellationToken);
         var matches = devices
             .Where(candidate => string.Equals(
                 ScannerIdentity.Create(backend, candidate.ID),
@@ -217,6 +369,116 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             {
                 image.Dispose();
             }
+        }
+    }
+
+    private static async Task<List<ScanDevice>> EnumerateSelectedBackendAsync(
+        string operation,
+        string scannerId,
+        ScannerBackend backend,
+        Driver driver,
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        ILogger? logger,
+        CancellationToken cancellationToken)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var devices = await getDevices(driver);
+            cancellationToken.ThrowIfCancellationRequested();
+            stopwatch.Stop();
+            logger?.LogInformation(
+                "{Operation} backend={Backend} scannerId={ScannerId} stage=getDeviceList outcome=success durationMs={DurationMs} deviceCount={DeviceCount}",
+                operation,
+                BackendName(backend),
+                scannerId,
+                stopwatch.ElapsedMilliseconds,
+                devices.Count);
+            return devices;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            stopwatch.Stop();
+            logger?.LogWarning(
+                "{Operation} backend={Backend} scannerId={ScannerId} stage=getDeviceList outcome=failure durationMs={DurationMs} exceptionType={ExceptionType} hresult={HResult}",
+                operation,
+                BackendName(backend),
+                scannerId,
+                stopwatch.ElapsedMilliseconds,
+                exception.GetType().Name,
+                FormatHResult(exception));
+            throw new ScannerBackendUnavailableException(backend, exception);
+        }
+    }
+
+    private static ScannerDevice CreateRegisteredEndpoint(
+        ScanDevice device,
+        ScannerBackend backend) =>
+        new(
+            ScannerIdentity.Create(backend, device.ID),
+            device.Name,
+            backend,
+            SupportsFlatbed: false,
+            SupportsFeeder: false,
+            SupportsDuplex: false,
+            FeederPaperState.Unknown,
+            Capabilities: null);
+
+    private static ScannerDevice CreateCapableEndpoint(
+        ScanDevice device,
+        ScannerBackend backend,
+        ScanCaps caps)
+    {
+        var paperSourceCaps = caps.PaperSourceCaps;
+        return new ScannerDevice(
+            ScannerIdentity.Create(backend, device.ID),
+            device.Name,
+            backend,
+            paperSourceCaps?.SupportsFlatbed ?? false,
+            paperSourceCaps?.SupportsFeeder ?? false,
+            paperSourceCaps?.SupportsDuplex ?? false,
+            MapFeederPaperState(paperSourceCaps?.FeederHasPaper),
+            Naps2ScannerCapabilityMapper.From(caps));
+    }
+
+    private static string SafeExceptionMessage(Exception exception, string nativeId)
+    {
+        var message = exception.Message;
+        if (!string.IsNullOrEmpty(nativeId))
+        {
+            message = message.Replace(
+                nativeId,
+                "<native-id>",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        return new string(
+            message
+                .Where(character => !char.IsControl(character))
+                .Take(500)
+                .ToArray());
+    }
+
+    private static string FormatHResult(Exception exception) =>
+        $"0x{unchecked((uint)exception.HResult):X8}";
+
+    private static string BackendName(ScannerBackend backend) =>
+        backend.ToString().ToLowerInvariant();
+
+    private static void AddWarningOnce(
+        ICollection<ScannerDiscoveryWarning> warnings,
+        ScannerBackend backend,
+        string code)
+    {
+        var warning = new ScannerDiscoveryWarning(backend, code);
+        if (!warnings.Contains(warning))
+        {
+            warnings.Add(warning);
         }
     }
 

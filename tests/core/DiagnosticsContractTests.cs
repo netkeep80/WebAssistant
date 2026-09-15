@@ -97,7 +97,7 @@ public sealed class DiagnosticsContractTests
     }
 
     [Fact]
-    public async Task ScannerFailure_WritesExceptionTypeMessageAndStackTrace()
+    public async Task ScannerFailure_WritesSafeExceptionMetadataWithoutRawMessageOrStack()
     {
         var scannerId = ScannerIdentity.Create(ScannerBackend.Sane, "diagnostics-scanner-1");
         var adapter = new FakeScanAdapter(
@@ -114,9 +114,11 @@ public sealed class DiagnosticsContractTests
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
 
         var log = await ReadTodayLogAsync(fixture.LogDirectory);
-        Assert.Contains("InvalidOperationException", log);
-        Assert.Contains("scanner failure", log);
+        Assert.Contains("exceptionType=InvalidOperationException", log);
+        Assert.Contains("hresult=0x", log);
         Assert.Contains(scannerId, log);
+        Assert.DoesNotContain("scanner failure", log);
+        Assert.DoesNotContain("System.InvalidOperationException:", log);
     }
 
     private static async Task<string> ReadTodayLogAsync(string logDirectory)
@@ -211,6 +213,15 @@ public sealed class DiagnosticsContractTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(new ScannerDiscoveryResult(scanners));
+        }
+
+        public Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+            string scannerId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<ScannerDevice?>(scanners.FirstOrDefault(scanner =>
+                string.Equals(scanner.Id, scannerId, StringComparison.Ordinal)));
         }
 
         public Task<Stream> ScanAsync(

@@ -4,6 +4,17 @@ internal interface IScanAdapter
 {
     Task<ScannerDiscoveryResult> GetScannersAsync(CancellationToken cancellationToken = default);
 
+    Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+        string scannerId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scannerId);
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromException<ScannerDevice?>(
+            new NotSupportedException(
+                "Адаптер обязан явно реализовать получение capabilities выбранного scanner endpoint без global discovery fallback."));
+    }
+
     Task<Stream> ScanAsync(string scannerId, CancellationToken cancellationToken = default);
 
     Task<Stream> ScanAsync(

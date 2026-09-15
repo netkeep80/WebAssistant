@@ -62,6 +62,7 @@
     "tests/core/LinuxScanAdapterTests.cs",
     "tests/core/LinuxVirtualScanAdapterTests.cs",
     "tests/core/WindowsScanAdapterTests.cs",
+    "tests/core/ScannerCapabilityBoundaryTests.cs",
     "tests/core/ServicePanelScannerApiTests.cs",
     ".github/workflows/virtual-scanner.yml",
     "webassist/src/WebAssistant/Http/ScannerEndpointHandlers.cs",
@@ -147,16 +148,16 @@
     {
       "id": "WA-C-SCANNER-DISCOVERY-001",
       "kind": "positive",
-      "assertion": "GET /v1/scanners возвращает нормализованные scanner endpoints со stable scannerId и capabilities; на Windows WIA и TWAIN перечисляются независимо, partial backend failures видимы через warnings, а неоднозначная native identity отклоняется fail-closed.",
+      "assertion": "GET /v1/scanners возвращает только identity descriptors зарегистрированных scanner endpoints со stable scannerId без capability/GetCaps fan-out; на Windows WIA и TWAIN перечисляются независимо, partial backend failures видимы через warnings, а неоднозначная native identity отклоняется fail-closed.",
       "requirements": ["WA-SCAN-001"],
-      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/ScannerIdentityTests.cs", "tests/core/LinuxScanAdapterTests.cs", "tests/core/LinuxVirtualScanAdapterTests.cs", "tests/core/WindowsScanAdapterTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
+      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/ScannerIdentityTests.cs", "tests/core/LinuxScanAdapterTests.cs", "tests/core/LinuxVirtualScanAdapterTests.cs", "tests/core/WindowsScanAdapterTests.cs", "tests/core/ScannerCapabilityBoundaryTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
     },
     {
       "id": "WA-C-SCANNER-HTTP-001",
       "kind": "positive",
-      "assertion": "POST /v1/scan является единственным acquisition route, принимает JSON с обязательным stable scannerId, exact source auto|flatbed|feeder и normalized settings, применяет явные 400/404/409/422/502/503 outcomes и возвращает raw application/pdf при успехе.",
+      "assertion": "POST /v1/scan является единственным acquisition route, принимает JSON с обязательным stable scannerId, разрешает capabilities только выбранного backend/endpoint без global listing, применяет exact source auto|flatbed|feeder, normalized settings и явные 400/404/409/422/502/503 outcomes, возвращая raw application/pdf при успехе.",
       "requirements": ["WA-SCAN-001", "WA-SCAN-002", "WA-SCAN-003", "WA-SCAN-006", "WA-TRANSPORT-001"],
-      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/ScannerSettingsHttpContractTests.cs", "tests/core/PlatformEndToEndTests.cs", "tests/core/ServicePanelScannerApiTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
+      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/ScannerSettingsHttpContractTests.cs", "tests/core/ScannerCapabilityBoundaryTests.cs", "tests/core/PlatformEndToEndTests.cs", "tests/core/ServicePanelScannerApiTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
     },
     {
       "id": "WA-C-SCANNER-AUTO-001",
@@ -175,14 +176,14 @@
     {
       "id": "WA-C-SCANNER-SETTINGS-001",
       "kind": "positive",
-      "assertion": "Canonical scanner-settings schema и GET /v1/scanners/{scannerId}/settings позволяют получить normalized dpi/colorMode/paperSize capabilities по public request modes; auto projection является пересечением возможностей concrete sources, defaults детерминированы, invalid syntax получает 400, а valid unsupported value получает 422 до acquisition.",
+      "assertion": "Canonical scanner-settings schema и GET /v1/scanners/{scannerId}/settings позволяют получить normalized dpi/colorMode/paperSize capabilities только выбранного scanner endpoint/backend; auto projection является пересечением возможностей concrete sources, defaults детерминированы, invalid syntax получает 400, а valid unsupported value получает 422 до acquisition.",
       "requirements": ["WA-SCAN-006"],
-      "evidence": ["webassist/docs/scanner-settings.schema.json", "tests/core/ScannerSettingsSchemaTests.cs", "tests/core/ScannerCapabilityProjectionTests.cs", "tests/core/ScannerSettingsHttpContractTests.cs", "webassist/src/WebAssistant/Http/ScannerSettingsEndpointHandlers.cs", "webassist/src/WebAssistant/Scanning/ScannerCapabilityProjection.cs", "webassist/docs/api.md"]
+      "evidence": ["webassist/docs/scanner-settings.schema.json", "tests/core/ScannerSettingsSchemaTests.cs", "tests/core/ScannerCapabilityProjectionTests.cs", "tests/core/ScannerSettingsHttpContractTests.cs", "tests/core/ScannerCapabilityBoundaryTests.cs", "webassist/src/WebAssistant/Http/ScannerSettingsEndpointHandlers.cs", "webassist/src/WebAssistant/Scanning/ScannerCapabilityProjection.cs", "webassist/docs/api.md"]
     },
     {
       "id": "WA-C-SCANNER-PANEL-001",
       "kind": "positive",
-      "assertion": "Diagnostic panel строит scanner mode/settings controls из canonical schema и projection выбранного scannerId, использует один Scan action и read-only scanner information без WIA/TWAIN/SANE/model-specific UI правил.",
+      "assertion": "Diagnostic panel сначала получает identity-only scanner listing, а schema и capability projection запрашивает после выбора scannerId; mode/settings controls используют один Scan action и не содержат WIA/TWAIN/SANE/model-specific UI правил.",
       "requirements": ["WA-SCAN-006", "WA-SCAN-007"],
       "evidence": ["tests/core/ScannerSettingsPanelContractTests.cs", "tests/core/ServicePanelScannerApiTests.cs", "webassist/docs/api.md"]
     },

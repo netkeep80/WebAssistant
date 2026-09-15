@@ -88,6 +88,15 @@ public sealed class AutoSourceFallbackTests
             return Task.FromResult(new ScannerDiscoveryResult([scanner]));
         }
 
+        public Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+            string scannerId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<ScannerDevice?>(
+                string.Equals(scanner.Id, scannerId, StringComparison.Ordinal) ? scanner : null);
+        }
+
         public Task<Stream> ScanAsync(
             string scannerId,
             CancellationToken cancellationToken = default) =>

@@ -26,9 +26,10 @@ public sealed class WindowsScanAdapterTests
     }
 
     [Fact]
-    public async Task Discovery_EnumeratesWiaAndTwainAndNormalizesCapabilities()
+    public async Task Discovery_EnumeratesWiaAndTwainWithoutCapabilityProbes()
     {
         var calls = new List<Driver>();
+        var capabilityCalls = 0;
         var result = await WindowsScanAdapter.DiscoverAsync(
             driver =>
             {
@@ -46,30 +47,14 @@ public sealed class WindowsScanAdapterTests
                     _ => throw new ArgumentOutOfRangeException(nameof(driver), driver, null)
                 });
             },
-            (device, cancellationToken) =>
+            (_, _) =>
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                return Task.FromResult(new ScanCaps
-                {
-                    PaperSourceCaps = device.Driver == Driver.Wia
-                        ? new PaperSourceCaps
-                        {
-                            SupportsFlatbed = true,
-                            SupportsFeeder = true,
-                            SupportsDuplex = true,
-                            FeederHasPaper = true
-                        }
-                        : new PaperSourceCaps
-                        {
-                            SupportsFlatbed = true,
-                            SupportsFeeder = false,
-                            SupportsDuplex = false,
-                            FeederHasPaper = null
-                        }
-                });
+                Interlocked.Increment(ref capabilityCalls);
+                return Task.FromException<ScanCaps>(new InvalidOperationException("must not run"));
             });
 
         Assert.Equal(new[] { Driver.Wia, Driver.Twain }, calls);
+        Assert.Equal(0, capabilityCalls);
         Assert.True(result.IsAvailable);
         Assert.Empty(result.Warnings);
         Assert.Equal(2, result.Scanners.Count);
@@ -77,18 +62,57 @@ public sealed class WindowsScanAdapterTests
         var wia = Assert.Single(result.Scanners, scanner => scanner.Backend == ScannerBackend.Wia);
         Assert.Equal(ScannerIdentity.Create(ScannerBackend.Wia, "wia-native-1"), wia.Id);
         Assert.Equal("WIA scanner", wia.Name);
-        Assert.True(wia.SupportsFlatbed);
-        Assert.True(wia.SupportsFeeder);
-        Assert.True(wia.SupportsDuplex);
-        Assert.Equal(FeederPaperState.Present, wia.FeederPaperState);
+        Assert.False(wia.SupportsFlatbed);
+        Assert.Null(wia.Capabilities);
 
         var twain = Assert.Single(result.Scanners, scanner => scanner.Backend == ScannerBackend.Twain);
         Assert.Equal(ScannerIdentity.Create(ScannerBackend.Twain, "twain-native-1"), twain.Id);
         Assert.Equal("TWAIN scanner", twain.Name);
-        Assert.True(twain.SupportsFlatbed);
-        Assert.False(twain.SupportsFeeder);
-        Assert.False(twain.SupportsDuplex);
-        Assert.Equal(FeederPaperState.Unknown, twain.FeederPaperState);
+        Assert.False(twain.SupportsFlatbed);
+        Assert.Null(twain.Capabilities);
+    }
+
+    [Fact]
+    public async Task SelectedCapabilities_ProbesOnlySelectedEndpointAndNormalizesCapabilities()
+    {
+        var capabilityCalls = new List<string>();
+        var selectedId = ScannerIdentity.Create(ScannerBackend.Wia, "wia-native-2");
+        var scanner = await WindowsScanAdapter.ResolveCapabilitiesAsync(
+            selectedId,
+            driver => Task.FromResult(driver switch
+            {
+                Driver.Wia => new List<ScanDevice>
+                {
+                    new(Driver.Wia, "wia-native-1", "WIA first"),
+                    new(Driver.Wia, "wia-native-2", "WIA selected")
+                },
+                _ => throw new InvalidOperationException("wrong backend")
+            }),
+            (device, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                capabilityCalls.Add(device.ID);
+                return Task.FromResult(new ScanCaps
+                {
+                    PaperSourceCaps = new PaperSourceCaps
+                    {
+                        SupportsFlatbed = true,
+                        SupportsFeeder = true,
+                        SupportsDuplex = true,
+                        FeederHasPaper = true
+                    }
+                });
+            });
+
+        Assert.NotNull(scanner);
+        Assert.Equal(new[] { "wia-native-2" }, capabilityCalls);
+        Assert.Equal(selectedId, scanner.Id);
+        Assert.Equal("WIA selected", scanner.Name);
+        Assert.True(scanner.SupportsFlatbed);
+        Assert.True(scanner.SupportsFeeder);
+        Assert.True(scanner.SupportsDuplex);
+        Assert.Equal(FeederPaperState.Present, scanner.FeederPaperState);
+        Assert.NotNull(scanner.Capabilities);
     }
 
     [Fact]
@@ -100,11 +124,7 @@ public sealed class WindowsScanAdapterTests
                 : Task.FromResult(new List<ScanDevice>
                 {
                     new(Driver.Twain, "twain-native-1", "TWAIN scanner")
-                }),
-            (_, _) => Task.FromResult(new ScanCaps
-            {
-                PaperSourceCaps = new PaperSourceCaps { SupportsFlatbed = true }
-            }));
+                }));
 
         Assert.True(result.IsAvailable);
         var scanner = Assert.Single(result.Scanners);
@@ -119,8 +139,7 @@ public sealed class WindowsScanAdapterTests
     {
         var result = await WindowsScanAdapter.DiscoverAsync(
             driver => Task.FromException<List<ScanDevice>>(
-                new InvalidOperationException($"{driver} unavailable")),
-            (_, _) => throw new InvalidOperationException("caps must not be queried"));
+                new InvalidOperationException($"{driver} unavailable")));
 
         Assert.False(result.IsAvailable);
         Assert.Empty(result.Scanners);
@@ -141,11 +160,7 @@ public sealed class WindowsScanAdapterTests
                     new(Driver.Wia, "duplicate-native", "First"),
                     new(Driver.Wia, "duplicate-native", "Second")
                 }
-                : []),
-            (_, _) => Task.FromResult(new ScanCaps
-            {
-                PaperSourceCaps = new PaperSourceCaps { SupportsFlatbed = true }
-            }));
+                : []));
 
         Assert.True(result.IsAvailable);
         Assert.Empty(result.Scanners);
@@ -207,6 +222,9 @@ public sealed class WindowsScanAdapterTests
                 StringComparison.OrdinalIgnoreCase));
 
         Assert.StartsWith("wa1-twain-", scanner.Id, StringComparison.Ordinal);
+        var capabilities = await adapter.GetScannerCapabilitiesAsync(scanner.Id);
+        Assert.NotNull(capabilities);
+        Assert.True(capabilities.SupportsFlatbed);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {

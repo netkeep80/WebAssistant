@@ -30,7 +30,7 @@ public sealed class HttpScanContractTests
     }
 
     [Fact]
-    public async Task Scanners_ReturnsNormalizedEnvelopeCapabilitiesAndWarnings()
+    public async Task Scanners_ReturnsNormalizedIdentityEnvelopeAndWarnings()
     {
         var scanner = CreateScanner(
             ScannerBackend.Wia,
@@ -58,10 +58,7 @@ public sealed class HttpScanContractTests
         Assert.Equal(scanner.Id, item.GetProperty("scannerId").GetString());
         Assert.Equal("Первый", item.GetProperty("name").GetString());
         Assert.Equal("wia", item.GetProperty("backend").GetString());
-        var sources = item.GetProperty("sources");
-        Assert.True(sources.GetProperty("flatbed").GetBoolean());
-        Assert.True(sources.GetProperty("feeder").GetBoolean());
-        Assert.True(sources.GetProperty("duplex").GetBoolean());
+        Assert.False(item.TryGetProperty("sources", out _));
 
         var warning = Assert.Single(document.RootElement.GetProperty("warnings").EnumerateArray().ToArray());
         Assert.Equal("twain", warning.GetProperty("backend").GetString());
@@ -551,6 +548,30 @@ public sealed class HttpScanContractTests
             cancellationToken.ThrowIfCancellationRequested();
             Interlocked.Increment(ref discoveryCalls);
             return Task.FromResult(discovery);
+        }
+
+        public Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+            string scannerId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var scanner = discovery.Scanners.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, scannerId, StringComparison.Ordinal));
+            if (scanner is not null)
+            {
+                return Task.FromResult<ScannerDevice?>(scanner);
+            }
+
+            if (ScannerIdentity.TryParse(scannerId, out var backend) &&
+                discovery.Warnings.Any(warning =>
+                    warning.Backend == backend &&
+                    string.Equals(warning.Code, "enumerationFailed", StringComparison.Ordinal)))
+            {
+                return Task.FromException<ScannerDevice?>(new ScannerBackendUnavailableException(backend));
+            }
+
+            return Task.FromResult<ScannerDevice?>(null);
         }
 
         public Task<Stream> ScanAsync(

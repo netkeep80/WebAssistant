@@ -49,6 +49,26 @@ public sealed class ScannerSettingsPanelContractTests
         Assert.Contains("duplex:Boolean(mode.duplex)", html, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ServicePanel_ProbesCapabilitiesOnlyAfterExplicitScannerSelection()
+    {
+        var root = FindRepositoryRoot();
+        var html = File.ReadAllText(Path.Combine(
+            root,
+            "webassist",
+            "src",
+            "WebAssistant",
+            "wwwroot",
+            "index.html"));
+
+        Assert.Contains("Выберите сканер", html, StringComparison.Ordinal);
+        Assert.Contains(
+            "scannerSelect.addEventListener(\"change\",refreshSelectedScannerSettings)",
+            html,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("await refreshSelectedScannerSettings();", html, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(Directory.GetCurrentDirectory());

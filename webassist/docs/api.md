@@ -28,12 +28,7 @@ Windows runtime lifecycle не меняет HTTP contract: scanner adapter ос�
     {
       "scannerId": "wa1-wia-...",
       "name": "Scanner name",
-      "backend": "wia",
-      "sources": {
-        "flatbed": true,
-        "feeder": true,
-        "duplex": true
-      }
+      "backend": "wia"
     }
   ],
   "warnings": [
@@ -47,12 +42,15 @@ Windows runtime lifecycle не меняет HTTP contract: scanner adapter ос�
 
 `scannerId` — opaque persistent identifier WebAssistant. Он детерминированно выводится из backend и exact native identity устройства, не зависит от порядка перечисления и предназначен для сохранения вызывающим приложением между restart/reboot. Один физический сканер, доступный через разные backend, например WIA и TWAIN, является разными scanner endpoints и получает разные `scannerId`.
 
-WebAssistant не хранит выбранный `scannerId` или mutable scanner profile. При каждом discovery/acquisition endpoint разрешается заново из текущего backend state.
+`GET /v1/scanners` — shallow registry/enumeration view, а не physical health check и не capability probe. Listing не вызывает deep `GetCaps` для каждого устройства и поэтому не публикует `sources`, feeder state или другие scanner capabilities. Зарегистрированный в ОС endpoint может оставаться в списке, даже если физически устройство сейчас недоступно.
+
+WebAssistant не хранит выбранный `scannerId` или mutable scanner profile. При каждом selected capability/acquisition endpoint разрешается заново из текущего backend state.
 
 Backend semantics:
 
 - Windows — WIA и TWAIN перечисляются независимо; успешные endpoints обоих backend входят в общий `scanners`;
 - сбой одного Windows backend не скрывает endpoints второго: успешная часть возвращается вместе с `warnings`;
+- shallow listing исключает `GetCaps` fan-out, но сам `GetDeviceList` соответствующего backend остаётся реальной backend operation и не имеет обещания мгновенного ответа без physical evidence;
 - exact duplicate native identity внутри одного backend считается неоднозначной и не получает искусственный index/suffix; такой endpoint отклоняется fail-closed;
 - Linux — direct SANE SDK path через NAPS2, без CLI orchestration.
 
@@ -63,7 +61,7 @@ Backend semantics:
 
 Если хотя бы один применимый backend успешно перечислен, `GET /v1/scanners` возвращает `200`, в том числе когда список устройств пуст. Если discovery в целом недоступен, возвращается `503`. Непредвиденная ошибка discovery boundary возвращается как `502`.
 
-Native identity и внутреннее состояние наличия бумаги наружу не публикуются.
+Native identity, capabilities и внутреннее состояние наличия бумаги наружу через listing не публикуются.
 
 ## Нормализованные настройки сканера
 
@@ -88,7 +86,7 @@ Preferred default не означает, что каждое устройств�
 
 `GET /v1/scanners/{scannerId}/settings`
 
-Endpoint возвращает read-only snapshot нормализованных возможностей выбранного scanner endpoint. Он не читает и не меняет пользовательские preferences.
+Endpoint возвращает read-only snapshot нормализованных возможностей выбранного scanner endpoint. Он не читает и не меняет пользовательские preferences. По корректному `scannerId` WebAssistant разрешает только backend, закодированный в этом идентификаторе, и выполняет capability probe только выбранного endpoint; global WIA+TWAIN/SANE listing для этого запроса не выполняется.
 
 Пример:
 
@@ -160,7 +158,7 @@ Capabilities являются source-specific. Поэтому значения f
 Ошибки endpoint:
 
 - `400` — синтаксически неверный `scannerId`;
-- `404` — корректный `scannerId` отсутствует после успешного перечисления его backend;
+- `404` — корректный `scannerId` отсутствует после успешного перечисления только указанного им backend;
 - `503` — scanner module/discovery либо backend указанного scannerId недоступен;
 - `502` — непредвиденная ошибка capability discovery boundary.
 
@@ -198,7 +196,7 @@ Request обязан иметь `Content-Type: application/json` и содерж
 
 Caller обязан сохранять пользовательские scanner preferences у себя и передавать их в каждом acquisition request. WebAssistant не хранит mutable per-user/per-scanner profile.
 
-Source-specific routes `/v1/scan/feeder` и `/v1/scan/duplex` отсутствуют. `scannerId` не передаётся через query parameter и автоматический выбор scanner endpoint по количеству найденных устройств не выполняется.
+Source-specific routes `/v1/scan/feeder` и `/v1/scan/duplex` отсутствуют. `scannerId` не передаётся через query parameter и автоматический выбор scanner endpoint по количеству найденных устройств не выполняется. Перед acquisition WebAssistant разрешает capabilities только выбранного `scannerId` и не выполняет global scanner listing или обращение к другому backend.
 
 ### Автовыбор источника
 
@@ -225,7 +223,7 @@ Source-specific routes `/v1/scan/feeder` и `/v1/scan/duplex` отсутству
 - `source=auto` + `duplex=true` → `400`;
 - `source=flatbed` + `duplex=true` → `400`;
 - `source=feeder` + `duplex=false` → simplex feeder;
-- `source=feeder` + `duplex=true` → duplex feeder, только если endpoint объявляет `sources.duplex=true`; иначе `422`.
+- `source=feeder` + `duplex=true` → duplex feeder, только если capability projection выбранного endpoint содержит `feederDuplex`; иначе `422`.
 
 Неподдерживаемый явно запрошенный flatbed/feeder также возвращает `422` до acquisition.
 
@@ -256,7 +254,7 @@ Scanner operation сама не выполняет edit/merge/split PDF, OCR/ann
 
 ## Диагностическая панель
 
-Service panel `/` является browser-level клиентом того же публичного scanner API. Для scanner controls она загружает canonical `GET /v1/scanner-settings/schema` и capability projection выбранного `scannerId`, после чего формирует доступные mode/settings controls без WIA/TWAIN/SANE и scanner-model-specific правил.
+Service panel `/` является browser-level клиентом того же публичного scanner API. Listing загружает только registered endpoint identity; canonical `GET /v1/scanner-settings/schema` и capability projection запрашиваются после явного выбора `scannerId`, после чего панель формирует доступные mode/settings controls без WIA/TWAIN/SANE и scanner-model-specific правил.
 
 Панель предоставляет:
 

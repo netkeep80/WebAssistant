@@ -20,7 +20,7 @@ internal static class ScannerEndpointHandlers
         {
             var discovery = await adapter.GetScannersAsync(cancellationToken);
             logger.LogInformation(
-                "Обнаружено сканеров: {ScannerCount}; предупреждений: {WarningCount}",
+                "Обнаружено зарегистрированных scanner endpoints: {ScannerCount}; предупреждений: {WarningCount}",
                 discovery.Count,
                 discovery.Warnings.Count);
 
@@ -37,13 +37,7 @@ internal static class ScannerEndpointHandlers
                 {
                     scannerId = scanner.Id,
                     name = scanner.Name,
-                    backend = BackendName(scanner.Backend),
-                    sources = new
-                    {
-                        flatbed = scanner.SupportsFlatbed,
-                        feeder = scanner.SupportsFeeder,
-                        duplex = scanner.SupportsDuplex
-                    }
+                    backend = BackendName(scanner.Backend)
                 }),
                 warnings = discovery.Warnings.Select(warning => new
                 {
@@ -58,7 +52,7 @@ internal static class ScannerEndpointHandlers
         }
         catch (Exception exception)
         {
-            logger.LogError(exception, "Не удалось получить список сканеров");
+            logger.LogError(exception, "Не удалось получить список зарегистрированных scanner endpoints");
             return Results.Problem(
                 statusCode: StatusCodes.Status502BadGateway,
                 title: "Ошибка обнаружения сканеров");

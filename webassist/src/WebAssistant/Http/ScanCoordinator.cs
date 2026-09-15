@@ -26,7 +26,7 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
         }
 
         var scannerId = request.ScannerId;
-        if (!ScannerIdentity.TryParse(scannerId, out var requestedBackend))
+        if (!ScannerIdentity.TryParse(scannerId, out _))
         {
             logger.LogWarning("Получен некорректный scannerId: {ScannerId}", SafeLogText(scannerId));
             return Results.Problem(
@@ -81,39 +81,15 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
 
         try
         {
-            var discovery = await adapter.GetScannersAsync(cancellationToken);
-            logger.LogInformation("Обнаружено сканеров: {ScannerCount}", discovery.Count);
-
-            if (!discovery.IsAvailable)
-            {
-                logger.LogWarning("Обнаружение сканеров недоступно");
-                return Results.Problem(
-                    statusCode: StatusCodes.Status503ServiceUnavailable,
-                    title: "Обнаружение сканеров недоступно");
-            }
-
-            selected = discovery.FirstOrDefault(device =>
-                string.Equals(device.Id, scannerId, StringComparison.Ordinal));
-
+            selected = await adapter.GetScannerCapabilitiesAsync(scannerId, cancellationToken);
             if (selected is null)
             {
-                var backendUnavailable = discovery.Warnings.Any(warning =>
-                    warning.Backend == requestedBackend &&
-                    string.Equals(warning.Code, "enumerationFailed", StringComparison.Ordinal));
-
                 logger.LogWarning(
-                    backendUnavailable
-                        ? "Backend запрошенного scannerId недоступен: {ScannerId}"
-                        : "Запрошенный scannerId не найден: {ScannerId}",
+                    "Запрошенный scannerId не найден: {ScannerId}",
                     SafeLogText(scannerId));
-
-                return backendUnavailable
-                    ? Results.Problem(
-                        statusCode: StatusCodes.Status503ServiceUnavailable,
-                        title: "Backend сканера недоступен")
-                    : Results.Problem(
-                        statusCode: StatusCodes.Status404NotFound,
-                        title: "Сканер не найден");
+                return Results.Problem(
+                    statusCode: StatusCodes.Status404NotFound,
+                    title: "Сканер не найден");
             }
 
             ScanSource source;
@@ -211,6 +187,19 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
             logger.LogInformation("Сканирование успешно завершено scannerId={ScannerId}", safeScannerId);
             return Results.Stream(pdf, contentType: "application/pdf");
         }
+        catch (ScannerBackendUnavailableException exception)
+        {
+            var diagnosticException = exception.InnerException ?? exception;
+            logger.LogWarning(
+                "Backend выбранного сканера недоступен backend={Backend} scannerId={ScannerId} exceptionType={ExceptionType} hresult={HResult}",
+                exception.Backend,
+                SafeLogText(scannerId),
+                diagnosticException.GetType().Name,
+                FormatHResult(diagnosticException));
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Backend сканера недоступен");
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(
@@ -221,9 +210,10 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
         catch (Exception exception)
         {
             logger.LogError(
-                exception,
-                "Ошибка сканирования scannerId={ScannerId}",
-                selected is null ? SafeLogText(scannerId) : SafeLogText(selected.Id));
+                "Ошибка сканирования scannerId={ScannerId} exceptionType={ExceptionType} hresult={HResult}",
+                selected is null ? SafeLogText(scannerId) : SafeLogText(selected.Id),
+                exception.GetType().Name,
+                FormatHResult(exception));
             return Results.Problem(
                 statusCode: StatusCodes.Status502BadGateway,
                 title: "Ошибка сканирования");
@@ -283,6 +273,9 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
         return new string(
             value.Where(character => !char.IsControl(character)).Take(200).ToArray());
     }
+
+    private static string FormatHResult(Exception exception) =>
+        $"0x{unchecked((uint)exception.HResult):X8}";
 }
 
 #pragma warning restore CA2252

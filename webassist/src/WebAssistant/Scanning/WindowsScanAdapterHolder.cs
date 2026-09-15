@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace WebAssistant.Scanning;
 
 internal sealed class WindowsScanAdapterHolder
@@ -7,8 +9,8 @@ internal sealed class WindowsScanAdapterHolder
     private IScanAdapter? adapter;
     private bool shutdownStarted;
 
-    public WindowsScanAdapterHolder()
-        : this(() => new WindowsScanAdapter())
+    public WindowsScanAdapterHolder(ILogger<WindowsScanAdapter> logger)
+        : this(() => new WindowsScanAdapter(logger))
     {
     }
 
@@ -43,14 +45,14 @@ internal sealed class WindowsScanAdapterHolder
         }
     }
 
-    internal void ShutdownIfCreated()
+    internal bool ShutdownIfCreated()
     {
         IScanAdapter? adapterToDispose;
         lock (gate)
         {
             if (shutdownStarted)
             {
-                return;
+                return false;
             }
 
             shutdownStarted = true;
@@ -61,5 +63,7 @@ internal sealed class WindowsScanAdapterHolder
         {
             disposable.Dispose();
         }
+
+        return adapterToDispose is not null;
     }
 }

@@ -152,7 +152,7 @@ The layering is:
 ```text
 HTTP /v1 API
     ↓
-Scanner discovery + scannerId resolver
+Shallow scanner discovery + selected scannerId resolver
     ↓
 normalized backend endpoint
     ↓
@@ -273,17 +273,16 @@ This is fail-closed behavior, not silent deduplication based on physical-device 
 
 WIA and TWAIN are independent discovery surfaces.
 
-Canonical flow:
+Canonical listing flow:
 
 ```text
-enumerate WIA
-enumerate TWAIN
-normalize each usable endpoint
-apply stable scannerId derivation
+enumerate registered WIA endpoints
+enumerate registered TWAIN endpoints
+derive identity descriptors without GetCaps
 return union
 ```
 
-Do not perform WIA-first suppression and do not merge WIA/TWAIN endpoints that appear to describe the same physical scanner.
+Do not perform WIA-first suppression and do not merge WIA/TWAIN endpoints that appear to describe the same physical scanner. Listing is a registry/enumeration view, not a physical health check: an OS-registered endpoint may remain listed while the device is offline. Removing `GetCaps` fan-out does not imply that backend `GetDeviceList` itself is instantaneous.
 
 ### 7.1 Partial backend failure
 
@@ -305,7 +304,7 @@ The endpoint must not silently hide a backend failure.
 
 ## 8. GET /v1/scanners wire contract
 
-The minimum P0 response shape is:
+The response contains registered endpoint identity only:
 
 ```json
 {
@@ -313,22 +312,12 @@ The minimum P0 response shape is:
     {
       "scannerId": "wa1-wia-...",
       "name": "Samsung Scanner Class Driver",
-      "backend": "wia",
-      "sources": {
-        "flatbed": true,
-        "feeder": true,
-        "duplex": true
-      }
+      "backend": "wia"
     },
     {
       "scannerId": "wa1-twain-...",
       "name": "Samsung Scanner",
-      "backend": "twain",
-      "sources": {
-        "flatbed": true,
-        "feeder": true,
-        "duplex": true
-      }
+      "backend": "twain"
     }
   ],
   "warnings": []
@@ -353,7 +342,7 @@ or:
 }
 ```
 
-P0 does not expose native IDs, serial numbers, raw driver metadata, DPI lists, color modes, or paper sizes through this route. Those belong to #164 unless needed internally for identity/source operation.
+This route does not expose source capabilities, feeder state, native IDs, serial numbers, raw driver metadata, DPI lists, color modes, or paper sizes. Current capabilities belong to selected `GET /v1/scanners/{scannerId}/settings` and acquisition resolution, where only the backend encoded by the chosen `scannerId` may be queried.
 
 ## 9. POST /v1/scan wire contract
 
@@ -539,7 +528,7 @@ A public `scannerId` is resolved statelessly for each request:
 9. resolve auto to a concrete source when requested;
 10. acquire and export PDF.
 
-WebAssistant does not persist a reverse mapping database. This avoids stale state and makes reboot/process stability a pure function of backend-native identity.
+Selected resolution never performs global WIA+TWAIN/SANE listing or queries a different backend. WebAssistant does not persist a reverse mapping database; because `scannerId` is a one-way derivation, resolving it after restart still requires enumeration of the selected backend and therefore does not promise isolation from other endpoints inside that same backend.
 
 ## 14. HTTP error semantics
 
@@ -607,7 +596,7 @@ This is an observable scanner/API semantic delta. It must not be merged merely a
 
 Before acceptance, the candidate contract/conformance authority must explicitly authorize:
 
-- the new `GET /v1/scanners` descriptor/warning shape;
+- the identity-only `GET /v1/scanners` descriptor/warning shape and selected-capability split;
 - stable scanner ID semantics;
 - independent WIA/TWAIN enumeration;
 - the JSON request body for `POST /v1/scan`;
@@ -623,7 +612,8 @@ TDD must include RED before production implementation for the existing wrong beh
 
 At minimum tests must prove:
 
-- current WIA-first/TWAIN-fallback enumeration fails the desired union contract;
+- `/v1/scanners` enumerates WIA/TWAIN identity endpoints without `GetCaps` fan-out;
+- selected settings/scan never fall back to global scanner listing or another backend;
 - WIA and TWAIN endpoints with equal human names receive distinct scanner IDs;
 - stable ID is independent of enumeration order;
 - stable ID is deterministic across repeated resolver instances/process-equivalent construction;
@@ -674,7 +664,7 @@ compare IDs
 
 Where both WIA and TWAIN are exposed for the device, both endpoints must appear and each ID must remain stable independently.
 
-The physical acceptance session must also demonstrate at least one real acquisition through the unified `POST /v1/scan` request. If the hardware supports feeder sensing, exercise `source=auto` both with and without paper when practical.
+The physical acceptance session must also prove that listing performs no `GetCaps`, selecting an online endpoint probes only its encoded backend/endpoint, a real unified `POST /v1/scan` returns PDF, and failure of an offline selected endpoint remains local. Backend/stage duration logs are evidence for any remaining delay in `GetDeviceList` or selected `GetCaps`.
 
 ## 19. Documentation
 
@@ -714,7 +704,8 @@ This P0 design does not implement:
 - WIA and TWAIN are enumerated independently and returned as separate endpoints;
 - duplicate unaddressable native identities fail closed;
 - partial backend failure is deterministic and visible;
-- `GET /v1/scanners` exposes backend and minimal source capabilities;
+- `GET /v1/scanners` exposes identity/backend only and performs no capability fan-out;
+- selected settings/acquisition resolves capabilities only for the chosen scannerId/backend;
 - top-level `source=auto|flatbed|feeder`, default `auto`;
 - `duplex` is separate, default `false`;
 - strict tri-state paper presence drives auto selection;
