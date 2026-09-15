@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Text.Json;
 using Microsoft.Playwright;
 using Xunit;
 
@@ -209,9 +210,29 @@ public sealed class ScannerSettingsPanelContractTests
         });
     }
 
-    private static string Projection(string scannerId, string mode, string source) => $$"""
-        {"scannerId":"{{scannerId}}","modes":[{"mode":"{{mode}}","source":"{{source}}","duplex":false,"settings":{"dpi":{"supported":true,"values":[300],"default":300}}}]}
-        """;
+    private static string Projection(string scannerId, string mode, string source) =>
+        JsonSerializer.Serialize(new
+        {
+            scannerId,
+            modes = new[]
+            {
+                new
+                {
+                    mode,
+                    source,
+                    duplex = false,
+                    settings = new
+                    {
+                        dpi = new
+                        {
+                            supported = true,
+                            values = new[] { 300 },
+                            @default = 300
+                        }
+                    }
+                }
+            }
+        });
 
     private static Task FulfillJsonAsync(IRoute route, string body, int status = 200) =>
         route.FulfillAsync(new RouteFulfillOptions
