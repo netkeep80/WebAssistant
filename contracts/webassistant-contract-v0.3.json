@@ -59,7 +59,7 @@
     {
       "id": "WA-SCAN-001",
       "kind": "required",
-      "statement": "GET /v1/scanners возвращает устройства с детерминированным persistent scannerId; на Windows WIA и TWAIN перечисляются независимо и оба backend входят в единый список доступных scanner endpoints. Успешный acquisition возвращает один raw application/pdf response."
+      "statement": "GET /v1/scanners возвращает только identity descriptors зарегистрированных scanner endpoints с детерминированным persistent scannerId, без capability/GetCaps fan-out; на Windows WIA и TWAIN перечисляются независимо. Capabilities для settings/acquisition разрешаются только для выбранного scannerId и указанного им backend, без global scanner listing. Успешный acquisition возвращает один raw application/pdf response."
     },
     {
       "id": "WA-SCAN-002",
@@ -89,12 +89,12 @@
     {
       "id": "WA-SCAN-006",
       "kind": "required",
-      "statement": "Scanner settings имеют repository-owned нормализованный machine-readable schema и scanner-specific capability projection. GET /v1/scanner-settings/schema публикует portable vocabulary, а GET /v1/scanners/{scannerId}/settings возвращает фактические source/mode-specific возможности endpoint без WIA/TWAIN/SANE типов. Первый обязательный normalized набор — settings.dpi, settings.colorMode=color|grayscale|blackAndWhite и settings.paperSize=letter|legal|a5|a4|a3|b5|b4 поверх существующего settings.duplex. Valid normalized value, не поддерживаемый выбранным mode, отклоняется до physical acquisition; malformed/unknown value также отклоняется до acquisition. Для source=auto capability projection допускает только значения, безопасные для каждого concrete source, который auto может выбрать. Caller владеет persistence выбранных значений."
+      "statement": "Scanner settings имеют repository-owned нормализованный machine-readable schema и scanner-specific capability projection. GET /v1/scanner-settings/schema публикует portable vocabulary, а GET /v1/scanners/{scannerId}/settings разрешает только backend выбранного scannerId и возвращает фактические source/mode-specific возможности только этого endpoint без WIA/TWAIN/SANE типов. Первый обязательный normalized набор — settings.dpi, settings.colorMode=color|grayscale|blackAndWhite и settings.paperSize=letter|legal|a5|a4|a3|b5|b4 поверх существующего settings.duplex. Valid normalized value, не поддерживаемый выбранным mode, отклоняется до physical acquisition; malformed/unknown value также отклоняется до acquisition. Для source=auto capability projection допускает только значения, безопасные для каждого concrete source, который auto может выбрать. Caller владеет persistence выбранных значений."
     },
     {
       "id": "WA-SCAN-007",
       "kind": "required",
-      "statement": "Встроенная diagnostic/service panel является generic browser client scanner API: mode и normalized settings строятся из canonical scanner-settings schema и capability projection выбранного scannerId, без backend/model-specific hardcoding. Панель предоставляет один mode selector, одну action Сканировать, read-only информацию о scanner endpoint и capability-driven controls для accepted normalized settings."
+      "statement": "Встроенная diagnostic/service panel является generic browser client scanner API: listing показывает identity endpoints, а mode и normalized settings строятся из canonical scanner-settings schema и capability projection только после выбора scannerId, без backend/model-specific hardcoding. Панель предоставляет один mode selector, одну action Сканировать, read-only информацию о scanner endpoint и capability-driven controls для accepted normalized settings."
     },
     {
       "id": "WA-DIAG-001",
