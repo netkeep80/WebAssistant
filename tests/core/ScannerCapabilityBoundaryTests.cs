@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using WebAssistant.Http;
 using WebAssistant.Scanning;
 using Xunit;
 
@@ -81,6 +83,80 @@ public sealed class ScannerCapabilityBoundaryTests
         Assert.Equal(1, adapter.ScanCalls);
     }
 
+    [Fact]
+    public async Task SelectedScannerSettings_BackendFailure_DoesNotAttachRawDriverExceptionToLogger()
+    {
+        const string nativeSecret = "machine-specific-native-id";
+        var scannerId = ScannerIdentity.Create(ScannerBackend.Wia, "registered-1");
+        var adapter = new ThrowingCapabilityAdapter(
+            new ScannerBackendUnavailableException(
+                ScannerBackend.Wia,
+                new InvalidOperationException(nativeSecret)));
+        var logger = new CaptureLogger();
+
+        await ScannerSettingsEndpointHandlers.GetAsync(
+            adapter,
+            scannerId,
+            logger,
+            CancellationToken.None);
+
+        Assert.NotEmpty(logger.Entries);
+        Assert.All(logger.Entries, entry => Assert.Null(entry.Exception));
+        Assert.DoesNotContain(logger.Entries, entry =>
+            entry.Message.Contains(nativeSecret, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SelectedScannerSettings_UnexpectedCapabilityFailure_DoesNotAttachRawDriverExceptionToLogger()
+    {
+        const string nativeSecret = "machine-specific-capability-secret";
+        var scannerId = ScannerIdentity.Create(ScannerBackend.Wia, "registered-1");
+        var adapter = new ThrowingCapabilityAdapter(new TimeoutException(nativeSecret));
+        var logger = new CaptureLogger();
+
+        await ScannerSettingsEndpointHandlers.GetAsync(
+            adapter,
+            scannerId,
+            logger,
+            CancellationToken.None);
+
+        Assert.NotEmpty(logger.Entries);
+        Assert.All(logger.Entries, entry => Assert.Null(entry.Exception));
+        Assert.DoesNotContain(logger.Entries, entry =>
+            entry.Message.Contains(nativeSecret, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Scan_AcquisitionFailure_DoesNotAttachRawDriverExceptionToLogger()
+    {
+        const string nativeSecret = "machine-specific-acquisition-secret";
+        var scannerId = ScannerIdentity.Create(ScannerBackend.Wia, "registered-1");
+        var adapter = new ThrowingScanAdapter(scannerId, new InvalidOperationException(nativeSecret));
+        var logger = new CaptureLogger<ScanCoordinator>();
+        var coordinator = new ScanCoordinator(logger);
+
+        await coordinator.ExecuteAsync(
+            adapter,
+            new ScanRequest
+            {
+                ScannerId = scannerId,
+                Source = "flatbed",
+                Settings = new ScanSettings
+                {
+                    Duplex = false,
+                    Dpi = 300,
+                    ColorMode = "grayscale",
+                    PaperSize = "a4"
+                }
+            },
+            CancellationToken.None);
+
+        Assert.NotEmpty(logger.Entries);
+        Assert.All(logger.Entries, entry => Assert.Null(entry.Exception));
+        Assert.DoesNotContain(logger.Entries, entry =>
+            entry.Message.Contains(nativeSecret, StringComparison.Ordinal));
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(IScanAdapter adapter)
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -91,6 +167,20 @@ public sealed class ScannerCapabilityBoundaryTests
                 services.AddSingleton(adapter);
             });
         });
+    }
+
+    private static ScannerDevice CreateCapableScanner(string scannerId)
+    {
+        var flatbed = new ScannerSourceCapabilities(
+            [300],
+            [ScannerColorMode.Grayscale],
+            [ScannerPaperSize.A4]);
+        return new ScannerDevice(
+            scannerId,
+            "Selected scanner",
+            ScannerBackend.Wia,
+            SupportsFlatbed: true,
+            Capabilities: new ScannerEndpointCapabilities(flatbed, null, null));
     }
 
     private sealed class CapabilityBoundaryFakeAdapter : IScanAdapter
@@ -164,4 +254,72 @@ public sealed class ScannerCapabilityBoundaryTests
             return Task.FromResult<Stream>(new MemoryStream("%PDF-1.7\n%%EOF"u8.ToArray(), writable: false));
         }
     }
+
+    private sealed class ThrowingCapabilityAdapter(Exception exception) : IScanAdapter
+    {
+        public Task<ScannerDiscoveryResult> GetScannersAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+            string scannerId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<ScannerDevice?>(exception);
+
+        public Task<Stream> ScanAsync(string scannerId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class ThrowingScanAdapter(string scannerId, Exception exception) : IScanAdapter
+    {
+        public Task<ScannerDiscoveryResult> GetScannersAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+            string requestedScannerId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<ScannerDevice?>(CreateCapableScanner(scannerId));
+
+        public Task<Stream> ScanAsync(
+            string requestedScannerId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<Stream>(exception);
+    }
+
+    private sealed class CaptureLogger : ILogger
+    {
+        internal List<LogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add(new LogEntry(formatter(state, exception), exception));
+    }
+
+    private sealed class CaptureLogger<T> : ILogger<T>
+    {
+        internal List<LogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add(new LogEntry(formatter(state, exception), exception));
+    }
+
+    private sealed record LogEntry(string Message, Exception? Exception);
 }
