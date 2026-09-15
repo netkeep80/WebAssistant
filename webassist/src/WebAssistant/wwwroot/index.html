@@ -108,9 +108,12 @@
     let scannerSchema=null;
     let scannerProjection=null;
     let discoveredScanners=[];
+    let capabilitiesGeneration=0;
+    let scanGeneration=0;
 
     function today(){const now=new Date(),local=new Date(now.getTime()-now.getTimezoneOffset()*60000);return local.toISOString().slice(0,10)}
     function releasePdfUrl(){if(pdfObjectUrl){URL.revokeObjectURL(pdfObjectUrl);pdfObjectUrl=null}}
+    function clearScanResult(){releasePdfUrl();pdfPreview.removeAttribute("data");pdfDownload.removeAttribute("href");pdfOpen.removeAttribute("href");pdfResult.hidden=true;scanStatus.textContent=""}
     function showPdf(pdf){releasePdfUrl();pdfObjectUrl=URL.createObjectURL(pdf);pdfPreview.data=pdfObjectUrl;pdfDownload.href=pdfObjectUrl;pdfOpen.href=pdfObjectUrl;pdfResult.hidden=false}
     async function errorText(response){try{const problem=await response.clone().json();return problem.detail||problem.title||`HTTP ${response.status}`}catch{return `HTTP ${response.status}`}}
     function settingControlId(fieldName){return `scanner-${fieldName.replace(/[A-Z]/g,letter=>`-${letter.toLowerCase()}`)}`}
@@ -143,6 +146,9 @@
     }
 
     async function refreshScanners(){
+      capabilitiesGeneration++;
+      scanGeneration++;
+      clearScanResult();
       scannerSelect.disabled=true;
       scannerMode.disabled=true;
       scannerInfoButton.disabled=true;
@@ -178,6 +184,9 @@
     }
 
     async function refreshSelectedScannerSettings(){
+      const requestGeneration=++capabilitiesGeneration;
+      scanGeneration++;
+      clearScanResult();
       const scannerId=scannerSelect.value;
       scannerProjection=null;
       scannerMode.replaceChildren(new Option("—",""));
@@ -191,8 +200,11 @@
       scannerStatus.textContent="Чтение capabilities выбранного сканера…";
       try{
         const response=await fetch(scannerSettingsEndpoint(scannerId),{cache:"no-store"});
+        if(requestGeneration!==capabilitiesGeneration||scannerSelect.value!==scannerId)return;
         if(!response.ok)throw new Error(await errorText(response));
-        scannerProjection=await response.json();
+        const projection=await response.json();
+        if(requestGeneration!==capabilitiesGeneration||scannerSelect.value!==scannerId)return;
+        scannerProjection=projection;
         scannerInfoButton.disabled=false;
         scannerMode.replaceChildren();
         for(const mode of scannerProjection.modes||[]){
@@ -207,6 +219,7 @@
         scannerStatus.textContent="Capabilities выбранного сканера получены.";
         renderSettingsControls();
       }catch(error){
+        if(requestGeneration!==capabilitiesGeneration||scannerSelect.value!==scannerId)return;
         scannerStatus.textContent=`Ошибка capabilities: ${error.message}`;
       }
     }
@@ -246,6 +259,8 @@
       const mode=selectedMode();
       if(!scannerId||!mode||!scannerSchema)return;
 
+      const requestGeneration=++scanGeneration;
+      clearScanResult();
       scanButton.disabled=true;
       scanStatus.textContent="Сканирование…";
       const settings={duplex:Boolean(mode.duplex)};
@@ -262,15 +277,20 @@
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify({scannerId,source:mode.source,settings})
         });
+        if(requestGeneration!==scanGeneration)return;
         if(!response.ok)throw new Error(await errorText(response));
         const pdf=await response.blob();
+        if(requestGeneration!==scanGeneration)return;
         showPdf(pdf);
         scanStatus.textContent=`PDF получен: ${pdf.size} байт.`;
       }catch(error){
+        if(requestGeneration!==scanGeneration)return;
         scanStatus.textContent=`Ошибка: ${error.message}`;
       }finally{
-        scanButton.disabled=!selectedMode();
-        await refreshInfo();
+        if(requestGeneration===scanGeneration){
+          scanButton.disabled=!selectedMode();
+          await refreshInfo();
+        }
       }
     }
 
