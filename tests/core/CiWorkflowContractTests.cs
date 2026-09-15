@@ -100,6 +100,27 @@ public sealed class CiWorkflowContractTests
     }
 
     [Fact]
+    public void AltP11Acceptance_RemovesI586CompatibilityRepositoryBeforeAptUpdate()
+    {
+        var root = FindRepositoryRoot();
+        var harness = ReadRequired(Path.Combine(
+            root,
+            "tests",
+            "linux-systemd",
+            "run-systemd-acceptance.sh"));
+
+        const string repositoryMarker = "ALT_I586_REPOSITORY='p11/branch/x86_64-i586'";
+        var repositoryMarkerIndex = harness.IndexOf(repositoryMarker, StringComparison.Ordinal);
+        var restrictionIndex = harness.IndexOf("sed -i", StringComparison.Ordinal);
+        var aptUpdateIndex = harness.IndexOf("apt-get update", StringComparison.Ordinal);
+
+        Assert.True(repositoryMarkerIndex >= 0, "ALT p11 acceptance must name the i586 compatibility repository explicitly.");
+        Assert.True(restrictionIndex >= 0, "ALT p11 acceptance must remove the i586 compatibility repository from test sources.");
+        Assert.True(aptUpdateIndex >= 0, "ALT p11 acceptance must still update native repository metadata.");
+        Assert.True(restrictionIndex < aptUpdateIndex, "The i586 compatibility repository must be removed before apt-get update.");
+    }
+
+    [Fact]
     public void ReleaseResolver_UsesGitHubWorkflowRunEventField()
     {
         var root = FindRepositoryRoot();
