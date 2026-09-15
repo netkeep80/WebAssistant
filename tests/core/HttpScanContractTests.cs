@@ -550,6 +550,30 @@ public sealed class HttpScanContractTests
             return Task.FromResult(discovery);
         }
 
+        public Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+            string scannerId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var scanner = discovery.Scanners.FirstOrDefault(candidate =>
+                string.Equals(candidate.Id, scannerId, StringComparison.Ordinal));
+            if (scanner is not null)
+            {
+                return Task.FromResult<ScannerDevice?>(scanner);
+            }
+
+            if (ScannerIdentity.TryParse(scannerId, out var backend) &&
+                discovery.Warnings.Any(warning =>
+                    warning.Backend == backend &&
+                    string.Equals(warning.Code, "enumerationFailed", StringComparison.Ordinal)))
+            {
+                return Task.FromException<ScannerDevice?>(new ScannerBackendUnavailableException(backend));
+            }
+
+            return Task.FromResult<ScannerDevice?>(null);
+        }
+
         public Task<Stream> ScanAsync(
             string scannerId,
             CancellationToken cancellationToken = default) =>
