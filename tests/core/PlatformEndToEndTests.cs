@@ -150,7 +150,11 @@ public sealed class PlatformEndToEndTests
                 .Locator("#scanner-select option:not([value=''])")
                 .First;
             await scannerOption
-                .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+                .WaitForAsync(new LocatorWaitForOptions
+                {
+                    State = WaitForSelectorState.Attached,
+                    Timeout = 30_000
+                });
 
             var scannerId = await scannerOption.GetAttributeAsync("value");
             Assert.False(string.IsNullOrWhiteSpace(scannerId));
