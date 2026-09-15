@@ -107,6 +107,32 @@ public sealed class ScannerCapabilityProjectionTests
         Assert.Equal(BitDepth.Grayscale, options.BitDepth);
         Assert.Equal(PageSize.A4, options.PageSize);
     }
+
+    [Fact]
+    public void Naps2Mapper_UsesRecommendedCommonDpiValuesInsteadOfFullRange()
+    {
+        var dpiCaps = DpiCaps.ForRange(50, 600, 1);
+        var expected = dpiCaps.CommonValues!
+            .Where(value => value > 0)
+            .Distinct()
+            .OrderBy(value => value)
+            .ToArray();
+        Assert.True(expected.Length < dpiCaps.Values!.Count);
+
+        var caps = new ScanCaps
+        {
+            FlatbedCaps = new PerSourceCaps
+            {
+                DpiCaps = dpiCaps
+            }
+        };
+
+        var normalized = Naps2ScannerCapabilityMapper.From(caps);
+
+        Assert.NotNull(normalized.Flatbed);
+        Assert.Equal(expected, normalized.Flatbed.DpiValues);
+        Assert.DoesNotContain(51, normalized.Flatbed.DpiValues);
+    }
 }
 
 #pragma warning restore CA2252
