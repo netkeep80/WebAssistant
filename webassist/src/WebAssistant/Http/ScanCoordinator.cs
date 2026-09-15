@@ -189,11 +189,13 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
         }
         catch (ScannerBackendUnavailableException exception)
         {
+            var diagnosticException = exception.InnerException ?? exception;
             logger.LogWarning(
-                exception,
-                "Backend выбранного сканера недоступен backend={Backend} scannerId={ScannerId}",
+                "Backend выбранного сканера недоступен backend={Backend} scannerId={ScannerId} exceptionType={ExceptionType} hresult={HResult}",
                 exception.Backend,
-                SafeLogText(scannerId));
+                SafeLogText(scannerId),
+                diagnosticException.GetType().Name,
+                FormatHResult(diagnosticException));
             return Results.Problem(
                 statusCode: StatusCodes.Status503ServiceUnavailable,
                 title: "Backend сканера недоступен");
@@ -208,9 +210,10 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
         catch (Exception exception)
         {
             logger.LogError(
-                exception,
-                "Ошибка сканирования scannerId={ScannerId}",
-                selected is null ? SafeLogText(scannerId) : SafeLogText(selected.Id));
+                "Ошибка сканирования scannerId={ScannerId} exceptionType={ExceptionType} hresult={HResult}",
+                selected is null ? SafeLogText(scannerId) : SafeLogText(selected.Id),
+                exception.GetType().Name,
+                FormatHResult(exception));
             return Results.Problem(
                 statusCode: StatusCodes.Status502BadGateway,
                 title: "Ошибка сканирования");
@@ -270,6 +273,9 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
         return new string(
             value.Where(character => !char.IsControl(character)).Take(200).ToArray());
     }
+
+    private static string FormatHResult(Exception exception) =>
+        $"0x{unchecked((uint)exception.HResult):X8}";
 }
 
 #pragma warning restore CA2252
