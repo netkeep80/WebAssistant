@@ -210,15 +210,33 @@ function Assert-ProcessIdentityGone {
         [Parameter(Mandatory = $true)][string]$Description
     )
 
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $process = Get-Process -Id ([int]$Identity.ProcessId) -ErrorAction SilentlyContinue
+        if (-not $process) {
+            return
+        }
+
+        $startTimeUtc = $process.StartTime.ToUniversalTime()
+        if ($startTimeUtc -ne $Identity.StartTimeUtc) {
+            return
+        }
+
+        Start-Sleep -Milliseconds 100
+    }
+
     $process = Get-Process -Id ([int]$Identity.ProcessId) -ErrorAction SilentlyContinue
     if (-not $process) {
         return
     }
 
     $startTimeUtc = $process.StartTime.ToUniversalTime()
-    if ($startTimeUtc -eq $Identity.StartTimeUtc) {
-        throw "$Description pid=$($Identity.ProcessId) survived when its exact process identity had to be gone."
+    if ($startTimeUtc -ne $Identity.StartTimeUtc) {
+        return
     }
+
+    throw "$Description pid=$($Identity.ProcessId) survived when its exact process identity had to be gone."
 }
 
 function Assert-NoFilesInUseEvidence {
