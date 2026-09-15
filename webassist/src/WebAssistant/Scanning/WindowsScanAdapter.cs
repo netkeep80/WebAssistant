@@ -448,20 +448,20 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
 
     private static string SafeExceptionMessage(Exception exception, string nativeId)
     {
-        var sanitized = new string(
-            exception.Message
-                .Where(character => !char.IsControl(character))
-                .Take(500)
-                .ToArray());
+        var message = exception.Message;
         if (!string.IsNullOrEmpty(nativeId))
         {
-            sanitized = sanitized.Replace(
+            message = message.Replace(
                 nativeId,
                 "<native-id>",
                 StringComparison.OrdinalIgnoreCase);
         }
 
-        return sanitized;
+        return new string(
+            message
+                .Where(character => !char.IsControl(character))
+                .Take(500)
+                .ToArray());
     }
 
     private static string FormatHResult(Exception exception) =>
