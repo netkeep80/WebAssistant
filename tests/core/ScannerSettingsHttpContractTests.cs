@@ -219,6 +219,15 @@ public sealed class ScannerSettingsHttpContractTests
             return Task.FromResult(discovery);
         }
 
+        public Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+            string scannerId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<ScannerDevice?>(discovery.FirstOrDefault(scanner =>
+                string.Equals(scanner.Id, scannerId, StringComparison.Ordinal)));
+        }
+
         public Task<Stream> ScanAsync(
             string scannerId,
             CancellationToken cancellationToken = default) =>
