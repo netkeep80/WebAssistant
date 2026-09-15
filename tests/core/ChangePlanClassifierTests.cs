@@ -134,12 +134,42 @@ public sealed class ChangePlanClassifierTests
     }
 
     [Fact]
-    public void CommonProduct_RequiresFullCrossPlatformEvidenceWithoutDistributionBuild()
+    public void CommonProduct_RequiresCrossPlatformEvidenceWithoutHistoricalP11()
     {
         AssertPlan(
             ["webassist/src/WebAssistant/Http/ScanCoordinator.cs", "webassist/VERSION"],
             core: true,
-            linuxSystemd: true,
+            linuxSystemd: false,
+            windowsService: true,
+            installerLinux: false,
+            installerWindows: false,
+            virtualLinux: true,
+            virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
+            fullCrossPlatform: true);
+    }
+
+    [Fact]
+    public void GovernanceAndSharedTests_KeepCrossPlatformEvidenceWithoutHistoricalP11()
+    {
+        AssertPlan(
+            ["repo-policy.json", ".github/PULL_REQUEST_TEMPLATE.md", "webassist/VERSION"],
+            core: true,
+            linuxSystemd: false,
+            windowsService: true,
+            installerLinux: false,
+            installerWindows: false,
+            virtualLinux: true,
+            virtualWindows: true,
+            smokeLinux: true,
+            smokeWindows: true,
+            fullCrossPlatform: true);
+
+        AssertPlan(
+            ["tests/core/PlatformEndToEndTests.cs", "webassist/VERSION"],
+            core: true,
+            linuxSystemd: false,
             windowsService: true,
             installerLinux: false,
             installerWindows: false,
@@ -206,12 +236,12 @@ public sealed class ChangePlanClassifierTests
     }
 
     [Fact]
-    public void UnknownProductPath_FailsClosedWithoutInventingDistributionScope()
+    public void UnknownProductPath_FailsClosedWithoutHistoricalP11OrDistributionBuild()
     {
         AssertPlan(
             ["webassist/src/WebAssistant/NewCapability/Thing.cs", "webassist/VERSION"],
             core: true,
-            linuxSystemd: true,
+            linuxSystemd: false,
             windowsService: true,
             installerLinux: false,
             installerWindows: false,

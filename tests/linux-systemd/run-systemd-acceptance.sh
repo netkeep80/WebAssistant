@@ -3,6 +3,7 @@ set -euo pipefail
 
 PACKAGE_DIRECTORY="${1:-}"
 ALT_IMAGE="${ALT_IMAGE:-registry.altlinux.org/p11/alt:latest}"
+ALT_I586_REPOSITORY='p11/branch/x86_64-i586'
 CONTAINER_NAME="webassistant-alt-p11-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 TEST_IMAGE="webassistant-alt-p11-systemd:${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 PORT=17654
@@ -33,7 +34,12 @@ build_context="$(mktemp -d)"
 trap 'rm -rf -- "$build_context"; cleanup' EXIT
 cat >"$build_context/Dockerfile" <<EOF
 FROM ${ALT_IMAGE}
-RUN apt-get update \
+RUN set -eu; \
+    for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do \
+        [ -f "\$source" ] || continue; \
+        sed -i "\|${ALT_I586_REPOSITORY}[[:space:]]|d" "\$source"; \
+    done; \
+    apt-get update \
     && apt-get install -y systemd curl iproute2 procps shadow-utils findutils \
     && apt-get clean
 STOPSIGNAL SIGRTMIN+3

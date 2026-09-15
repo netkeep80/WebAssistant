@@ -61,7 +61,9 @@ saw_linux=false
 saw_windows=false
 
 require_full() {
-  linux_systemd=true
+  # Общая fail-closed проверка продукта не должна сама по себе запускать
+  # дорогостоящий historical ALT p11 lifecycle. Он включается только
+  # явной Linux-поверхностью или полным distribution acceptance ниже.
   windows_service=true
   virtual_linux=true
   virtual_windows=true
@@ -72,6 +74,7 @@ require_full() {
 
 require_distribution_both() {
   require_full
+  linux_systemd=true
   installer_linux=true
   installer_windows=true
 }
