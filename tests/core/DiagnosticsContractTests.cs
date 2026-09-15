@@ -215,6 +215,15 @@ public sealed class DiagnosticsContractTests
             return Task.FromResult(new ScannerDiscoveryResult(scanners));
         }
 
+        public Task<ScannerDevice?> GetScannerCapabilitiesAsync(
+            string scannerId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<ScannerDevice?>(scanners.FirstOrDefault(scanner =>
+                string.Equals(scanner.Id, scannerId, StringComparison.Ordinal)));
+        }
+
         public Task<Stream> ScanAsync(
             string scannerId,
             CancellationToken cancellationToken = default)
