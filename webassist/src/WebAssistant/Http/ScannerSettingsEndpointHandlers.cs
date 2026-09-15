@@ -55,11 +55,13 @@ internal static class ScannerSettingsEndpointHandlers
         }
         catch (ScannerBackendUnavailableException exception)
         {
+            var diagnosticException = exception.InnerException ?? exception;
             logger.LogWarning(
-                exception,
-                "Backend выбранного сканера недоступен backend={Backend} scannerId={ScannerId}",
+                "Backend выбранного сканера недоступен backend={Backend} scannerId={ScannerId} exceptionType={ExceptionType} hresult={HResult}",
                 exception.Backend,
-                scannerId);
+                scannerId,
+                diagnosticException.GetType().Name,
+                FormatHResult(diagnosticException));
             return Results.Problem(
                 statusCode: StatusCodes.Status503ServiceUnavailable,
                 title: "Backend сканера недоступен");
@@ -71,9 +73,10 @@ internal static class ScannerSettingsEndpointHandlers
         catch (Exception exception)
         {
             logger.LogError(
-                exception,
-                "Не удалось получить capabilities выбранного сканера scannerId={ScannerId}",
-                scannerId);
+                "Не удалось получить capabilities выбранного сканера scannerId={ScannerId} exceptionType={ExceptionType} hresult={HResult}",
+                scannerId,
+                exception.GetType().Name,
+                FormatHResult(exception));
             return Results.Problem(
                 statusCode: StatusCodes.Status502BadGateway,
                 title: "Ошибка получения настроек сканера");
@@ -117,4 +120,7 @@ internal static class ScannerSettingsEndpointHandlers
             }
         };
     }
+
+    private static string FormatHResult(Exception exception) =>
+        $"0x{unchecked((uint)exception.HResult):X8}";
 }
