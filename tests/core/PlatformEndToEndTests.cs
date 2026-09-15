@@ -146,8 +146,26 @@ public sealed class PlatformEndToEndTests
                 .Locator("#scanner-select:not([disabled])")
                 .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
-            var scannerId = await page.Locator("#scanner-select").InputValueAsync();
+            var scannerOption = page
+                .Locator("#scanner-select option:not([value=''])")
+                .First;
+            await scannerOption
+                .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+
+            var scannerId = await scannerOption.GetAttributeAsync("value");
             Assert.False(string.IsNullOrWhiteSpace(scannerId));
+            var selectedScannerId = scannerId!;
+
+            await page
+                .Locator("#scanner-select")
+                .SelectOptionAsync(selectedScannerId);
+            await page
+                .Locator("#scan-button:not([disabled])")
+                .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+
+            Assert.Equal(
+                selectedScannerId,
+                await page.Locator("#scanner-select").InputValueAsync());
 
             var scanResponseTask = page.WaitForResponseAsync(
                 response =>
