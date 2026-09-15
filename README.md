@@ -24,6 +24,8 @@ Requirement → conformance vector → evidence graph проверяется rep
 
 Repository policy задаётся в [`repo-policy.json`](repo-policy.json) и исполняется `repo-guard` в blocking mode. Accepted contract/conformance pair, обязательные repository paths и автономность `webassist/` являются частью этой исполняемой границы.
 
+Язык актуальной человекочитаемой документации определяется канонической политикой [`webassist/docs/documentation-language-policy.md`](webassist/docs/documentation-language-policy.md): повествовательный текст должен быть на русском, а без перевода сохраняются только буквальные технические идентификаторы, собственные имена, команды, коды, пути и машинные значения.
+
 Permanent governance check находится в [`.github/workflows/repo-guard.yml`](.github/workflows/repo-guard.yml). Workflow запускает exact-pinned `netkeep80/repo-guard@92432809fcddc290080beb51ba151e13a5761869` в `mode: check-pr` и `enforcement: blocking`; governance failure или cancelled run не являются допустимым merge-ready состоянием.
 
 Product CI PR orchestration находится в [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Его стабильный внешний job/check называется `ci-required`. Текущий baseline консервативно требует core, ALT Linux systemd, Windows Service и virtual-scanner suites; classifier может в дальнейшем сделать отдельные suites необязательными, не меняя имя внешнего gate.

@@ -65,7 +65,8 @@
           "contracts/webassistant-conformance-v0.1.json",
           "contracts/webassistant-contract-v0.2.json",
           "contracts/webassistant-conformance-v0.2.json",
-          "webassist/README.md"
+          "webassist/README.md",
+          "webassist/docs/documentation-language-policy.md"
         ],
         "must_mention_change_intent_fields": ["change_type", "scope", "anchors.affects"]
       }
