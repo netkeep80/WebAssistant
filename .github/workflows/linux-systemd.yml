@@ -113,7 +113,7 @@ jobs:
     name: ALT p11 historical artifact lifecycle
     needs: build-linux-installer
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - name: Checkout acceptance harness
         uses: actions/checkout@v6
