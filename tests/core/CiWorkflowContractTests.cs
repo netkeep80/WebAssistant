@@ -121,6 +121,18 @@ public sealed class CiWorkflowContractTests
     }
 
     [Fact]
+    public void AltP11Acceptance_KeepsFiniteFortyFiveMinuteHangGuard()
+    {
+        var root = FindRepositoryRoot();
+        var workflow = ReadRequired(Path.Combine(root, ".github", "workflows", "linux-systemd.yml"));
+        var jobIndex = workflow.IndexOf("alt-p11-systemd-acceptance:", StringComparison.Ordinal);
+
+        Assert.True(jobIndex >= 0, "ALT p11 acceptance job must remain present.");
+        var job = workflow[jobIndex..];
+        Assert.Contains("timeout-minutes: 45", job, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ReleaseResolver_UsesGitHubWorkflowRunEventField()
     {
         var root = FindRepositoryRoot();
