@@ -133,6 +133,28 @@ public sealed class CiWorkflowContractTests
     }
 
     [Fact]
+    public void WindowsUpgradeAcceptance_WaitsForExactProcessIdentityToDisappearWithinBoundedDeadline()
+    {
+        var root = FindRepositoryRoot();
+        var harness = ReadRequired(Path.Combine(
+            root,
+            "tests",
+            "windows-service",
+            "run-upgrade-acceptance.ps1"));
+        var functionStart = harness.IndexOf("function Assert-ProcessIdentityGone", StringComparison.Ordinal);
+        var functionEnd = harness.IndexOf("function Assert-NoFilesInUseEvidence", functionStart, StringComparison.Ordinal);
+
+        Assert.True(functionStart >= 0, "Windows upgrade acceptance must define Assert-ProcessIdentityGone.");
+        Assert.True(functionEnd > functionStart, "Windows upgrade acceptance must keep Assert-ProcessIdentityGone as a bounded helper.");
+
+        var helper = harness[functionStart..functionEnd];
+        Assert.Contains("[DateTime]::UtcNow.AddSeconds(", helper, StringComparison.Ordinal);
+        Assert.Contains("Get-Process -Id", helper, StringComparison.Ordinal);
+        Assert.Contains("Start-Sleep -Milliseconds", helper, StringComparison.Ordinal);
+        Assert.Contains("while ([DateTime]::UtcNow -lt $deadline)", helper, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ReleaseResolver_UsesGitHubWorkflowRunEventField()
     {
         var root = FindRepositoryRoot();
