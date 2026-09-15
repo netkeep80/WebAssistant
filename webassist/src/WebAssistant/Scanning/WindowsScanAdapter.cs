@@ -320,7 +320,7 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         var images = new List<ProcessedImage>();
         try
         {
-            await foreach (var image in controller.Scan(options).WithCancellation(cancellationToken))
+            await foreach (var image in controller.Scan(options, cancellationToken).WithCancellation(cancellationToken))
             {
                 images.Add(image);
             }
