@@ -53,7 +53,7 @@ internal static class Naps2ScannerCapabilityMapper
             return null;
         }
 
-        var dpi = caps.DpiCaps?.Values?
+        var dpi = caps.DpiCaps?.CommonValues?
             .Where(value => value > 0)
             .Distinct()
             .OrderBy(value => value)
