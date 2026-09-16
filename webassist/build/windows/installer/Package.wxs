@@ -6,6 +6,8 @@
       Version="$(var.ProductVersion)"
       Scope="perMachine">
 
+    <MajorUpgrade Schedule="afterInstallExecute" />
+
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="WebAssistant" />
     </StandardDirectory>
