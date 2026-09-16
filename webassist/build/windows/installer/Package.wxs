@@ -6,7 +6,9 @@
       Version="$(var.ProductVersion)"
       Scope="perMachine">
 
-    <MajorUpgrade Schedule="afterInstallExecute" />
+    <MajorUpgrade
+        Schedule="afterInstallExecute"
+        DowngradeErrorMessage="!(loc.WixDowngradePreventedMessage)" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="WebAssistant" />
