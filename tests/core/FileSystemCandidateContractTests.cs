@@ -84,6 +84,19 @@ public sealed class FileSystemCandidateContractTests
     }
 
     [Fact]
+    public void CandidateV03_DoesNotRetainSingleRootPublicVocabulary()
+    {
+        var root = FindRepositoryRoot();
+        var contractText = File.ReadAllText(Path.Combine(
+            root,
+            "contracts",
+            "webassistant-contract-v0.3.json"));
+
+        Assert.DoesNotContain("RootDirectory", contractText, StringComparison.Ordinal);
+        Assert.DoesNotContain("filesystem_unavailable", contractText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CandidateV03_ConformanceContainsExecutableMultiRootVectors()
     {
         var root = FindRepositoryRoot();
