@@ -1,12 +1,12 @@
-# WebAssistant REST API
+# REST API WebAssistant
 
-Текущая major version — `v1`. Machine endpoints доступны только с prefix `/v1`; unversioned aliases, включая `/health` и `/scan`, отсутствуют. Service panel доступна по `/`.
+Текущая основная версия — `v1`. Машинные точки API доступны только с префиксом `/v1`; неверсионированные псевдонимы, включая `/health` и `/scan`, отсутствуют. Диагностическая панель доступна по `/`.
 
-Default listener: `http://127.0.0.1:17654`. Listener привязан только к loopback.
+Адрес прослушивания по умолчанию: `http://127.0.0.1:17654`. Слушатель привязан только к loopback.
 
-Windows runtime lifecycle не меняет HTTP contract: scanner adapter остаётся lazy, а если scanner runtime был материализован, остановка службы завершает shutdown принадлежащих WebAssistant `NAPS2.Worker` до завершения service stop.
+Жизненный цикл Windows не меняет HTTP-контракт: адаптер сканирования создаётся лениво, а если среда сканирования была создана, остановка службы завершает принадлежащие WebAssistant процессы `NAPS2.Worker` до завершения остановки службы.
 
-## Health
+## Проверка состояния
 
 `GET /v1/health`
 
@@ -20,7 +20,7 @@ Windows runtime lifecycle не меняет HTTP contract: scanner adapter ос�
 
 `GET /v1/scanners`
 
-Успех: `200 OK` и нормализованный JSON envelope:
+Успех: `200 OK` и нормализованный JSON-конверт:
 
 ```json
 {
@@ -40,71 +40,71 @@ Windows runtime lifecycle не меняет HTTP contract: scanner adapter ос�
 }
 ```
 
-`scannerId` — opaque persistent identifier WebAssistant. Текущая схема идентичности имеет версию `wa2` и формат:
+`scannerId` — непрозрачный сохраняемый идентификатор WebAssistant. Текущая схема идентичности имеет версию `wa2` и формат:
 
 ```text
 wa2-<backend>-<16 Base64Url symbols>
 ```
 
-Digest вычисляется детерминированно как первые 96 бит `SHA-256(backend + "\0" + nativeId)`, после чего кодируется в Base64Url без padding. В вычислении участвует полный exact native identity, который WebAssistant не нормализует и не сокращает. Display name сканера не участвует в формировании публичного идентификатора и не изменяется WebAssistant.
+Хеш вычисляется детерминированно как первые 96 бит `SHA-256(backend + "\0" + nativeId)`, после чего кодируется в Base64Url без padding. В вычислении участвует полный точный `nativeId`, который WebAssistant не нормализует и не сокращает. Отображаемое имя сканера не участвует в формировании публичного идентификатора и не изменяется WebAssistant.
 
-Префикс `wa2` является версией схемы scanner identity. Идентификаторы предыдущей схемы `wa1-*` не принимаются как текущие `scannerId`; вызывающее приложение должно сохранить значения, полученные из актуального `GET /v1/scanners`.
+Префикс `wa2` является версией схемы идентичности сканера. Идентификаторы предыдущей схемы `wa1-*` не принимаются как текущие `scannerId`; вызывающее приложение должно сохранять значения, полученные из актуального `GET /v1/scanners`.
 
-`scannerId` не зависит от порядка перечисления и предназначен для сохранения вызывающим приложением между restart/reboot. Один физический сканер, доступный через разные backend, например WIA и TWAIN, является разными scanner endpoints и получает разные `scannerId`. Если два разных endpoint неожиданно получили один и тот же публичный `scannerId`, WebAssistant не объединяет их и отклоняет listing fail-closed.
+`scannerId` не зависит от порядка перечисления и предназначен для сохранения вызывающим приложением между перезапуском процесса и перезагрузкой Windows. Один физический сканер, доступный через разные подсистемы, например WIA и TWAIN, представляет разные конечные точки сканирования и получает разные `scannerId`. Если две разные конечные точки неожиданно получили один и тот же публичный `scannerId`, WebAssistant не объединяет их и отклоняет выдачу списка с закрытием при неопределённости.
 
-`GET /v1/scanners` — shallow registry/enumeration view, а не physical health check и не capability probe. Listing не вызывает deep `GetCaps` для каждого устройства и поэтому не публикует `sources`, feeder state или другие scanner capabilities. Зарегистрированный в ОС endpoint может оставаться в списке, даже если физически устройство сейчас недоступно.
+`GET /v1/scanners` — поверхностное представление зарегистрированных конечных точек, а не проверка физической доступности и не опрос возможностей. Перечисление не вызывает глубокий `GetCaps` для каждого устройства и поэтому не публикует `sources`, состояние бумаги в feeder и другие возможности сканера. Зарегистрированная в ОС конечная точка может оставаться в списке, даже если физически устройство сейчас недоступно.
 
-WebAssistant не хранит выбранный `scannerId` или mutable scanner profile. При каждом selected capability/acquisition endpoint разрешается заново из текущего backend state.
+WebAssistant не хранит выбранный `scannerId` или изменяемый профиль сканера. При каждом запросе возможностей или сканирования выбранная конечная точка заново разрешается из текущего состояния соответствующей подсистемы.
 
-Backend semantics:
+Семантика подсистем:
 
-- Windows — WIA и TWAIN перечисляются независимо; успешные endpoints обоих backend входят в общий `scanners`;
-- сбой одного Windows backend не скрывает endpoints второго: успешная часть возвращается вместе с `warnings`;
-- shallow listing исключает `GetCaps` fan-out, но сам `GetDeviceList` соответствующего backend остаётся реальной backend operation и не имеет обещания мгновенного ответа без physical evidence;
-- exact duplicate native identity внутри одного backend считается неоднозначной и не получает искусственный index/suffix; такой endpoint отклоняется fail-closed;
-- Linux — direct SANE SDK path через NAPS2, без CLI orchestration.
+- Windows — WIA и TWAIN перечисляются независимо; успешные конечные точки обеих подсистем входят в общий `scanners`;
+- сбой одной подсистемы Windows не скрывает конечные точки второй: успешная часть возвращается вместе с `warnings`;
+- поверхностное перечисление исключает массовый `GetCaps`, но сам `GetDeviceList` соответствующей подсистемы остаётся реальной операцией и без физических доказательств не имеет гарантии мгновенного ответа;
+- точное дублирование native identity внутри одной подсистемы считается неоднозначным и не получает искусственный индекс или суффикс; такая конечная точка отклоняется с закрытием при неопределённости;
+- Linux — прямой путь SANE SDK через NAPS2 без оркестрации CLI.
 
-Текущие warning codes:
+Текущие коды предупреждений:
 
-- `enumerationFailed` — backend не удалось перечислить;
-- `ambiguousNativeIdentity` — внутри backend обнаружена неоднозначная native identity.
+- `enumerationFailed` — подсистему не удалось перечислить;
+- `ambiguousNativeIdentity` — внутри подсистемы обнаружена неоднозначная native identity.
 
-Если хотя бы один применимый backend успешно перечислен, `GET /v1/scanners` возвращает `200`, в том числе когда список устройств пуст. Если discovery в целом недоступен, возвращается `503`. Непредвиденная ошибка discovery boundary или коллизия публичного `scannerId` возвращается как `502`.
+Если хотя бы одна применимая подсистема успешно перечислена, `GET /v1/scanners` возвращает `200`, в том числе при пустом списке устройств. Если обнаружение в целом недоступно, возвращается `503`. Непредвиденная ошибка границы обнаружения или коллизия публичного `scannerId` возвращается как `502`.
 
-Native identity, capabilities и внутреннее состояние наличия бумаги наружу через listing не публикуются.
+Native identity, возможности и внутреннее состояние наличия бумаги через список наружу не публикуются.
 
 ## Нормализованные настройки сканера
 
-Canonical machine-readable schema:
+Каноническая машиночитаемая схема:
 
 `GET /v1/scanner-settings/schema`
 
-Успех: `200 OK`, `Content-Type: application/json`. Endpoint возвращает repository-owned schema `webassist/docs/scanner-settings.schema.json`. Это канонический список portable scanner settings, их типов, enum vocabulary, units и preferred defaults; backend-native WIA/TWAIN/SANE объекты наружу не публикуются.
+Успех: `200 OK`, `Content-Type: application/json`. Точка API возвращает принадлежащую репозиторию схему `webassist/docs/scanner-settings.schema.json`. Это канонический список переносимых настроек сканирования, их типов, значений перечислений, единиц измерения и предпочтительных значений по умолчанию; внутренние объекты WIA/TWAIN/SANE наружу не публикуются.
 
-Первый обязательный normalized набор:
+Текущий нормализованный набор:
 
-| Поле | Тип | Значения / units | Preferred default |
+| Поле | Тип | Значения / единицы | Предпочтительное значение по умолчанию |
 | --- | --- | --- | --- |
 | `settings.duplex` | boolean | `true`, `false` | `false` |
-| `settings.dpi` | integer | положительное целое, unit `dpi` | `100` |
+| `settings.dpi` | integer | положительное целое, единица `dpi` | `100` |
 | `settings.colorMode` | string | `color`, `grayscale`, `blackAndWhite` | `color` |
 | `settings.paperSize` | string | `letter`, `legal`, `a5`, `a4`, `a3`, `b5`, `b4` | `letter` |
 
-Preferred default не означает, что каждое устройство обязано его поддерживать. Для concrete scanner/mode WebAssistant выбирает preferred default, если он поддерживается; иначе детерминированно выбирает первое поддерживаемое значение в canonical order. Если backend не предоставил доказуемый набор значений для optional setting, WebAssistant не выдумывает capability.
+Предпочтительное значение по умолчанию не означает, что каждое устройство обязано его поддерживать. Для конкретного сканера и режима WebAssistant выбирает предпочтительное значение, если оно поддерживается; иначе детерминированно выбирает первое поддерживаемое значение в каноническом порядке. Если подсистема не предоставила доказуемый набор значений необязательной настройки, WebAssistant не выдумывает возможность.
 
-### Возможности выбранного scanner endpoint
+### Возможности выбранной конечной точки сканера
 
 `GET /v1/scanners/{scannerId}/settings`
 
-Endpoint возвращает read-only snapshot нормализованных возможностей выбранного scanner endpoint. Он не читает и не меняет пользовательские preferences. По корректному `scannerId` WebAssistant разрешает только backend, закодированный в этом идентификаторе, и выполняет capability probe только выбранного endpoint; global WIA+TWAIN/SANE listing для этого запроса не выполняется.
+Точка API возвращает только для чтения снимок нормализованных возможностей выбранной конечной точки. Она не читает и не меняет пользовательские предпочтения. По корректному `scannerId` WebAssistant разрешает только подсистему, закодированную в идентификаторе, и выполняет опрос возможностей только выбранной конечной точки; общее перечисление WIA+TWAIN/SANE для этого запроса не выполняется.
 
 Ответ содержит `capabilityState`:
 
-- `complete` — получен полный используемый WebAssistant snapshot;
+- `complete` — получен полный снимок возможностей, используемый WebAssistant;
 - `partial` — известна только часть возможностей; неизвестное нельзя трактовать как отсутствие поддержки;
-- `unavailable` — capability probe не дал достоверного snapshot. В этом состоянии `modes` пуст и это не означает, что scanner endpoint не поддерживает flatbed, feeder или конкретные настройки.
+- `unavailable` — опрос возможностей не дал достоверного снимка. В этом состоянии `modes` пуст, и это не означает, что конечная точка не поддерживает flatbed, feeder или конкретные настройки.
 
-Пример полного snapshot:
+Пример полного снимка:
 
 ```json
 {
@@ -161,7 +161,7 @@ Endpoint возвращает read-only snapshot нормализованных 
 }
 ```
 
-При недоступном probe endpoint остаётся адресуемым:
+При недоступном опросе конечная точка остаётся адресуемой:
 
 ```json
 {
@@ -171,31 +171,31 @@ Endpoint возвращает read-only snapshot нормализованных 
 }
 ```
 
-Public mode vocabulary:
+Публичные режимы:
 
-- `auto` → request `source=auto`, `duplex=false`;
-- `flatbed` → request `source=flatbed`, `duplex=false`;
-- `feeder` → request `source=feeder`, `duplex=false`;
-- `feederDuplex` → request `source=feeder`, `duplex=true`.
+- `auto` → запрос `source=auto`, `duplex=false`;
+- `flatbed` → запрос `source=flatbed`, `duplex=false`;
+- `feeder` → запрос `source=feeder`, `duplex=false`;
+- `feederDuplex` → запрос `source=feeder`, `duplex=true`.
 
-При `complete` modes, которых concrete endpoint не поддерживает, отсутствуют. При `unavailable` отсутствие mode не является доказательством неподдерживаемости.
+При `complete` режимы, которых конкретная конечная точка не поддерживает, отсутствуют. При `unavailable` отсутствие режима не является доказательством неподдерживаемости.
 
-Capabilities являются source-specific. Поэтому значения flatbed, feeder и duplex могут различаться. Для dual-source `auto` WebAssistant публикует только пересечение значений, которые допустимы для каждого concrete source, который auto реально может выбрать. Например flatbed `[100,300,600]` и feeder `[200,300]` дают auto `[300]`. Это гарантирует, что настройка, выбранная до проверки наличия бумаги, останется допустимой после выбора feeder или flatbed.
+Возможности зависят от источника. Поэтому значения flatbed, feeder и duplex могут различаться. Для устройства с двумя источниками в режиме `auto` WebAssistant публикует только пересечение значений, допустимых для каждого конкретного источника, который `auto` реально может выбрать. Например flatbed `[100,300,600]` и feeder `[200,300]` дают для `auto` `[300]`. Это гарантирует, что настройка, выбранная до проверки наличия бумаги, останется допустимой после выбора feeder или flatbed.
 
-Ошибки endpoint:
+Ошибки точки API:
 
 - `400` — синтаксически неверный `scannerId`;
-- `404` — корректный `scannerId` отсутствует после успешного перечисления только указанного им backend;
-- `503` — scanner module/discovery либо backend указанного scannerId недоступен;
-- `502` — непредвиденная ошибка capability boundary. Обычный отказ выбранного capability probe, который удалось изолировать как недоступный snapshot, представляется успешным ответом с `capabilityState=unavailable`.
+- `404` — корректный `scannerId` отсутствует после успешного перечисления только указанной им подсистемы;
+- `503` — модуль сканирования, обнаружение или подсистема указанного `scannerId` недоступны;
+- `502` — непредвиденная ошибка границы возможностей. Обычный отказ выбранного опроса возможностей, который удалось изолировать как недоступный снимок, представляется успешным ответом с `capabilityState=unavailable`.
 
 ## Сканирование
 
-Единственный acquisition endpoint:
+Единственная точка получения изображения:
 
 `POST /v1/scan`
 
-Request обязан иметь `Content-Type: application/json` и содержать `scannerId`:
+Запрос обязан иметь `Content-Type: application/json` и содержать `scannerId`:
 
 ```json
 {
@@ -212,26 +212,26 @@ Request обязан иметь `Content-Type: application/json` и содерж
 
 Поля:
 
-- `scannerId` — обязательный непустой stable identifier из `GET /v1/scanners`;
-- `source` — опционально, только exact lowercase `auto`, `flatbed` или `feeder`; при отсутствии используется `auto`;
-- `settings.duplex` — опциональный boolean; при отсутствии используется `false`;
-- `settings.dpi` — опциональный положительный integer DPI;
-- `settings.colorMode` — опционально, exact `color`, `grayscale` или `blackAndWhite`;
-- `settings.paperSize` — опционально, exact `letter`, `legal`, `a5`, `a4`, `a3`, `b5` или `b4`.
+- `scannerId` — обязательный непустой стабильный идентификатор из `GET /v1/scanners`;
+- `source` — необязательное поле, только точные значения в нижнем регистре `auto`, `flatbed` или `feeder`; при отсутствии используется `auto`;
+- `settings.duplex` — необязательный boolean; при отсутствии используется `false`;
+- `settings.dpi` — необязательный положительный integer DPI;
+- `settings.colorMode` — необязательное поле, точные значения `color`, `grayscale` или `blackAndWhite`;
+- `settings.paperSize` — необязательное поле, точные значения `letter`, `legal`, `a5`, `a4`, `a3`, `b5` или `b4`.
 
-Если для выбранного режима доступен достоверный capability snapshot, отсутствующие `dpi`, `colorMode` и `paperSize` получают effective defaults из той же capability/default policy, которая используется `GET /v1/scanners/{scannerId}/settings`. Если explicit acquisition выполняется без доступного capability snapshot и caller не передал optional setting, WebAssistant оставляет его незаданным и сохраняет backend/device default вместо изобретения значения.
+Если для выбранного режима доступен достоверный снимок возможностей, отсутствующие `dpi`, `colorMode` и `paperSize` получают фактические значения по умолчанию из той же политики возможностей и значений по умолчанию, которая используется `GET /v1/scanners/{scannerId}/settings`. Если явное сканирование выполняется без доступного снимка возможностей и вызывающая сторона не передала необязательную настройку, WebAssistant оставляет её незаданной и сохраняет значение по умолчанию подсистемы или устройства вместо изобретения значения.
 
-Caller обязан сохранять пользовательские scanner preferences у себя и передавать их в каждом acquisition request. WebAssistant не хранит mutable per-user/per-scanner profile.
+Вызывающая сторона обязана хранить пользовательские предпочтения сканирования у себя и передавать их в каждом запросе. WebAssistant не хранит изменяемый профиль пользователя или сканера.
 
-Source-specific routes `/v1/scan/feeder` и `/v1/scan/duplex` отсутствуют. `scannerId` не передаётся через query parameter и автоматический выбор scanner endpoint по количеству найденных устройств не выполняется.
+Маршруты по источникам `/v1/scan/feeder` и `/v1/scan/duplex` отсутствуют. `scannerId` не передаётся через параметр строки запроса, и автоматический выбор конечной точки по количеству найденных устройств не выполняется.
 
-Для `source=auto` WebAssistant выполняет capability probe только выбранного `scannerId`, потому что корректный выбор источника требует доказанного состояния источников/бумаги. Для явно указанного `source=flatbed|feeder` WebAssistant сначала выполняет только shallow resolution выбранного endpoint/backend и не делает extended `GetCaps` обязательным условием physical acquisition. Это позволяет попытаться сканирование даже если отдельный capability probe конкретного TWAIN driver аварийно недоступен.
+Для `source=auto` WebAssistant выполняет опрос возможностей только выбранного `scannerId`, потому что корректный выбор источника требует доказанного состояния источников и бумаги. Для явно указанного `source=flatbed|feeder` WebAssistant сначала выполняет только поверхностное разрешение выбранной конечной точки и подсистемы и не делает расширенный `GetCaps` обязательным условием физического сканирования. Это позволяет попытаться сканирование даже при аварийной недоступности отдельного опроса возможностей конкретного TWAIN-драйвера.
 
 ### Автовыбор источника
 
-Автовыбор принадлежит WebAssistant, а не caller и не NAPS2 `PaperSource.Auto`.
+Автовыбор принадлежит WebAssistant, а не вызывающей стороне и не NAPS2 `PaperSource.Auto`.
 
-Для устройства с одновременно доступными flatbed и feeder используется tri-state состояние бумаги:
+Для устройства с одновременно доступными flatbed и feeder используется трёхсоставное состояние бумаги:
 
 - `PRESENT` → feeder;
 - `ABSENT` → flatbed;
@@ -239,69 +239,69 @@ Source-specific routes `/v1/scan/feeder` и `/v1/scan/duplex` отсутству
 
 `UNKNOWN` никогда не трактуется как `PRESENT`.
 
-Если доступен только feeder, `auto` использует feeder. Если доступен только flatbed, `auto` использует flatbed. Если подходящего source нет, запрос отклоняется до physical acquisition. Если capability snapshot выбранного endpoint имеет состояние `unavailable`, `source=auto` не угадывает источник, не запускает acquisition и возвращает `503`.
+Если доступен только feeder, `auto` использует feeder. Если доступен только flatbed, `auto` использует flatbed. Если подходящего источника нет, запрос отклоняется до физического сканирования. Если снимок возможностей выбранной конечной точки имеет состояние `unavailable`, `source=auto` не угадывает источник, не запускает сканирование и возвращает `503`.
 
-Состояние бумаги является snapshot capability, а не гарантией успешной последующей подачи. Если `auto` выбрал feeder для endpoint с доступным flatbed, но реальная попытка acquisition завершилась именно `DeviceFeederEmptyException`, WebAssistant один раз повторяет acquisition со стекла. Другие ошибки feeder не вызывают такого fallback.
+Состояние бумаги является снимком возможности, а не гарантией успешной последующей подачи. Если `auto` выбрал feeder для конечной точки с доступным flatbed, но реальная попытка сканирования завершилась именно `DeviceFeederEmptyException`, WebAssistant один раз повторяет сканирование со стекла. Другие ошибки feeder не вызывают такого переключения.
 
-Явно заданный `flatbed` или `feeder` не имеет скрытого fallback на другой source. В частности, `source=feeder` при пустом ADF возвращает ошибку acquisition и не переключается на flatbed.
+Явно заданный `flatbed` или `feeder` не имеет скрытого переключения на другой источник. В частности, `source=feeder` при пустом ADF возвращает ошибку сканирования и не переключается на flatbed.
 
-### Duplex
+### Двустороннее сканирование
 
 `duplex` отделён от `source`:
 
 - `source=auto` + `duplex=true` → `400`;
 - `source=flatbed` + `duplex=true` → `400`;
-- `source=feeder` + `duplex=false` → simplex feeder;
-- `source=feeder` + `duplex=true` → duplex feeder.
+- `source=feeder` + `duplex=false` → односторонний feeder;
+- `source=feeder` + `duplex=true` → двусторонний feeder.
 
-Если достоверный capability snapshot доказывает, что явно запрошенный source/duplex не поддерживается, запрос возвращает `422` до acquisition. Если capability snapshot недоступен для explicit source, WebAssistant не подменяет неизвестность значением «не поддерживается»: syntactically valid request передаётся backend/device и его фактический отказ становится ошибкой acquisition.
+Если достоверный снимок возможностей доказывает, что явно запрошенный источник или duplex не поддерживается, запрос возвращает `422` до сканирования. Если снимок возможностей недоступен для явно выбранного источника, WebAssistant не подменяет неизвестность значением «не поддерживается»: синтаксически корректный запрос передаётся подсистеме или устройству, и фактический отказ становится ошибкой сканирования.
 
-### Валидация settings
+### Валидация настроек
 
-Синтаксическая валидация всегда выполняется до physical acquisition:
+Синтаксическая валидация всегда выполняется до физического сканирования:
 
-- неизвестное имя `colorMode` или `paperSize`, неположительный `dpi` и другая syntactic/schema ошибка → `400`;
-- если достоверный capability snapshot существует, syntactically valid normalized value, которого нет в projection выбранного mode → `422` и acquisition не запускается;
-- если capability snapshot недоступен при explicit source, syntactically valid явно заданное значение передаётся backend/device; отсутствие знания не превращается в `422`.
+- неизвестное имя `colorMode` или `paperSize`, неположительный `dpi` и другая ошибка синтаксиса или схемы → `400`;
+- если достоверный снимок возможностей существует, синтаксически корректное нормализованное значение, которого нет в проекции выбранного режима → `422`, и сканирование не запускается;
+- если снимок возможностей недоступен при явно выбранном источнике, синтаксически корректное явно заданное значение передаётся подсистеме или устройству; отсутствие знания не превращается в `422`.
 
-### Ошибки acquisition
+### Ошибки сканирования
 
-- `400` — отсутствующий/пустой/синтаксически неверный `scannerId`, malformed JSON, неверный `source`, неверное сочетание `source`/`duplex` либо malformed normalized setting;
-- `404` — синтаксически корректный `scannerId` отсутствует после успешного перечисления указанного им backend;
-- `409` — другой physical scanner acquisition уже выполняется;
-- `422` — достоверный capability snapshot доказывает, что запрошенный source, duplex или valid normalized setting не поддерживается выбранным endpoint/mode;
-- `502` — ошибка scanner acquisition либо scanner backend не вернул читаемый PDF;
-- `503` — scanner module/discovery недоступен, backend выбранного `scannerId` не удалось перечислить либо `source=auto` не может быть разрешён из-за `capabilityState=unavailable`.
+- `400` — отсутствующий, пустой или синтаксически неверный `scannerId`, некорректный JSON, неверный `source`, неверное сочетание `source`/`duplex` либо некорректная нормализованная настройка;
+- `404` — синтаксически корректный `scannerId` отсутствует после успешного перечисления указанной им подсистемы;
+- `409` — уже выполняется другая физическая операция сканирования;
+- `422` — достоверный снимок возможностей доказывает, что запрошенный источник, duplex или корректная нормализованная настройка не поддерживается выбранной конечной точкой и режимом;
+- `502` — ошибка физического сканирования либо подсистема не вернула читаемый PDF;
+- `503` — модуль сканирования или обнаружение недоступны, подсистему выбранного `scannerId` не удалось перечислить либо `source=auto` нельзя разрешить из-за `capabilityState=unavailable`.
 
-На рабочей станции действует единый acquisition lock: одновременно выполняется не более одного physical scanner acquisition.
+На рабочей станции действует единая блокировка: одновременно выполняется не более одной физической операции сканирования.
 
-Успех: `200 OK`, `Content-Type: application/pdf`. PDF передаётся непосредственно в HTTP body; все страницы одного acquisition формируют один многостраничный PDF.
+Успех: `200 OK`, `Content-Type: application/pdf`. PDF передаётся непосредственно в тело HTTP-ответа; все страницы одной физической операции формируют один многостраничный PDF.
 
-Base64, JSON document envelope и ZIP/raster envelope не используются как scanner document transport. После handoff PDF вызывающей стороне scanner operation заканчивается и не хранит завершённый документ как long-term scanner storage.
+Base64, JSON-конверт документа и ZIP/растровый конверт не используются как транспорт документа сканера. После передачи PDF вызывающей стороне операция заканчивается и не хранит завершённый документ как долговременное хранилище сканирования.
 
-Scanner operation сама не выполняет edit/merge/split PDF, OCR/annotation/watermark/deskew или другую semantic document transformation, signing/encryption, business/backend upload и не требует business authentication или per-user business profile. Это граница scanner capability; независимые capabilities WebAssistant имеют отдельную семантику.
+Операция сканирования сама не выполняет редактирование, объединение или разделение PDF, OCR, аннотацию, водяные знаки, выравнивание или другую смысловую обработку документа, подписание, шифрование, загрузку в бизнес-систему и не требует бизнес-аутентификации или пользовательского бизнес-профиля. Это граница возможности сканирования; независимые возможности WebAssistant имеют отдельную семантику.
 
 ## Диагностическая панель
 
-Service panel `/` является browser-level клиентом того же публичного scanner API. Listing загружает только registered endpoint identity; canonical `GET /v1/scanner-settings/schema` и capability projection запрашиваются после явного выбора `scannerId`, после чего панель формирует доступные mode/settings controls без WIA/TWAIN/SANE и scanner-model-specific правил.
+Диагностическая панель `/` является браузерным клиентом того же публичного API сканирования. Список загружает только зарегистрированную идентичность конечных точек; каноническая `GET /v1/scanner-settings/schema` и проекция возможностей запрашиваются после явного выбора `scannerId`, после чего панель формирует доступные режимы и настройки без правил, зависящих от WIA/TWAIN/SANE или модели сканера.
 
 Панель предоставляет:
 
-- выбор scanner endpoint;
-- одну кнопку `Информация о сканере` с read-only discovery/capability данными;
-- один mode selector (`Авто`, `Стекло`, `ADF`, `ADF duplex`) из реально доступных modes;
-- capability-driven controls для accepted normalized settings;
-- одну action `Сканировать`;
-- просмотр/открытие/сохранение полученного PDF;
-- runtime status и собственный журнал WebAssistant.
+- выбор конечной точки сканера;
+- одну кнопку `Информация о сканере` с доступными только для чтения данными обнаружения и возможностей;
+- один выбор режима (`Авто`, `Стекло`, `ADF`, `ADF duplex`) из реально доступных режимов;
+- элементы управления для принятых нормализованных настроек, построенные по возможностям;
+- одно действие `Сканировать`;
+- просмотр, открытие и сохранение полученного PDF;
+- состояние времени выполнения и собственный журнал WebAssistant.
 
-Панель не хранит пользовательские scanner preferences как профиль.
+Панель не хранит пользовательские предпочтения сканирования как профиль.
 
 ## Диагностика API
 
 `GET /v1/diag/info`
 
-Возвращает безопасную runtime-информацию: version, OS, uptime, listen URL, API version, текущее состояние scan coordinator и состояние filesystem capability (`available` или `unavailable`).
+Возвращает безопасную информацию времени выполнения: версию, ОС, время работы, URL прослушивания, версию API, текущее состояние координатора сканирования и состояние возможности файлового обмена (`available` или `unavailable`).
 
 `GET /v1/diag/logs?date=YYYY-MM-DD`
 
@@ -312,19 +312,19 @@ Service panel `/` является browser-level клиентом того же 
 - `400` — дата отсутствует или имеет неверный формат;
 - `404` — журнал за дату отсутствует.
 
-Endpoint принимает только дату, а не filename/path. PDF bytes, Base64, содержимое страниц и document body в технический журнал не записываются. Current service сам не выполняет automatic retention/delete старых daily logs.
+Точка API принимает только дату, а не имя файла или путь. Байты PDF, Base64, содержимое страниц и тело документа в технический журнал не записываются. Текущая служба сама не выполняет автоматическое хранение с ограниченным сроком или удаление старых суточных журналов.
 
 ## CORS
 
-CORS выключен по умолчанию. Для browser origin, отличающегося от origin service panel, его нужно явно добавить в JSON allowlist и установить `WebAssistant:Cors:Enabled=true`. Разрешены только exact HTTP/HTTPS origins; wildcard `*` запрещён.
+CORS выключен по умолчанию. Для браузерного origin, отличающегося от origin диагностической панели, его нужно явно добавить в JSON-список разрешённых источников и установить `WebAssistant:Cors:Enabled=true`. Разрешены только точные HTTP/HTTPS origins; wildcard `*` запрещён.
 
-При включённом CORS WebAssistant разрешает только методы `GET`, `POST`, `PUT`, `DELETE`. Для JSON и opaque upload запросов разрешён request header `Content-Type`. Cross-origin mutation проходит обычный browser preflight; origin, отсутствующий в allowlist, не получает `Access-Control-Allow-Origin`.
+При включённом CORS WebAssistant разрешает только методы `GET`, `POST`, `PUT`, `DELETE`. Для JSON и непрозрачных загрузок разрешён заголовок запроса `Content-Type`. Межсайтовое изменение проходит обычный браузерный preflight; origin, отсутствующий в списке разрешённых, не получает `Access-Control-Allow-Origin`.
 
 ## Файловый обмен
 
-`WebAssistant:FileSystem:RootDirectory` задаёт единственную filesystem authority WebAssistant. Клиент видит только root-relative virtual paths; host absolute path через filesystem API не публикуется. Browser/API не могут менять `RootDirectory`.
+`WebAssistant:FileSystem:RootDirectory` задаёт единственную область полномочий файловой системы WebAssistant. Клиент видит только виртуальные пути относительно корня; абсолютный путь хоста через API файлового обмена не публикуется. Браузер и API не могут менять `RootDirectory`.
 
-Filesystem API stateless: сервер не хранит current directory пользователя. Навигация принадлежит caller и выражается только переданным `path`.
+API файлового обмена не хранит пользовательское состояние: сервер не хранит текущий каталог пользователя. Навигация принадлежит вызывающей стороне и выражается только переданным `path`.
 
 Публичная поверхность содержит ровно следующие маршруты:
 
@@ -338,13 +338,13 @@ DELETE /v1/filesystem/directory?path=<relative>
 POST   /v1/filesystem/move
 ```
 
-Нет catch-all filesystem route, server-side `cd` session или endpoint для произвольного host path.
+Отсутствуют универсальный маршрут файловой системы, серверная сессия `cd` и точка API для произвольного пути хоста.
 
-### Listing
+### Получение списка
 
 `GET /v1/filesystem/list`
 
-`path` — root-relative каталог; пустая строка обозначает `Root`. `limit` по умолчанию равен `200`, maximum `1000`. `cursor` opaque и действителен только для того же каталога, для которого был выдан.
+`path` — каталог относительно корня; пустая строка обозначает `Root`. `limit` по умолчанию равен `200`, максимальное значение — `1000`. `cursor` непрозрачен и действителен только для того каталога, для которого был выдан.
 
 Ответ:
 
@@ -365,7 +365,7 @@ POST   /v1/filesystem/move
 }
 ```
 
-`kind` принимает `file`, `directory` или `link`. Для directory/link `size` может быть `null`. `restrictionCode` — `null`, `active_extension`, `link` или `hardlink`. Listing advisory и не является snapshot: внешняя программа может изменить каталог между страницами.
+`kind` принимает `file`, `directory` или `link`. Для `directory`/`link` поле `size` может быть `null`. `restrictionCode` — `null`, `active_extension`, `link` или `hardlink`. Список носит информационный характер и не является снимком: внешняя программа может изменить каталог между страницами.
 
 ### Создание каталога
 
@@ -379,23 +379,23 @@ POST   /v1/filesystem/move
 }
 ```
 
-Успех: `204 No Content`. Existing destination не заменяется.
+Успех: `204 No Content`. Существующее назначение не заменяется.
 
-### Upload / создание файла
+### Загрузка и создание файла
 
 `PUT /v1/filesystem/file?path=<relative>`
 
-Request body — opaque bytes; canonical content type `application/octet-stream`. Zero-length body создаёт пустой файл.
+Тело запроса — непрозрачные байты; канонический тип содержимого `application/octet-stream`. Тело нулевой длины создаёт пустой файл.
 
-Upload публикуется атомарно: данные сначала полностью записываются во внутренний staging namespace на том же filesystem, затем complete staging object атомарно переименовывается в final path с no-replace semantics. Final filename не появляется из-за данного upload до commit. Existing destination никогда не перезаписывается; competing same-name uploads дают одного победителя и conflict остальным.
+Загрузка публикуется атомарно: данные сначала полностью записываются во внутреннее пространство промежуточных объектов на той же файловой системе, затем завершённый объект атомарно переименовывается в итоговый путь с семантикой `no-replace`. Итоговое имя из-за этой загрузки не появляется до фиксации. Существующее назначение никогда не перезаписывается; конкурирующие загрузки с одним именем дают одного победителя и конфликт остальным.
 
 Успех: `204 No Content`.
 
-### Download
+### Скачивание
 
 `GET /v1/filesystem/file?path=<relative>`
 
-Успех: `200 OK` с file-transfer semantics:
+Успех: `200 OK` с семантикой передачи файла:
 
 ```text
 Content-Type: application/octet-stream
@@ -405,7 +405,7 @@ X-Content-Type-Options: nosniff
 
 WebAssistant не определяет способ отображения по расширению имени файла и не предоставляет `RootDirectory` как дерево статических веб-ресурсов.
 
-### Move / rename
+### Перемещение и переименование
 
 `POST /v1/filesystem/move`
 
@@ -418,27 +418,27 @@ WebAssistant не определяет способ отображения по 
 }
 ```
 
-Move выполняется как atomic same-filesystem rename без replacement. Copy+delete fallback не используется. Успех: `204 No Content`.
+Перемещение выполняется как атомарное переименование в пределах одной файловой системы без замены назначения. Резервный вариант «копировать и удалить» не используется. Успех: `204 No Content`.
 
-### Delete
+### Удаление
 
 `DELETE /v1/filesystem/file?path=<relative>` удаляет обычный файл.
 
-`DELETE /v1/filesystem/directory?path=<relative>` удаляет только пустой каталог. Recursive delete через API отсутствует.
+`DELETE /v1/filesystem/directory?path=<relative>` удаляет только пустой каталог. Рекурсивное удаление через API отсутствует.
 
 Успех: `204 No Content`.
 
-### Path и link policy
+### Политика путей и ссылок
 
-Разрешены только segment-based root-relative paths. Отклоняются absolute Windows/POSIX/UNC paths, `.`/`..`, empty interior segments, NUL, недопустимые platform names и внутренний `.webassistant-*` namespace.
+Разрешены только пути относительно корня, разбитые на сегменты. Отклоняются абсолютные пути Windows/POSIX/UNC, `.`/`..`, пустые внутренние сегменты, NUL, недопустимые для платформы имена и внутреннее пространство `.webassistant-*`.
 
-Symlink, junction и другие link/reparse objects могут быть диагностически видимы в listing как `kind=link`, но public API не проходит через них, не скачивает, не перемещает и не удаляет их. Hard-linked regular files также fail-closed для read/destructive operations.
+Symlink, junction и другие link/reparse-объекты могут быть диагностически видимы в списке как `kind=link`, но публичный API не проходит через них, не скачивает, не перемещает и не удаляет их. Обычные файлы с hard-link alias также отклоняются с закрытием при неопределённости для чтения и разрушающих операций.
 
-### Active-file deny policy
+### Политика запрета активных файлов
 
-WebAssistant считает пользовательский файл недоверенным opaque набором байтов: не исполняет, не парсит, не конвертирует и не рендерит его как web content.
+WebAssistant считает пользовательский файл недоверенным непрозрачным набором байтов: не исполняет, не разбирает, не преобразует и не отображает его как веб-содержимое.
 
-Standalone active extensions блокируются case-insensitive по final extension:
+Самостоятельные активные расширения блокируются без учёта регистра по итоговому расширению:
 
 ```text
 .exe .com .bat .cmd
@@ -454,19 +454,19 @@ Standalone active extensions блокируются case-insensitive по final 
 .svg
 ```
 
-Upload в blocked extension и move из/в такой filename возвращают `422 blocked_file_type`. Если restricted file создан внешней программой напрямую в `RootDirectory`, listing может показать его с `restrictionCode=active_extension`, но WebAssistant не отдаёт его через download и не переименовывает. Удаление такого directory entry разрешено для cleanup.
+Загрузка с заблокированным расширением и перемещение из или в такое имя возвращают `422 blocked_file_type`. Если ограниченный файл создан внешней программой напрямую в `RootDirectory`, список может показать его с `restrictionCode=active_extension`, но WebAssistant не отдаёт его через скачивание и не переименовывает. Удаление такой записи каталога разрешено для очистки.
 
-Это filename policy, а не antivirus/content inspection; переименованный executable под разрешённым расширением не заявляется как обнаруживаемый.
+Это политика имени файла, а не антивирусная проверка или анализ содержимого; исполняемый файл, переименованный под разрешённое расширение, не заявляется как обнаруживаемый.
 
-### Visual browser client
+### Визуальный браузерный клиент
 
-`/filesystem.html` — repository-owned visual client того же public filesystem API. У страницы нет private/test-only privilege: все операции выполняются через перечисленные выше `/v1/filesystem/*` routes.
+`/filesystem.html` — принадлежащий репозиторию визуальный клиент того же публичного API файлового обмена. У страницы нет закрытых или тестовых привилегий: все операции выполняются через перечисленные выше маршруты `/v1/filesystem/*`.
 
-Страница показывает только Root-relative breadcrumb/navigation (`Root`, переход в подкаталог, `В корень`, `На уровень вверх`, `Обновить`) и текущий paged listing. Absolute host path не отображается, а пользовательские файлы не рендерятся inline и не preview-ятся как web content.
+Страница показывает только навигацию относительно корня (`Root`, переход в подкаталог, `В корень`, `На уровень вверх`, `Обновить`) и текущий постраничный список. Абсолютный путь хоста не отображается, а пользовательские файлы не показываются встроенно и не просматриваются как веб-содержимое.
 
-### Ошибки filesystem API
+### Ошибки API файлового обмена
 
-Filesystem errors имеют `Content-Type: application/problem+json` и stable top-level machine-readable `code`.
+Ошибки имеют `Content-Type: application/problem+json` и стабильный верхнеуровневый машиночитаемый `code`.
 
 ```text
 400 invalid_path
@@ -480,6 +480,6 @@ Filesystem errors имеют `Content-Type: application/problem+json` и stable 
 503 filesystem_unavailable
 ```
 
-Problem response не раскрывает host absolute root path.
+Ответ об ошибке не раскрывает абсолютный путь корня на хосте.
 
-Если configured `RootDirectory` невозможно безопасно открыть/проверить, filesystem capability становится unavailable и filesystem routes возвращают `503 filesystem_unavailable`, но unrelated capabilities, включая `GET /v1/health` и scanner API, продолжают работать.
+Если настроенный `RootDirectory` невозможно безопасно открыть или проверить, возможность файлового обмена становится `unavailable`, и маршруты файлового обмена возвращают `503 filesystem_unavailable`, но независимые возможности, включая `GET /v1/health` и API сканирования, продолжают работать.
