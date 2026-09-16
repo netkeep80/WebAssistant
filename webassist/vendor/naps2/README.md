@@ -1,35 +1,35 @@
-# Fixed NAPS2 SDK provenance
+# Происхождение исправленного NAPS2 SDK
 
-WebAssistant vendors a repository-owned NAPS2 SDK package because the published `NAPS2.Sdk 1.3.0` predates fixes and lifecycle/capability data required by the product's direct scanner adapters.
+WebAssistant хранит принадлежащий репозиторию пакет NAPS2 SDK, потому что опубликованный `NAPS2.Sdk 1.3.0` предшествует исправлениям и данным о жизненном цикле и возможностях, которые нужны прямым адаптерам сканеров продукта.
 
-Current committed package:
+Текущий зафиксированный пакет:
 
-- ID: `WebAssistant.NAPS2.Sdk`
-- version: `1.3.0-webassistant.3.450cba65`
-- file: `../nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg`
-- SHA-256: `e8abde3b7bd7e756eea714883c6e6ed79c6bb5f5052cd630b3dc763e45a50915`
-- source repository: `https://github.com/cyanfish/naps2`
-- exact source commit: `450cba65aaffe6387041050a573051a64cd80fe9`
-- upstream baseline includes: `Sane: Fix handling of fixed-point WordList options`
-- WebAssistant SDK delta: add nullable `PaperSourceCaps.FeederHasPaper`
-- WIA mapping: read feeder-ready state when a feeder exists; unreadable state is `null`
-- TWAIN mapping: read `CAP_FEEDERLOADED` when supported; unsupported or unreadable state is `null`
-- worker lifecycle: idempotent shared worker stop task with bounded graceful stop and bounded forced termination
-- factory lifecycle: track all owned workers and in-flight starts, reject publication after shutdown begins, and drain ownership through `ShutdownAsync()`
-- scanning-context lifecycle: expose a shared `ShutdownAsync()` barrier and make `Dispose` wait for it
+- идентификатор: `WebAssistant.NAPS2.Sdk`;
+- версия: `1.3.0-webassistant.3.450cba65`;
+- файл: `../nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg`;
+- SHA-256: `e8abde3b7bd7e756eea714883c6e6ed79c6bb5f5052cd630b3dc763e45a50915`;
+- исходный репозиторий: `https://github.com/cyanfish/naps2`;
+- точный исходный commit: `450cba65aaffe6387041050a573051a64cd80fe9`;
+- исходная база включает исправление `Sane: Fix handling of fixed-point WordList options`;
+- изменение SDK, принадлежащее WebAssistant: добавлено nullable-поле `PaperSourceCaps.FeederHasPaper`;
+- отображение WIA: при наличии feeder читается состояние готовности; нечитаемое состояние представляется как `null`;
+- отображение TWAIN: при поддержке читается `CAP_FEEDERLOADED`; неподдерживаемое или нечитаемое состояние представляется как `null`;
+- жизненный цикл worker: идемпотентная общая задача остановки с ограниченным по времени штатным завершением и ограниченным по времени принудительным завершением;
+- жизненный цикл фабрики: отслеживаются все принадлежащие продукту worker и незавершённые запуски, публикация после начала остановки запрещается, владение завершается через `ShutdownAsync()`;
+- жизненный цикл контекста сканирования: предоставляется общий барьер `ShutdownAsync()`, а `Dispose` ожидает его завершения.
 
-The `.3` package is built from that exact public upstream commit with only the package identity/version customization and the WebAssistant-owned feeder-state and worker-lifecycle deltas described above. No WebAssistant scanner policy is implemented inside NAPS2; `auto` source selection remains WebAssistant-owned.
+Пакет `.3` собирается из указанного точного публичного commit upstream только с настройкой идентификатора/версии пакета и перечисленными выше изменениями состояния feeder и жизненного цикла worker, принадлежащими WebAssistant. Политика выбора сканера WebAssistant внутри NAPS2 не реализуется; выбор источника `auto` остаётся ответственностью WebAssistant.
 
-The .2 package remains immutable and is retained as the previous feeder-paper-state package. Its pinned SHA-256 remains `2dbc6e96cf0d46a554318f3224561861e669dd09b60fc618319c53fed10dcc9f`; it is never rebuilt, overwritten or substituted by the `.3` cutover.
+Пакет `.2` остаётся неизменяемым и сохраняется как предыдущая версия с состоянием бумаги в feeder. Его закреплённый SHA-256 — `2dbc6e96cf0d46a554318f3224561861e669dd09b60fc618319c53fed10dcc9f`; при переходе на `.3` он никогда не пересобирается, не перезаписывается и не подменяется.
 
-## Rebuild
+## Пересборка
 
-Run from the `webassist` directory on a machine with Git, Python 3 and .NET SDK 10:
+Запускайте из каталога `webassist` на машине с Git, Python 3 и .NET SDK 10:
 
 ```bash
 ./vendor/naps2/rebuild-fixed-sdk.sh
 ```
 
-The rebuild script checks out the exact upstream commit, applies exact-layout fail-closed source edits, performs a project-only `net10.0` build with package generation disabled, and then runs `dotnet pack --no-build`. Build and pack use a stable compiler source mapping and omit debug-path output so random temporary checkout paths do not alter the SDK assembly.
+Сценарий пересборки получает точный commit upstream, применяет изменения исходников с закрытием при несовпадении ожидаемой структуры, выполняет только сборку проекта `net10.0` с отключённым созданием пакета, а затем запускает `dotnet pack --no-build`. Сборка и упаковка используют стабильное отображение путей компилятора и исключают отладочные пути, чтобы случайные временные каталоги checkout не меняли сборку SDK.
 
-After `dotnet pack`, the script rewrites the `.nupkg` canonically: entries are sorted, timestamps and ZIP attributes are fixed, extra fields/comments are removed, and entries use `ZIP_STORED`. The resulting package is byte-for-byte reproducible across repeated builds of the same exact inputs. The canonical `.3` bytes are 986644 bytes with SHA-256 `e8abde3b7bd7e756eea714883c6e6ed79c6bb5f5052cd630b3dc763e45a50915`.
+После `dotnet pack` сценарий канонически переписывает `.nupkg`: записи сортируются, временные метки и атрибуты ZIP фиксируются, дополнительные поля и комментарии удаляются, для записей используется `ZIP_STORED`. Полученный пакет воспроизводится байт-в-байт при повторных сборках из тех же точных входных данных. Канонический пакет `.3` имеет размер 986644 байта и SHA-256 `e8abde3b7bd7e756eea714883c6e6ed79c6bb5f5052cd630b3dc763e45a50915`.
