@@ -48,12 +48,14 @@ public sealed class ConfigurationOwnershipTests
             "<Exclude Files=\"$(var.PayloadRoot)\\appsettings.json\" />",
             package,
             StringComparison.Ordinal);
+        Assert.Contains("Id=\"WebAssistantConfigurationComponent\"", package, StringComparison.Ordinal);
+        Assert.Contains("NeverOverwrite=\"yes\"", package, StringComparison.Ordinal);
         Assert.Contains("Id=\"WebAssistantConfigurationFile\"", package, StringComparison.Ordinal);
         Assert.Contains(
             "Source=\"$(var.PayloadRoot)\\appsettings.json\"",
             package,
             StringComparison.Ordinal);
-        Assert.Contains("NeverOverwrite=\"yes\"", package, StringComparison.Ordinal);
+        Assert.Contains("KeyPath=\"yes\"", package, StringComparison.Ordinal);
     }
 
     [Fact]
