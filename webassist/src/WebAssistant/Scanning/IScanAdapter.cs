@@ -4,6 +4,11 @@ internal interface IScanAdapter
 {
     Task<ScannerDiscoveryResult> GetScannersAsync(CancellationToken cancellationToken = default);
 
+    Task<ScannerDevice?> GetScannerAsync(
+        string scannerId,
+        CancellationToken cancellationToken = default) =>
+        GetScannerCapabilitiesAsync(scannerId, cancellationToken);
+
     Task<ScannerDevice?> GetScannerCapabilitiesAsync(
         string scannerId,
         CancellationToken cancellationToken = default)
