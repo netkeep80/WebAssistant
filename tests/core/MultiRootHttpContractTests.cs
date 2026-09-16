@@ -207,6 +207,34 @@ public sealed class MultiRootHttpContractTests : IDisposable
         Assert.False(File.Exists(Path.Combine(nfsRoot, "a.txt")));
     }
 
+    [Fact]
+    public async Task CrossRootMove_IsRejectedBeforeDestinationAuthorityAcquisition()
+    {
+        var unavailable = Path.Combine(tempRoot, "offline");
+        await File.WriteAllTextAsync(Path.Combine(archiveRoot, "a.txt"), "original");
+        using var factory = CreateFactory(new Dictionary<string, string?>
+        {
+            ["WebAssistant:FileSystem:archive"] = archiveRoot,
+            ["WebAssistant:FileSystem:offline"] = unavailable
+        });
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/v1/filesystem/move",
+            new
+            {
+                sourcePath = "archive/a.txt",
+                destinationPath = "offline/a.txt"
+            });
+
+        await AssertProblemCodeAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            "filesystem_path_invalid");
+        Assert.Equal("original", await File.ReadAllTextAsync(Path.Combine(archiveRoot, "a.txt")));
+        Assert.False(Directory.Exists(unavailable));
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(
         IReadOnlyDictionary<string, string?> settings) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
