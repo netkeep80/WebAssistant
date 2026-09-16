@@ -279,11 +279,16 @@ internal static class FileSystemEndpointHandlers
         ResolvedFileSystemPath? destination = null;
         try
         {
-            source = registry.Resolve(parsed.Value!.SourcePath, allowRoot: false);
-            destination = registry.Resolve(parsed.Value.DestinationPath, allowRoot: false);
+            registry.EnsureConfigured();
+            var sourcePath = FileSystemLogicalPath.Parse(
+                parsed.Value!.SourcePath,
+                allowRoot: false);
+            var destinationPath = FileSystemLogicalPath.Parse(
+                parsed.Value.DestinationPath,
+                allowRoot: false);
             if (!string.Equals(
-                    source.Path.RootName,
-                    destination.Path.RootName,
+                    sourcePath.RootName,
+                    destinationPath.RootName,
                     StringComparison.Ordinal))
             {
                 throw new FileSystemOperationException(
@@ -291,6 +296,10 @@ internal static class FileSystemEndpointHandlers
                     "Перемещение между логическими корнями запрещено.");
             }
 
+            source = registry.Resolve(sourcePath.Value, allowRoot: false);
+            destination = new ResolvedFileSystemPath(
+                destinationPath,
+                source.FileSystem);
             await source.FileSystem.MoveNoReplaceAsync(
                 source.Path.RelativePath,
                 destination.Path.RelativePath,
