@@ -148,12 +148,7 @@ api.MapGet("/diag/info", (
         listenUrl = $"http://{options.ListenAddress}:{options.Port}",
         apiVersion = ApiVersion.Current,
         scanState = coordinator.IsBusy ? "busy" : "idle",
-        fileSystemState = fileSystemRegistry.State switch
-        {
-            FileSystemRegistryState.NotConfigured => "not_configured",
-            FileSystemRegistryState.ConfigurationInvalid => "configuration_invalid",
-            _ => "configured"
-        }
+        fileSystemState = fileSystemRegistry.DiagnosticState
     });
 });
 api.MapGet("/diag/logs", async (
