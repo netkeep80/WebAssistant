@@ -81,7 +81,11 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
 
         try
         {
-            selected = await adapter.GetScannerCapabilitiesAsync(scannerId, cancellationToken);
+            var requiresCapabilities = requestedSource == RequestedScanSource.Auto;
+            selected = requiresCapabilities
+                ? await adapter.GetScannerCapabilitiesAsync(scannerId, cancellationToken)
+                : await adapter.GetScannerAsync(scannerId, cancellationToken);
+
             if (selected is null)
             {
                 logger.LogWarning(
@@ -93,62 +97,76 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
             }
 
             ScanSource source;
-            try
-            {
-                source = ScanSourcePolicy.Resolve(
-                    requestedSource,
-                    duplex,
-                    selected.SupportsFlatbed,
-                    selected.SupportsFeeder,
-                    selected.SupportsDuplex,
-                    selected.FeederPaperState);
-            }
-            catch (ArgumentException exception)
-            {
-                logger.LogWarning(exception, "Некорректный запрос источника сканирования");
-                return Results.Problem(
-                    statusCode: StatusCodes.Status400BadRequest,
-                    title: "Некорректные параметры сканирования");
-            }
-            catch (NotSupportedException exception)
-            {
-                logger.LogWarning(exception, "Запрошенный режим сканирования не поддерживается");
-                return Results.Problem(
-                    statusCode: StatusCodes.Status422UnprocessableEntity,
-                    title: "Режим сканирования не поддерживается");
-            }
-
             ScannerEffectiveSettings effectiveSettings;
-            try
+            var hasKnownCapabilities = requiresCapabilities || HasKnownCapabilities(selected);
+
+            if (hasKnownCapabilities)
             {
-                var requestMode = ScannerCapabilityProjection.ResolveMode(requestedSource, duplex);
-                effectiveSettings = ScannerCapabilityProjection.ResolveEffectiveSettings(
-                    selected,
-                    requestMode,
-                    requestedSettings);
+                try
+                {
+                    source = ScanSourcePolicy.Resolve(
+                        requestedSource,
+                        duplex,
+                        selected.SupportsFlatbed,
+                        selected.SupportsFeeder,
+                        selected.SupportsDuplex,
+                        selected.FeederPaperState);
+                }
+                catch (ArgumentException exception)
+                {
+                    logger.LogWarning(exception, "Некорректный запрос источника сканирования");
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status400BadRequest,
+                        title: "Некорректные параметры сканирования");
+                }
+                catch (NotSupportedException exception)
+                {
+                    logger.LogWarning(exception, "Запрошенный режим сканирования не поддерживается");
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status422UnprocessableEntity,
+                        title: "Режим сканирования не поддерживается");
+                }
+
+                try
+                {
+                    var requestMode = ScannerCapabilityProjection.ResolveMode(requestedSource, duplex);
+                    effectiveSettings = ScannerCapabilityProjection.ResolveEffectiveSettings(
+                        selected,
+                        requestMode,
+                        requestedSettings);
+                }
+                catch (ArgumentException exception)
+                {
+                    logger.LogWarning(exception, "Некорректные normalized scanner settings");
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status400BadRequest,
+                        title: "Некорректные параметры сканирования");
+                }
+                catch (NotSupportedException exception)
+                {
+                    logger.LogWarning(exception, "Scanner settings не поддерживаются выбранным режимом");
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status422UnprocessableEntity,
+                        title: "Настройки сканирования не поддерживаются");
+                }
             }
-            catch (ArgumentException exception)
+            else
             {
-                logger.LogWarning(exception, "Некорректные normalized scanner settings");
-                return Results.Problem(
-                    statusCode: StatusCodes.Status400BadRequest,
-                    title: "Некорректные параметры сканирования");
-            }
-            catch (NotSupportedException exception)
-            {
-                logger.LogWarning(exception, "Scanner settings не поддерживаются выбранным режимом");
-                return Results.Problem(
-                    statusCode: StatusCodes.Status422UnprocessableEntity,
-                    title: "Настройки сканирования не поддерживаются");
+                source = ResolveExplicitSourceWithoutCapabilities(requestedSource, duplex);
+                effectiveSettings = new ScannerEffectiveSettings(
+                    requestedSettings.Dpi,
+                    requestedSettings.ColorMode,
+                    requestedSettings.PaperSize);
             }
 
             var safeScannerId = SafeLogText(selected.Id);
             var safeScannerName = SafeLogText(selected.Name);
             logger.LogInformation(
-                "Начало сканирования scannerId={ScannerId} scannerName={ScannerName} source={ScanSource}",
+                "Начало сканирования scannerId={ScannerId} scannerName={ScannerName} source={ScanSource} capabilities={CapabilitiesState}",
                 safeScannerId,
                 safeScannerName,
-                source);
+                source,
+                hasKnownCapabilities ? "known" : "unavailable");
 
             Stream pdf;
             try
@@ -224,6 +242,22 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
             acquisitionGate.Release();
         }
     }
+
+    private static bool HasKnownCapabilities(ScannerDevice scanner) =>
+        scanner.Capabilities is not null ||
+        scanner.SupportsFlatbed ||
+        scanner.SupportsFeeder ||
+        scanner.SupportsDuplex;
+
+    private static ScanSource ResolveExplicitSourceWithoutCapabilities(
+        RequestedScanSource source,
+        bool duplex) => source switch
+    {
+        RequestedScanSource.Flatbed when !duplex => ScanSource.Glass,
+        RequestedScanSource.Feeder when !duplex => ScanSource.Feeder,
+        RequestedScanSource.Feeder when duplex => ScanSource.Duplex,
+        _ => throw new ArgumentException("Для source=auto требуется capability probe.")
+    };
 
     private static bool TryParseRequestedSource(
         string? value,
