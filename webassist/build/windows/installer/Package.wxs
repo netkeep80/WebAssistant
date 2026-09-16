@@ -25,7 +25,7 @@
     <Component
         Id="WebAssistantConfigurationComponent"
         Directory="INSTALLFOLDER"
-        Guid="1E85517C-C8C7-40C3-A0ED-C85DB3770267"
+        Guid="*"
         NeverOverwrite="yes">
       <File
           Id="WebAssistantConfigurationFile"
