@@ -40,6 +40,23 @@ public sealed class ConfigurationOwnershipTests
     }
 
     [Fact]
+    public void WindowsWixInstaller_DoesNotOverwriteExistingAppsettings()
+    {
+        var package = ReadRequired("webassist/build/windows/installer/Package.wxs");
+
+        Assert.Contains(
+            "<Exclude Files=\"$(var.PayloadRoot)\\appsettings.json\" />",
+            package,
+            StringComparison.Ordinal);
+        Assert.Contains("Id=\"WebAssistantConfigurationFile\"", package, StringComparison.Ordinal);
+        Assert.Contains(
+            "Source=\"$(var.PayloadRoot)\\appsettings.json\"",
+            package,
+            StringComparison.Ordinal);
+        Assert.Contains("NeverOverwrite=\"yes\"", package, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LinuxInstaller_RequiresPackagedAppsettingsAndCopiesPayloadWithoutGeneratingDefaults()
     {
         var install = ReadRequired("webassist/install/linux/install.sh");
