@@ -210,13 +210,7 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             logger,
             cancellationToken);
 
-        var matches = devices
-            .Where(candidate => string.Equals(
-                ScannerIdentity.Create(backend, candidate.ID),
-                scannerId,
-                StringComparison.Ordinal))
-            .ToArray();
-
+        var matches = FindMatches(devices, backend, scannerId);
         if (matches.Length == 0)
         {
             return null;
@@ -287,13 +281,7 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             logger,
             cancellationToken);
 
-        var matches = devices
-            .Where(candidate => string.Equals(
-                ScannerIdentity.Create(backend, candidate.ID),
-                scannerId,
-                StringComparison.Ordinal))
-            .ToArray();
-
+        var matches = FindMatches(devices, backend, scannerId);
         if (matches.Length == 0)
         {
             return null;
@@ -327,14 +315,14 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         {
             stopwatch.Stop();
             logger?.LogWarning(
-                "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps outcome=failure durationMs={DurationMs} exceptionType={ExceptionType} hresult={HResult} message={Message}",
+                "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps outcome=failure durationMs={DurationMs} capabilityState=unavailable exceptionType={ExceptionType} hresult={HResult} message={Message}",
                 BackendName(backend),
                 scannerId,
                 stopwatch.ElapsedMilliseconds,
                 exception.GetType().Name,
                 FormatHResult(exception),
                 SafeExceptionMessage(exception, device.ID));
-            throw;
+            return CreateRegisteredEndpoint(device, backend);
         }
     }
 
@@ -372,12 +360,7 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             selectedDriver => controller.GetDeviceList(selectedDriver),
             logger,
             cancellationToken);
-        var matches = devices
-            .Where(candidate => string.Equals(
-                ScannerIdentity.Create(backend, candidate.ID),
-                scannerId,
-                StringComparison.Ordinal))
-            .ToArray();
+        var matches = FindMatches(devices, backend, scannerId);
 
         if (matches.Length == 0)
         {
@@ -453,6 +436,17 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         }
     }
 
+    private static ScanDevice[] FindMatches(
+        IEnumerable<ScanDevice> devices,
+        ScannerBackend backend,
+        string scannerId) =>
+        devices
+            .Where(candidate => string.Equals(
+                ScannerIdentity.Create(backend, candidate.ID),
+                scannerId,
+                StringComparison.Ordinal))
+            .ToArray();
+
     private static async Task<List<ScanDevice>> EnumerateSelectedBackendAsync(
         string operation,
         string scannerId,
@@ -508,7 +502,8 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             SupportsFeeder: false,
             SupportsDuplex: false,
             FeederPaperState.Unknown,
-            Capabilities: null);
+            Capabilities: null,
+            CapabilityState: ScannerCapabilityState.Unavailable);
 
     private static ScannerDevice CreateCapableEndpoint(
         ScanDevice device,
@@ -524,7 +519,8 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             paperSourceCaps?.SupportsFeeder ?? false,
             paperSourceCaps?.SupportsDuplex ?? false,
             MapFeederPaperState(paperSourceCaps?.FeederHasPaper),
-            Naps2ScannerCapabilityMapper.From(caps));
+            Naps2ScannerCapabilityMapper.From(caps),
+            ScannerCapabilityState.Complete);
     }
 
     private static string SafeExceptionMessage(Exception exception, string nativeId)
