@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using WebAssistant.FileSystem;
 
@@ -10,6 +11,7 @@ internal static class FileSystemEndpointHandlers
 
     internal static void Map(RouteGroupBuilder api)
     {
+        api.MapGet("/filesystem/roots", Roots);
         api.MapGet("/filesystem/list", ListAsync);
         api.MapGet("/filesystem/file", DownloadAsync);
         api.MapPut("/filesystem/file", UploadAsync);
@@ -19,18 +21,25 @@ internal static class FileSystemEndpointHandlers
         api.MapPost("/filesystem/move", MoveAsync);
     }
 
+    private static IResult Roots(FileSystemRootRegistry registry)
+    {
+        try
+        {
+            registry.EnsureConfigured();
+            return Results.Ok(new { roots = registry.RootNames });
+        }
+        catch (FileSystemOperationException exception)
+        {
+            return MapError(exception);
+        }
+    }
+
     private static async Task<IResult> ListAsync(
         HttpRequest request,
-        RootedFileSystemProvider provider,
+        FileSystemRootRegistry registry,
         CancellationToken cancellationToken)
     {
-        var fileSystem = GetFileSystem(provider, out var unavailable);
-        if (fileSystem is null)
-        {
-            return unavailable!;
-        }
-
-        var path = QueryValue(request, "path") ?? string.Empty;
+        var path = QueryValue(request, "path");
         var cursor = QueryValue(request, "cursor");
         var rawLimit = QueryValue(request, "limit");
         var limit = DefaultListLimit;
@@ -42,22 +51,23 @@ internal static class FileSystemEndpointHandlers
                 out limit))
         {
             return Problem(
-                FileSystemErrorCodes.InvalidPath,
+                FileSystemErrorCodes.FileSystemPathInvalid,
                 StatusCodes.Status400BadRequest,
                 "Некорректный limit каталога");
         }
 
         try
         {
-            var page = await fileSystem.ListAsync(
-                path,
+            var resolved = registry.Resolve(path, allowRoot: true);
+            var page = await resolved.FileSystem.ListAsync(
+                resolved.Path.RelativePath,
                 limit,
-                cursor,
+                UnwrapCursor(resolved.Path.RootName, cursor),
                 cancellationToken);
             return Results.Ok(new FileSystemListingResponse(
-                path,
+                resolved.Path.Value,
                 page.Entries.Select(MapEntry).ToArray(),
-                page.NextCursor));
+                WrapCursor(resolved.Path.RootName, page.NextCursor)));
         }
         catch (FileSystemOperationException exception)
         {
@@ -67,22 +77,18 @@ internal static class FileSystemEndpointHandlers
 
     private static async Task<IResult> DownloadAsync(
         HttpContext context,
-        RootedFileSystemProvider provider,
+        FileSystemRootRegistry registry,
         CancellationToken cancellationToken)
     {
-        var fileSystem = GetFileSystem(provider, out var unavailable);
-        if (fileSystem is null)
-        {
-            return unavailable!;
-        }
-
-        var path = QueryValue(context.Request, "path");
         try
         {
-            var stream = await fileSystem.OpenReadAsync(
-                path!,
+            var resolved = registry.Resolve(
+                QueryValue(context.Request, "path"),
+                allowRoot: false);
+            var stream = await resolved.FileSystem.OpenReadAsync(
+                resolved.Path.RelativePath,
                 cancellationToken);
-            var fileName = path!
+            var fileName = resolved.Path.RelativePath
                 .Split('/', StringSplitOptions.None)[^1];
             context.Response.Headers["X-Content-Type-Options"] = "nosniff";
             return Results.File(
@@ -99,20 +105,16 @@ internal static class FileSystemEndpointHandlers
 
     private static async Task<IResult> UploadAsync(
         HttpRequest request,
-        RootedFileSystemProvider provider,
+        FileSystemRootRegistry registry,
         CancellationToken cancellationToken)
     {
-        var fileSystem = GetFileSystem(provider, out var unavailable);
-        if (fileSystem is null)
-        {
-            return unavailable!;
-        }
-
-        var path = QueryValue(request, "path");
         try
         {
-            await fileSystem.PublishNewFileAsync(
-                path!,
+            var resolved = registry.Resolve(
+                QueryValue(request, "path"),
+                allowRoot: false);
+            await resolved.FileSystem.PublishNewFileAsync(
+                resolved.Path.RelativePath,
                 request.Body,
                 cancellationToken);
             return Results.NoContent();
@@ -125,19 +127,17 @@ internal static class FileSystemEndpointHandlers
 
     private static async Task<IResult> DeleteFileAsync(
         HttpRequest request,
-        RootedFileSystemProvider provider,
+        FileSystemRootRegistry registry,
         CancellationToken cancellationToken)
     {
-        var fileSystem = GetFileSystem(provider, out var unavailable);
-        if (fileSystem is null)
-        {
-            return unavailable!;
-        }
-
-        var path = QueryValue(request, "path");
         try
         {
-            await fileSystem.DeleteFileAsync(path!, cancellationToken);
+            var resolved = registry.Resolve(
+                QueryValue(request, "path"),
+                allowRoot: false);
+            await resolved.FileSystem.DeleteFileAsync(
+                resolved.Path.RelativePath,
+                cancellationToken);
             return Results.NoContent();
         }
         catch (FileSystemOperationException exception)
@@ -148,15 +148,9 @@ internal static class FileSystemEndpointHandlers
 
     private static async Task<IResult> CreateDirectoryAsync(
         HttpRequest request,
-        RootedFileSystemProvider provider,
+        FileSystemRootRegistry registry,
         CancellationToken cancellationToken)
     {
-        var fileSystem = GetFileSystem(provider, out var unavailable);
-        if (fileSystem is null)
-        {
-            return unavailable!;
-        }
-
         var parsed = await ReadJsonAsync<FileSystemDirectoryRequest>(
             request,
             cancellationToken);
@@ -167,8 +161,9 @@ internal static class FileSystemEndpointHandlers
 
         try
         {
-            await fileSystem.CreateDirectoryAsync(
-                parsed.Value!.Path!,
+            var resolved = registry.Resolve(parsed.Value!.Path, allowRoot: false);
+            await resolved.FileSystem.CreateDirectoryAsync(
+                resolved.Path.RelativePath,
                 cancellationToken);
             return Results.NoContent();
         }
@@ -180,19 +175,17 @@ internal static class FileSystemEndpointHandlers
 
     private static async Task<IResult> DeleteDirectoryAsync(
         HttpRequest request,
-        RootedFileSystemProvider provider,
+        FileSystemRootRegistry registry,
         CancellationToken cancellationToken)
     {
-        var fileSystem = GetFileSystem(provider, out var unavailable);
-        if (fileSystem is null)
-        {
-            return unavailable!;
-        }
-
-        var path = QueryValue(request, "path");
         try
         {
-            await fileSystem.DeleteEmptyDirectoryAsync(path!, cancellationToken);
+            var resolved = registry.Resolve(
+                QueryValue(request, "path"),
+                allowRoot: false);
+            await resolved.FileSystem.DeleteEmptyDirectoryAsync(
+                resolved.Path.RelativePath,
+                cancellationToken);
             return Results.NoContent();
         }
         catch (FileSystemOperationException exception)
@@ -203,15 +196,9 @@ internal static class FileSystemEndpointHandlers
 
     private static async Task<IResult> MoveAsync(
         HttpRequest request,
-        RootedFileSystemProvider provider,
+        FileSystemRootRegistry registry,
         CancellationToken cancellationToken)
     {
-        var fileSystem = GetFileSystem(provider, out var unavailable);
-        if (fileSystem is null)
-        {
-            return unavailable!;
-        }
-
         var parsed = await ReadJsonAsync<FileSystemMoveRequest>(
             request,
             cancellationToken);
@@ -222,9 +209,21 @@ internal static class FileSystemEndpointHandlers
 
         try
         {
-            await fileSystem.MoveNoReplaceAsync(
-                parsed.Value!.SourcePath!,
-                parsed.Value.DestinationPath!,
+            var source = registry.Resolve(parsed.Value!.SourcePath, allowRoot: false);
+            var destination = registry.Resolve(parsed.Value.DestinationPath, allowRoot: false);
+            if (!string.Equals(
+                    source.Path.RootName,
+                    destination.Path.RootName,
+                    StringComparison.Ordinal))
+            {
+                throw new FileSystemOperationException(
+                    FileSystemErrorCodes.FileSystemPathInvalid,
+                    "Перемещение между логическими корнями запрещено.");
+            }
+
+            await source.FileSystem.MoveNoReplaceAsync(
+                source.Path.RelativePath,
+                destination.Path.RelativePath,
                 cancellationToken);
             return Results.NoContent();
         }
@@ -259,27 +258,55 @@ internal static class FileSystemEndpointHandlers
             _ => code
         };
 
-    private static IRootedFileSystem? GetFileSystem(
-        RootedFileSystemProvider provider,
-        out IResult? unavailable)
-    {
-        if (provider.FileSystem is not null)
-        {
-            unavailable = null;
-            return provider.FileSystem;
-        }
-
-        unavailable = Problem(
-            FileSystemErrorCodes.FileSystemUnavailable,
-            StatusCodes.Status503ServiceUnavailable,
-            "Filesystem capability недоступна");
-        return null;
-    }
-
     private static string? QueryValue(HttpRequest request, string name) =>
         request.Query.TryGetValue(name, out var values)
             ? values.ToString()
             : null;
+
+    private static string? WrapCursor(string rootName, string? nativeCursor)
+    {
+        if (nativeCursor is null)
+        {
+            return null;
+        }
+
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(
+            string.Concat(rootName, "\0", nativeCursor)));
+    }
+
+    private static string? UnwrapCursor(string rootName, string? publicCursor)
+    {
+        if (string.IsNullOrEmpty(publicCursor))
+        {
+            return null;
+        }
+
+        try
+        {
+            var value = Encoding.UTF8.GetString(Convert.FromBase64String(publicCursor));
+            var separator = value.IndexOf('\0');
+            if (separator <= 0 ||
+                !string.Equals(value[..separator], rootName, StringComparison.Ordinal) ||
+                separator == value.Length - 1)
+            {
+                throw InvalidCursor();
+            }
+
+            return value[(separator + 1)..];
+        }
+        catch (FormatException exception)
+        {
+            throw new FileSystemOperationException(
+                FileSystemErrorCodes.FileSystemPathInvalid,
+                "Cursor каталога имеет недопустимый формат.",
+                exception);
+        }
+    }
+
+    private static FileSystemOperationException InvalidCursor() =>
+        new(
+            FileSystemErrorCodes.FileSystemPathInvalid,
+            "Cursor не принадлежит выбранному логическому корню.");
 
     private static async Task<(T? Value, IResult? Error)> ReadJsonAsync<T>(
         HttpRequest request,
@@ -291,7 +318,7 @@ internal static class FileSystemEndpointHandlers
             return (
                 null,
                 Problem(
-                    FileSystemErrorCodes.InvalidPath,
+                    FileSystemErrorCodes.FileSystemPathInvalid,
                     StatusCodes.Status400BadRequest,
                     "Ожидается JSON filesystem request"));
         }
@@ -304,7 +331,7 @@ internal static class FileSystemEndpointHandlers
                 ? (
                     null,
                     Problem(
-                        FileSystemErrorCodes.InvalidPath,
+                        FileSystemErrorCodes.FileSystemPathInvalid,
                         StatusCodes.Status400BadRequest,
                         "Пустой JSON filesystem request"))
                 : (value, null);
@@ -314,47 +341,68 @@ internal static class FileSystemEndpointHandlers
             return (
                 null,
                 Problem(
-                    FileSystemErrorCodes.InvalidPath,
+                    FileSystemErrorCodes.FileSystemPathInvalid,
                     StatusCodes.Status400BadRequest,
                     "Некорректный JSON filesystem request"));
         }
     }
 
-    private static IResult MapError(FileSystemOperationException exception) =>
-        exception.Code switch
+    private static IResult MapError(FileSystemOperationException exception)
+    {
+        var publicCode = exception.Code switch
         {
-            FileSystemErrorCodes.InvalidPath => Problem(
-                exception.Code,
+            FileSystemErrorCodes.InvalidPath => FileSystemErrorCodes.FileSystemPathInvalid,
+            FileSystemErrorCodes.FileSystemUnavailable => FileSystemErrorCodes.FileSystemRootUnavailable,
+            _ => exception.Code
+        };
+
+        return publicCode switch
+        {
+            FileSystemErrorCodes.FileSystemPathInvalid => Problem(
+                publicCode,
                 StatusCodes.Status400BadRequest,
-                "Некорректный filesystem path"),
+                "Некорректный логический filesystem path"),
+            FileSystemErrorCodes.FileSystemRootNotFound => Problem(
+                publicCode,
+                StatusCodes.Status404NotFound,
+                "Логический корень не найден"),
             FileSystemErrorCodes.NotFound => Problem(
-                exception.Code,
+                publicCode,
                 StatusCodes.Status404NotFound,
                 "Filesystem object не найден"),
             FileSystemErrorCodes.DestinationExists or
             FileSystemErrorCodes.DirectoryNotEmpty or
             FileSystemErrorCodes.UnsafeLink or
             FileSystemErrorCodes.HardlinkRejected => Problem(
-                exception.Code,
+                publicCode,
                 StatusCodes.Status409Conflict,
                 "Filesystem operation conflict"),
             FileSystemErrorCodes.BlockedFileType => Problem(
-                exception.Code,
+                publicCode,
                 StatusCodes.Status422UnprocessableEntity,
                 "Тип файла запрещён"),
             FileSystemErrorCodes.Locked => Problem(
-                exception.Code,
+                publicCode,
                 423,
                 "Filesystem object заблокирован"),
-            FileSystemErrorCodes.FileSystemUnavailable => Problem(
-                exception.Code,
+            FileSystemErrorCodes.FileSystemNotConfigured => Problem(
+                publicCode,
                 StatusCodes.Status503ServiceUnavailable,
-                "Filesystem capability недоступна"),
+                "Файловая подсистема не настроена"),
+            FileSystemErrorCodes.FileSystemConfigurationInvalid => Problem(
+                publicCode,
+                StatusCodes.Status503ServiceUnavailable,
+                "Конфигурация файловой подсистемы некорректна"),
+            FileSystemErrorCodes.FileSystemRootUnavailable => Problem(
+                publicCode,
+                StatusCodes.Status503ServiceUnavailable,
+                "Логический корень временно недоступен"),
             _ => Problem(
-                FileSystemErrorCodes.FileSystemUnavailable,
+                FileSystemErrorCodes.FileSystemRootUnavailable,
                 StatusCodes.Status503ServiceUnavailable,
-                "Filesystem capability недоступна")
+                "Логический корень временно недоступен")
         };
+    }
 
     private static IResult Problem(
         string code,
