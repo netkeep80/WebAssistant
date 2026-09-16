@@ -81,6 +81,30 @@ internal sealed class FileSystemRootRegistry : IDisposable
     internal IReadOnlyList<string> RootNames =>
         roots.Keys.Order(StringComparer.Ordinal).ToArray();
 
+    internal string DiagnosticState
+    {
+        get
+        {
+            if (State == FileSystemRegistryState.NotConfigured)
+            {
+                return "not_configured";
+            }
+
+            if (State == FileSystemRegistryState.ConfigurationInvalid)
+            {
+                return "configuration_invalid";
+            }
+
+            var available = roots.Values.Count(provider => provider.IsAvailable);
+            if (available == 0)
+            {
+                return "unavailable";
+            }
+
+            return available == roots.Count ? "available" : "degraded";
+        }
+    }
+
     internal static FileSystemRootRegistry Load(IConfiguration configuration)
     {
         var section = configuration.GetSection("WebAssistant:FileSystem");
