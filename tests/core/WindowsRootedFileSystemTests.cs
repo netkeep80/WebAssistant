@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 using WebAssistant.FileSystem;
 using Xunit;
 
@@ -6,6 +7,14 @@ namespace WebAssistant.CoreTests;
 
 public sealed class WindowsRootedFileSystemTests : IDisposable
 {
+    private const uint FILE_LIST_DIRECTORY = 0x0001;
+    private const uint FILE_READ_ATTRIBUTES = 0x0080;
+    private const uint SYNCHRONIZE = 0x00100000;
+    private const uint FILE_SHARE_READ = 0x1;
+    private const uint FILE_SHARE_WRITE = 0x2;
+    private const uint OPEN_EXISTING = 3;
+    private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+
     private readonly string testRoot;
     private readonly string root;
     private readonly string outside;
@@ -20,6 +29,48 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
         outside = Path.Combine(testRoot, "outside");
         Directory.CreateDirectory(root);
         Directory.CreateDirectory(outside);
+    }
+
+    [Fact]
+    public void WindowsRootedFileSystem_RootHandleAllowsThirdPartyDirectoryEnumerationWithoutDeleteShare()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var fileSystem = new WindowsRootedFileSystem(root);
+        var opened = OpenExternalDirectoryWithoutDeleteShare(root);
+        using var external = opened.Handle;
+
+        Assert.False(
+            external.IsInvalid,
+            $"Сторонний процесс не смог открыть RootDirectory; win32={opened.Error}.");
+    }
+
+    [Fact]
+    public async Task WindowsRootedFileSystem_UploadWorksWhenThirdPartyHoldsDestinationDirectoryWithoutDeleteShare()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var incoming = Path.Combine(root, "incoming");
+        Directory.CreateDirectory(incoming);
+        using var fileSystem = new WindowsRootedFileSystem(root);
+        var opened = OpenExternalDirectoryWithoutDeleteShare(incoming);
+        using var external = opened.Handle;
+        Assert.False(
+            external.IsInvalid,
+            $"Тестовый внешний directory handle не открылся; win32={opened.Error}.");
+
+        await using var source = new MemoryStream("payload"u8.ToArray());
+        await fileSystem.PublishNewFileAsync("incoming/payload.bin", source);
+
+        Assert.Equal(
+            "payload",
+            await File.ReadAllTextAsync(Path.Combine(incoming, "payload.bin")));
     }
 
     [Fact]
@@ -173,6 +224,21 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
         Assert.Equal("OUTSIDE-SENTINEL", await File.ReadAllTextAsync(outsideSentinel));
     }
 
+    private static (SafeFileHandle Handle, int Error) OpenExternalDirectoryWithoutDeleteShare(
+        string path)
+    {
+        var handle = CreateFile(
+            path,
+            FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            IntPtr.Zero,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            IntPtr.Zero);
+        var error = handle.IsInvalid ? Marshal.GetLastPInvokeError() : 0;
+        return (handle, error);
+    }
+
     private static void ReplaceParentRepeatedly(
         string slot,
         string outside,
@@ -219,6 +285,16 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
         string newFileName,
         string existingFileName,
         IntPtr securityAttributes);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFile(
+        string fileName,
+        uint desiredAccess,
+        uint shareMode,
+        IntPtr securityAttributes,
+        uint creationDisposition,
+        uint flagsAndAttributes,
+        IntPtr templateFile);
 
     public void Dispose()
     {

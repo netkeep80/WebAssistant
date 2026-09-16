@@ -12,7 +12,10 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
     private const uint DELETE = 0x00010000;
     private const uint SYNCHRONIZE = 0x00100000;
     private const uint FILE_READ_DATA = 0x0001;
+    private const uint FILE_LIST_DIRECTORY = 0x0001;
     private const uint FILE_READ_ATTRIBUTES = 0x0080;
+    private const uint DirectoryAnchorAccess =
+        FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
 
     private const uint FILE_SHARE_READ = 0x1;
     private const uint FILE_SHARE_WRITE = 0x2;
@@ -77,7 +80,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
 
         rootHandle = CreateFile(
             Path.GetFullPath(rootDirectory.Trim()),
-            GENERIC_READ | GENERIC_WRITE | DELETE,
+            DirectoryAnchorAccess,
             ShareAll,
             IntPtr.Zero,
             OPEN_EXISTING,
@@ -385,7 +388,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         using var staging = OpenInternalRelative(
             rootHandle,
             FileSystemInternalNames.StagingDirectory,
-            GENERIC_READ | GENERIC_WRITE | DELETE | SYNCHRONIZE,
+            DirectoryAnchorAccess,
             FILE_OPEN_IF,
             FILE_ATTRIBUTE_DIRECTORY,
             FILE_DIRECTORY_FILE |
@@ -414,7 +417,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         var staging = OpenInternalRelative(
             rootHandle,
             FileSystemInternalNames.StagingDirectory,
-            GENERIC_READ | GENERIC_WRITE | DELETE | SYNCHRONIZE,
+            DirectoryAnchorAccess,
             FILE_OPEN,
             0,
             FILE_DIRECTORY_FILE |
@@ -619,7 +622,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
                 var next = OpenRelative(
                     current,
                     segment,
-                    GENERIC_READ | GENERIC_WRITE | DELETE | SYNCHRONIZE,
+                    DirectoryAnchorAccess,
                     FILE_OPEN,
                     0,
                     FILE_DIRECTORY_FILE |
