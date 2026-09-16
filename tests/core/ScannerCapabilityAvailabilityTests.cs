@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -43,14 +44,7 @@ public sealed class ScannerCapabilityAvailabilityTests
     {
         var scannerId = ScannerIdentity.Create(ScannerBackend.Twain, "twain-native-1");
         var adapter = new UnavailableCapabilitiesAdapter(scannerId);
-        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IScanAdapter>();
-                services.AddSingleton<IScanAdapter>(adapter);
-            });
-        });
+        using var factory = CreateFactory(adapter);
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync($"/v1/scanners/{scannerId}/settings");
@@ -61,8 +55,40 @@ public sealed class ScannerCapabilityAvailabilityTests
         Assert.Empty(json.RootElement.GetProperty("modes").EnumerateArray());
     }
 
+    [Fact]
+    public async Task AutoScan_UnavailableCapabilities_Returns503WithoutAcquisition()
+    {
+        var scannerId = ScannerIdentity.Create(ScannerBackend.Twain, "twain-native-1");
+        var adapter = new UnavailableCapabilitiesAdapter(scannerId);
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsJsonAsync("/v1/scan", new
+        {
+            scannerId,
+            source = "auto"
+        });
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal(0, adapter.ScanCalls);
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory(IScanAdapter adapter) =>
+        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IScanAdapter>();
+                services.AddSingleton(adapter);
+            });
+        });
+
     private sealed class UnavailableCapabilitiesAdapter(string scannerId) : IScanAdapter
     {
+        private int scanCalls;
+
+        internal int ScanCalls => Volatile.Read(ref scanCalls);
+
         public Task<ScannerDiscoveryResult> GetScannersAsync(
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new ScannerDiscoveryResult([]));
@@ -80,8 +106,12 @@ public sealed class ScannerCapabilityAvailabilityTests
 
         public Task<Stream> ScanAsync(
             string scannerId,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref scanCalls);
+            return Task.FromResult<Stream>(
+                new MemoryStream("%PDF-1.7\n%%EOF"u8.ToArray(), writable: false));
+        }
     }
 }
 
