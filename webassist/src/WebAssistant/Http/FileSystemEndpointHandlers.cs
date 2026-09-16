@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -8,6 +9,7 @@ namespace WebAssistant.Http;
 internal static class FileSystemEndpointHandlers
 {
     private const int DefaultListLimit = 200;
+    private const string LoggerCategory = "WebAssistant.Http.FileSystem";
 
     internal static void Map(RouteGroupBuilder api)
     {
@@ -21,15 +23,23 @@ internal static class FileSystemEndpointHandlers
         api.MapPost("/filesystem/move", MoveAsync);
     }
 
-    private static IResult Roots(FileSystemRootRegistry registry)
+    private static IResult Roots(
+        FileSystemRootRegistry registry,
+        ILoggerFactory loggerFactory)
     {
+        var started = Stopwatch.GetTimestamp();
         try
         {
             registry.EnsureConfigured();
+            loggerFactory.CreateLogger(LoggerCategory).LogInformation(
+                "Filesystem operation=roots result=success rootCount={RootCount} elapsedMs={ElapsedMs:F1}",
+                registry.RootNames.Count,
+                Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             return Results.Ok(new { roots = registry.RootNames });
         }
         catch (FileSystemOperationException exception)
         {
+            LogFailure(loggerFactory, "roots", null, exception, started);
             return MapError(exception);
         }
     }
@@ -37,8 +47,11 @@ internal static class FileSystemEndpointHandlers
     private static async Task<IResult> ListAsync(
         HttpRequest request,
         FileSystemRootRegistry registry,
+        ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
+        var started = Stopwatch.GetTimestamp();
+        ResolvedFileSystemPath? resolved = null;
         var path = QueryValue(request, "path");
         var cursor = QueryValue(request, "cursor");
         var rawLimit = QueryValue(request, "limit");
@@ -58,12 +71,13 @@ internal static class FileSystemEndpointHandlers
 
         try
         {
-            var resolved = registry.Resolve(path, allowRoot: true);
+            resolved = registry.Resolve(path, allowRoot: true);
             var page = await resolved.FileSystem.ListAsync(
                 resolved.Path.RelativePath,
                 limit,
                 UnwrapCursor(resolved.Path.RootName, cursor),
                 cancellationToken);
+            LogSuccess(loggerFactory, "list", resolved.Path, started);
             return Results.Ok(new FileSystemListingResponse(
                 resolved.Path.Value,
                 page.Entries.Select(MapEntry).ToArray(),
@@ -71,6 +85,12 @@ internal static class FileSystemEndpointHandlers
         }
         catch (FileSystemOperationException exception)
         {
+            LogFailure(
+                loggerFactory,
+                "list",
+                resolved?.Path ?? TryParsePath(path, allowRoot: true),
+                exception,
+                started);
             return MapError(exception);
         }
     }
@@ -78,19 +98,22 @@ internal static class FileSystemEndpointHandlers
     private static async Task<IResult> DownloadAsync(
         HttpContext context,
         FileSystemRootRegistry registry,
+        ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
+        var started = Stopwatch.GetTimestamp();
+        ResolvedFileSystemPath? resolved = null;
+        var rawPath = QueryValue(context.Request, "path");
         try
         {
-            var resolved = registry.Resolve(
-                QueryValue(context.Request, "path"),
-                allowRoot: false);
+            resolved = registry.Resolve(rawPath, allowRoot: false);
             var stream = await resolved.FileSystem.OpenReadAsync(
                 resolved.Path.RelativePath,
                 cancellationToken);
             var fileName = resolved.Path.RelativePath
                 .Split('/', StringSplitOptions.None)[^1];
             context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            LogSuccess(loggerFactory, "download", resolved.Path, started);
             return Results.File(
                 stream,
                 "application/octet-stream",
@@ -99,6 +122,12 @@ internal static class FileSystemEndpointHandlers
         }
         catch (FileSystemOperationException exception)
         {
+            LogFailure(
+                loggerFactory,
+                "download",
+                resolved?.Path ?? TryParsePath(rawPath, allowRoot: false),
+                exception,
+                started);
             return MapError(exception);
         }
     }
@@ -106,21 +135,30 @@ internal static class FileSystemEndpointHandlers
     private static async Task<IResult> UploadAsync(
         HttpRequest request,
         FileSystemRootRegistry registry,
+        ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
+        var started = Stopwatch.GetTimestamp();
+        ResolvedFileSystemPath? resolved = null;
+        var rawPath = QueryValue(request, "path");
         try
         {
-            var resolved = registry.Resolve(
-                QueryValue(request, "path"),
-                allowRoot: false);
+            resolved = registry.Resolve(rawPath, allowRoot: false);
             await resolved.FileSystem.PublishNewFileAsync(
                 resolved.Path.RelativePath,
                 request.Body,
                 cancellationToken);
+            LogSuccess(loggerFactory, "upload", resolved.Path, started);
             return Results.NoContent();
         }
         catch (FileSystemOperationException exception)
         {
+            LogFailure(
+                loggerFactory,
+                "upload",
+                resolved?.Path ?? TryParsePath(rawPath, allowRoot: false),
+                exception,
+                started);
             return MapError(exception);
         }
     }
@@ -128,20 +166,29 @@ internal static class FileSystemEndpointHandlers
     private static async Task<IResult> DeleteFileAsync(
         HttpRequest request,
         FileSystemRootRegistry registry,
+        ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
+        var started = Stopwatch.GetTimestamp();
+        ResolvedFileSystemPath? resolved = null;
+        var rawPath = QueryValue(request, "path");
         try
         {
-            var resolved = registry.Resolve(
-                QueryValue(request, "path"),
-                allowRoot: false);
+            resolved = registry.Resolve(rawPath, allowRoot: false);
             await resolved.FileSystem.DeleteFileAsync(
                 resolved.Path.RelativePath,
                 cancellationToken);
+            LogSuccess(loggerFactory, "delete-file", resolved.Path, started);
             return Results.NoContent();
         }
         catch (FileSystemOperationException exception)
         {
+            LogFailure(
+                loggerFactory,
+                "delete-file",
+                resolved?.Path ?? TryParsePath(rawPath, allowRoot: false),
+                exception,
+                started);
             return MapError(exception);
         }
     }
@@ -149,6 +196,7 @@ internal static class FileSystemEndpointHandlers
     private static async Task<IResult> CreateDirectoryAsync(
         HttpRequest request,
         FileSystemRootRegistry registry,
+        ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
         var parsed = await ReadJsonAsync<FileSystemDirectoryRequest>(
@@ -159,16 +207,25 @@ internal static class FileSystemEndpointHandlers
             return parsed.Error;
         }
 
+        var started = Stopwatch.GetTimestamp();
+        ResolvedFileSystemPath? resolved = null;
         try
         {
-            var resolved = registry.Resolve(parsed.Value!.Path, allowRoot: false);
+            resolved = registry.Resolve(parsed.Value!.Path, allowRoot: false);
             await resolved.FileSystem.CreateDirectoryAsync(
                 resolved.Path.RelativePath,
                 cancellationToken);
+            LogSuccess(loggerFactory, "create-directory", resolved.Path, started);
             return Results.NoContent();
         }
         catch (FileSystemOperationException exception)
         {
+            LogFailure(
+                loggerFactory,
+                "create-directory",
+                resolved?.Path ?? TryParsePath(parsed.Value!.Path, allowRoot: false),
+                exception,
+                started);
             return MapError(exception);
         }
     }
@@ -176,20 +233,29 @@ internal static class FileSystemEndpointHandlers
     private static async Task<IResult> DeleteDirectoryAsync(
         HttpRequest request,
         FileSystemRootRegistry registry,
+        ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
+        var started = Stopwatch.GetTimestamp();
+        ResolvedFileSystemPath? resolved = null;
+        var rawPath = QueryValue(request, "path");
         try
         {
-            var resolved = registry.Resolve(
-                QueryValue(request, "path"),
-                allowRoot: false);
+            resolved = registry.Resolve(rawPath, allowRoot: false);
             await resolved.FileSystem.DeleteEmptyDirectoryAsync(
                 resolved.Path.RelativePath,
                 cancellationToken);
+            LogSuccess(loggerFactory, "delete-directory", resolved.Path, started);
             return Results.NoContent();
         }
         catch (FileSystemOperationException exception)
         {
+            LogFailure(
+                loggerFactory,
+                "delete-directory",
+                resolved?.Path ?? TryParsePath(rawPath, allowRoot: false),
+                exception,
+                started);
             return MapError(exception);
         }
     }
@@ -197,6 +263,7 @@ internal static class FileSystemEndpointHandlers
     private static async Task<IResult> MoveAsync(
         HttpRequest request,
         FileSystemRootRegistry registry,
+        ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
         var parsed = await ReadJsonAsync<FileSystemMoveRequest>(
@@ -207,10 +274,13 @@ internal static class FileSystemEndpointHandlers
             return parsed.Error;
         }
 
+        var started = Stopwatch.GetTimestamp();
+        ResolvedFileSystemPath? source = null;
+        ResolvedFileSystemPath? destination = null;
         try
         {
-            var source = registry.Resolve(parsed.Value!.SourcePath, allowRoot: false);
-            var destination = registry.Resolve(parsed.Value.DestinationPath, allowRoot: false);
+            source = registry.Resolve(parsed.Value!.SourcePath, allowRoot: false);
+            destination = registry.Resolve(parsed.Value.DestinationPath, allowRoot: false);
             if (!string.Equals(
                     source.Path.RootName,
                     destination.Path.RootName,
@@ -225,10 +295,23 @@ internal static class FileSystemEndpointHandlers
                 source.Path.RelativePath,
                 destination.Path.RelativePath,
                 cancellationToken);
+            LogSuccess(loggerFactory, "move", source.Path, started);
+            LogSuccess(loggerFactory, "move", destination.Path, started);
             return Results.NoContent();
         }
         catch (FileSystemOperationException exception)
         {
+            LogFailure(
+                loggerFactory,
+                "move",
+                source?.Path ?? TryParsePath(parsed.Value!.SourcePath, allowRoot: false),
+                exception,
+                started);
+            if (destination?.Path is not null)
+            {
+                LogFailure(loggerFactory, "move", destination.Path, exception, started);
+            }
+
             return MapError(exception);
         }
     }
@@ -347,15 +430,73 @@ internal static class FileSystemEndpointHandlers
         }
     }
 
-    private static IResult MapError(FileSystemOperationException exception)
+    private static FileSystemLogicalPath? TryParsePath(string? value, bool allowRoot)
     {
-        var publicCode = exception.Code switch
+        try
+        {
+            return FileSystemLogicalPath.Parse(value, allowRoot);
+        }
+        catch (FileSystemOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static void LogSuccess(
+        ILoggerFactory loggerFactory,
+        string operation,
+        FileSystemLogicalPath path,
+        long started)
+    {
+        loggerFactory.CreateLogger(LoggerCategory).LogInformation(
+            "Filesystem operation={Operation} logicalRoot={LogicalRoot} relativePath={RelativePath} result=success errorCode=none elapsedMs={ElapsedMs:F1}",
+            operation,
+            path.RootName,
+            path.RelativePath,
+            Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+    }
+
+    private static void LogFailure(
+        ILoggerFactory loggerFactory,
+        string operation,
+        FileSystemLogicalPath? path,
+        FileSystemOperationException exception,
+        long started)
+    {
+        var logger = loggerFactory.CreateLogger(LoggerCategory);
+        var hresult = $"0x{unchecked((uint)exception.HResult):X8}";
+        if (path is null)
+        {
+            logger.LogWarning(
+                "Filesystem operation={Operation} result=failed errorCode={ErrorCode} hresult={HResult} elapsedMs={ElapsedMs:F1}",
+                operation,
+                PublicErrorCode(exception.Code),
+                hresult,
+                Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            return;
+        }
+
+        logger.LogWarning(
+            "Filesystem operation={Operation} logicalRoot={LogicalRoot} relativePath={RelativePath} result=failed errorCode={ErrorCode} hresult={HResult} elapsedMs={ElapsedMs:F1}",
+            operation,
+            path.RootName,
+            path.RelativePath,
+            PublicErrorCode(exception.Code),
+            hresult,
+            Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+    }
+
+    private static string PublicErrorCode(string code) =>
+        code switch
         {
             FileSystemErrorCodes.InvalidPath => FileSystemErrorCodes.FileSystemPathInvalid,
             FileSystemErrorCodes.FileSystemUnavailable => FileSystemErrorCodes.FileSystemRootUnavailable,
-            _ => exception.Code
+            _ => code
         };
 
+    private static IResult MapError(FileSystemOperationException exception)
+    {
+        var publicCode = PublicErrorCode(exception.Code);
         return publicCode switch
         {
             FileSystemErrorCodes.FileSystemPathInvalid => Problem(
