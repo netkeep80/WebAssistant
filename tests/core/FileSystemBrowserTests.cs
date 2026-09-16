@@ -71,6 +71,14 @@ public sealed class FileSystemBrowserTests
                 .Filter(new() { HasTextString = name });
             async Task Visible(string side, string name) =>
                 await Row(side, name).WaitForAsync();
+            async Task WaitBreadcrumb(string side, string expected) =>
+                await page.WaitForFunctionAsync(
+                    "args => document.getElementById(args.id).innerText.includes(args.expected)",
+                    new
+                    {
+                        id = $"filesystem-{side}-breadcrumb",
+                        expected
+                    });
             async Task Prompt(string selector, string value)
             {
                 prompts.Enqueue(value);
@@ -80,6 +88,8 @@ public sealed class FileSystemBrowserTests
             await page.Locator("#filesystem-roots [data-root='archive']").WaitForAsync();
             await page.Locator("#filesystem-roots [data-root='nfs']").WaitForAsync();
             await page.ClickAsync("#filesystem-roots [data-root='archive']");
+            await WaitBreadcrumb("left", "archive");
+            await WaitBreadcrumb("right", "archive");
 
             Assert.Equal(
                 "archive",
@@ -89,7 +99,9 @@ public sealed class FileSystemBrowserTests
                 (await page.Locator("#filesystem-right-breadcrumb").InnerTextAsync()).Trim());
 
             await Row("left", "incoming").Locator("[data-entry-open]").ClickAsync();
+            await WaitBreadcrumb("left", "archive / incoming");
             await Row("right", "processed").Locator("[data-entry-open]").ClickAsync();
+            await WaitBreadcrumb("right", "archive / processed");
             Assert.Contains(
                 "archive / incoming",
                 await page.Locator("#filesystem-left-breadcrumb").InnerTextAsync());
@@ -171,7 +183,9 @@ public sealed class FileSystemBrowserTests
             await Row("right", "a.bin").WaitForAsync(new() { State = WaitForSelectorState.Detached });
 
             await page.ClickAsync("#filesystem-right-breadcrumb [data-path='archive/']");
+            await WaitBreadcrumb("right", "archive");
             await Row("right", "incoming").Locator("[data-entry-open]").ClickAsync();
+            await WaitBreadcrumb("right", "archive / incoming");
             await Visible("right", "a.bin");
             Assert.True(await Row("left", "a.bin").Locator("[data-action=move]").IsDisabledAsync());
             Assert.True(await Row("right", "a.bin").Locator("[data-action=move]").IsDisabledAsync());
@@ -184,10 +198,12 @@ public sealed class FileSystemBrowserTests
             await Prompt("#filesystem-left-create-directory", "nested");
             await Visible("left", "nested");
             await Row("left", "nested").Locator("[data-entry-open]").ClickAsync();
+            await WaitBreadcrumb("left", "archive / incoming / nested");
             await page.Locator("#filesystem-left-entries tr[data-parent-row='true']").WaitForAsync();
             Assert.Equal(0, await page.Locator(
                 "#filesystem-left-entries tr[data-parent-row='true'] [data-action]").CountAsync());
             await page.Locator("#filesystem-left-entries tr[data-parent-row='true'] [data-entry-open]").ClickAsync();
+            await WaitBreadcrumb("left", "archive / incoming");
             Assert.Contains(
                 "archive / incoming",
                 await page.Locator("#filesystem-left-breadcrumb").InnerTextAsync());
@@ -203,6 +219,7 @@ public sealed class FileSystemBrowserTests
                 await page.Locator("#filesystem-right-sort-key").InputValueAsync());
 
             await page.ClickAsync("#filesystem-left-breadcrumb [data-path='archive/']");
+            await WaitBreadcrumb("left", "archive");
             await Visible("left", "blocked.sh");
             Assert.Contains(
                 "entry-restricted",
@@ -220,6 +237,8 @@ public sealed class FileSystemBrowserTests
             await Visible("left", "renamed.txt");
 
             await page.ClickAsync("#filesystem-roots [data-root='nfs']");
+            await WaitBreadcrumb("left", "nfs");
+            await WaitBreadcrumb("right", "nfs");
             Assert.Equal(
                 "nfs",
                 (await page.Locator("#filesystem-left-breadcrumb").InnerTextAsync()).Trim());
