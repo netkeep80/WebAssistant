@@ -19,7 +19,19 @@
 
     <Files Include="$(var.PayloadRoot)\**" Directory="INSTALLFOLDER">
       <Exclude Files="$(var.PayloadRoot)\WebAssistant.exe" />
+      <Exclude Files="$(var.PayloadRoot)\appsettings.json" />
     </Files>
+
+    <Component
+        Id="WebAssistantConfigurationComponent"
+        Directory="INSTALLFOLDER"
+        Guid="1E85517C-C8C7-40C3-A0ED-C85DB3770267"
+        NeverOverwrite="yes">
+      <File
+          Id="WebAssistantConfigurationFile"
+          Source="$(var.PayloadRoot)\appsettings.json"
+          KeyPath="yes" />
+    </Component>
 
     <Component Id="WebAssistantServiceComponent" Directory="INSTALLFOLDER" Guid="*">
       <File
