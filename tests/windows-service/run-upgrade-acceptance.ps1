@@ -335,6 +335,26 @@ function Assert-ProgramDataSentinels {
     }
 }
 
+function Write-ConfigMsiLogEvidence {
+    param([Parameter(Mandatory = $true)][string]$PrimaryLog)
+
+    $directory = Split-Path -Parent $PrimaryLog
+    $stem = [IO.Path]::GetFileNameWithoutExtension($PrimaryLog)
+    foreach ($log in @(Get-ChildItem -LiteralPath $directory -Filter "$stem*.log" -File -ErrorAction SilentlyContinue)) {
+        $matches = @(Select-String `
+            -LiteralPath $log.FullName `
+            -Pattern 'appsettings|Component:|RemoveFiles|InstallFiles' `
+            -CaseSensitive:$false `
+            -ErrorAction SilentlyContinue | Select-Object -First 120)
+        if ($matches.Count -gt 0) {
+            Write-Host "config_msi_log=$($log.Name)"
+            foreach ($match in $matches) {
+                Write-Host "config_msi_evidence=$($match.LineNumber):$($match.Line.Trim())"
+            }
+        }
+    }
+}
+
 function Assert-InstalledConfigPreserved {
     param(
         [Parameter(Mandatory = $true)][string]$ExpectedSha256,
@@ -342,10 +362,12 @@ function Assert-InstalledConfigPreserved {
     )
 
     if (-not (Test-Path -LiteralPath $installedConfig -PathType Leaf)) {
+        Write-ConfigMsiLogEvidence -PrimaryLog $burnLog
         throw "Installed appsettings.json disappeared during $Stage."
     }
     $actualSha256 = (Get-FileHash -LiteralPath $installedConfig -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualSha256 -ne $ExpectedSha256) {
+        Write-ConfigMsiLogEvidence -PrimaryLog $burnLog
         throw "Installed appsettings.json was overwritten during $Stage. expected=$ExpectedSha256 actual=$actualSha256"
     }
 }
