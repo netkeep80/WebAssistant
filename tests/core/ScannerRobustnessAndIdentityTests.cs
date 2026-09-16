@@ -59,6 +59,19 @@ public sealed class ScannerRobustnessAndIdentityTests
         Assert.Equal(1, adapter.ScanCalls);
     }
 
+    [Fact]
+    public async Task ScannerListing_PublicIdCollision_FailsClosed()
+    {
+        var collisionId = "wa2-wia-AAAAAAAAAAAAAAAA";
+        var adapter = new CollisionDiscoveryFakeAdapter(collisionId);
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/v1/scanners");
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(IScanAdapter adapter)
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -127,5 +140,21 @@ public sealed class ScannerRobustnessAndIdentityTests
             return Task.FromResult<Stream>(
                 new MemoryStream("%PDF-1.7\n%%EOF"u8.ToArray(), writable: false));
         }
+    }
+
+    private sealed class CollisionDiscoveryFakeAdapter(string collisionId) : IScanAdapter
+    {
+        public Task<ScannerDiscoveryResult> GetScannersAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new ScannerDiscoveryResult(
+            [
+                new ScannerDevice(collisionId, "First", ScannerBackend.Wia),
+                new ScannerDevice(collisionId, "Second", ScannerBackend.Wia)
+            ]));
+
+        public Task<Stream> ScanAsync(
+            string scannerId,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }
