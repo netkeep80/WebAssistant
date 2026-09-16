@@ -96,9 +96,21 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
                     title: "Сканер не найден");
             }
 
+            if (requiresCapabilities &&
+                selected.CapabilityState == ScannerCapabilityState.Unavailable)
+            {
+                logger.LogWarning(
+                    "Автовыбор источника невозможен: capabilities недоступны scannerId={ScannerId}",
+                    SafeLogText(selected.Id));
+                return Results.Problem(
+                    statusCode: StatusCodes.Status503ServiceUnavailable,
+                    title: "Возможности сканера недоступны");
+            }
+
             ScanSource source;
             ScannerEffectiveSettings effectiveSettings;
-            var hasKnownCapabilities = requiresCapabilities || HasKnownCapabilities(selected);
+            var hasKnownCapabilities =
+                selected.CapabilityState != ScannerCapabilityState.Unavailable;
 
             if (hasKnownCapabilities)
             {
@@ -162,11 +174,11 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
             var safeScannerId = SafeLogText(selected.Id);
             var safeScannerName = SafeLogText(selected.Name);
             logger.LogInformation(
-                "Начало сканирования scannerId={ScannerId} scannerName={ScannerName} source={ScanSource} capabilities={CapabilitiesState}",
+                "Начало сканирования scannerId={ScannerId} scannerName={ScannerName} source={ScanSource} capabilityState={CapabilityState}",
                 safeScannerId,
                 safeScannerName,
                 source,
-                hasKnownCapabilities ? "known" : "unavailable");
+                selected.CapabilityState.ToString().ToLowerInvariant());
 
             Stream pdf;
             try
@@ -242,12 +254,6 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
             acquisitionGate.Release();
         }
     }
-
-    private static bool HasKnownCapabilities(ScannerDevice scanner) =>
-        scanner.Capabilities is not null ||
-        scanner.SupportsFlatbed ||
-        scanner.SupportsFeeder ||
-        scanner.SupportsDuplex;
 
     private static ScanSource ResolveExplicitSourceWithoutCapabilities(
         RequestedScanSource source,
