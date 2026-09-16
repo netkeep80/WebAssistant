@@ -98,11 +98,12 @@ public sealed class DependencyOwnershipTests
         var provenancePath = Path.Combine(root, "webassist", "vendor", "naps2", "README.md");
         var provenance = File.ReadAllText(provenancePath);
 
-        Assert.Contains($"- ID: `{PackageId}`", provenance, StringComparison.Ordinal);
-        Assert.Contains($"- version: `{PackageVersion}`", provenance, StringComparison.Ordinal);
-        Assert.Contains($"- file: `../nuget/{PackageFile}`", provenance, StringComparison.Ordinal);
-        Assert.Contains($"- exact source commit: `{UpstreamCommit}`", provenance, StringComparison.Ordinal);
-        Assert.Contains(".2 package remains immutable", provenance, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains($"`{PackageId}`", provenance, StringComparison.Ordinal);
+        Assert.Contains($"`{PackageVersion}`", provenance, StringComparison.Ordinal);
+        Assert.Contains($"`../nuget/{PackageFile}`", provenance, StringComparison.Ordinal);
+        Assert.Contains($"`{UpstreamCommit}`", provenance, StringComparison.Ordinal);
+        Assert.Contains($"`{PreviousPackageSha256}`", provenance, StringComparison.Ordinal);
+        Assert.Contains("остаётся неизменяемым", provenance, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
