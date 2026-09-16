@@ -49,6 +49,8 @@ public sealed class FileSystemBrowserTests
             await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
             var page = await browser.NewPageAsync();
             var prompts = new Queue<string>();
+            var pageErrors = new List<string>();
+            page.PageError += (_, error) => pageErrors.Add(error);
             page.Dialog += async (_, dialog) =>
             {
                 if (dialog.Type == "prompt")
@@ -96,9 +98,12 @@ public sealed class FileSystemBrowserTests
                 await page.Locator("#filesystem-right-breadcrumb").InnerTextAsync());
 
             var upload = Path.Combine(temp, "a.bin");
+            var publishedUpload = Path.Combine(archive, "incoming", "a.bin");
             var bytes = "browser-opaque-payload"u8.ToArray();
             await File.WriteAllBytesAsync(upload, bytes);
             var uploadResponseSource = new TaskCompletionSource<IResponse>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var leftRefreshResponseSource = new TaskCompletionSource<IResponse>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             EventHandler<IResponse> observeUpload = (_, response) =>
             {
@@ -107,16 +112,47 @@ public sealed class FileSystemBrowserTests
                 {
                     uploadResponseSource.TrySetResult(response);
                 }
+
+                if (response.Request.Method == "GET" &&
+                    response.Url.Contains("/v1/filesystem/list", StringComparison.Ordinal) &&
+                    Uri.UnescapeDataString(response.Url).Contains(
+                        "path=archive/incoming",
+                        StringComparison.Ordinal))
+                {
+                    leftRefreshResponseSource.TrySetResult(response);
+                }
             };
             page.Response += observeUpload;
             var chooser = await page.RunAndWaitForFileChooserAsync(
                 () => page.ClickAsync("#filesystem-left-upload"));
             await chooser.SetFilesAsync(upload);
             var uploadResponse = await uploadResponseSource.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            page.Response -= observeUpload;
             Assert.True(
                 uploadResponse.Ok,
                 $"Browser upload PUT returned HTTP {uploadResponse.Status}.");
+            Assert.True(
+                File.Exists(publishedUpload),
+                $"PUT succeeded, but published file is absent: {publishedUpload}");
+
+            using (var probe = new HttpClient())
+            {
+                var listing = await probe.GetStringAsync(
+                    baseUrl + "/v1/filesystem/list?path=archive%2Fincoming");
+                Assert.Contains("\"name\":\"a.bin\"", listing, StringComparison.Ordinal);
+            }
+
+            var refreshResponse = await leftRefreshResponseSource.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            page.Response -= observeUpload;
+            Assert.True(
+                refreshResponse.Ok,
+                $"Browser post-upload list returned HTTP {refreshResponse.Status}.");
+            await page.WaitForFunctionAsync(
+                "!document.getElementById('filesystem-left-refresh').disabled");
+            var leftEntriesAfterUpload = await Entries("left").InnerTextAsync();
+            var leftStatusAfterUpload = await page.Locator("#filesystem-left-status").InnerTextAsync();
+            Assert.True(
+                leftEntriesAfterUpload.Contains("a.bin", StringComparison.Ordinal),
+                $"Server lists a.bin, but LEFT panel did not render it. status={leftStatusAfterUpload}; pageErrors={string.Join(" | ", pageErrors)}; entries={leftEntriesAfterUpload}");
             await Visible("left", "a.bin");
             Assert.Equal(0, await Row("right", "a.bin").CountAsync());
 
