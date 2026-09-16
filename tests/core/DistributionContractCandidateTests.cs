@@ -279,7 +279,7 @@ public sealed class DistributionContractCandidateTests
                     Requirements: ReadStringArray(vector, "requirements")),
                 StringComparer.Ordinal);
 
-        foreach (var baselineVector in baselineConformance.GetProperty("vectors").EnumerateArray())
+        foreach (var baselineVector in baseline.GetProperty("vectors").EnumerateArray())
         {
             var id = RequiredString(baselineVector, "id");
             Assert.True(candidateVectors.TryGetValue(id, out var candidateVector), $"Candidate потерял conformance vector {id}");
