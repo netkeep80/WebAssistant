@@ -40,6 +40,17 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             : DiscoverAsync(getDevices, logger, cancellationToken);
     }
 
+    public Task<ScannerDevice?> GetScannerAsync(
+        string scannerId,
+        CancellationToken cancellationToken = default)
+    {
+        Func<Driver, Task<List<ScanDevice>>> getDevices =
+            driver => controller.GetDeviceList(driver);
+        return logger is null
+            ? ResolveRegisteredEndpointAsync(scannerId, getDevices, cancellationToken)
+            : ResolveRegisteredEndpointAsync(scannerId, getDevices, logger, cancellationToken);
+    }
+
     public Task<ScannerDevice?> GetScannerCapabilitiesAsync(
         string scannerId,
         CancellationToken cancellationToken = default)
@@ -148,6 +159,76 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
     {
         ArgumentNullException.ThrowIfNull(getCaps);
         return DiscoverAsync(getDevices, cancellationToken);
+    }
+
+    internal static Task<ScannerDevice?> ResolveRegisteredEndpointAsync(
+        string scannerId,
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        CancellationToken cancellationToken = default) =>
+        ResolveRegisteredEndpointCoreAsync(
+            scannerId,
+            getDevices,
+            logger: null,
+            cancellationToken);
+
+    internal static Task<ScannerDevice?> ResolveRegisteredEndpointAsync(
+        string scannerId,
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        ILogger logger,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        return ResolveRegisteredEndpointCoreAsync(
+            scannerId,
+            getDevices,
+            logger,
+            cancellationToken);
+    }
+
+    private static async Task<ScannerDevice?> ResolveRegisteredEndpointCoreAsync(
+        string scannerId,
+        Func<Driver, Task<List<ScanDevice>>> getDevices,
+        ILogger? logger,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scannerId);
+        ArgumentNullException.ThrowIfNull(getDevices);
+
+        if (!ScannerIdentity.TryParse(scannerId, out var backend) ||
+            backend is not (ScannerBackend.Wia or ScannerBackend.Twain))
+        {
+            throw new InvalidOperationException(
+                $"ScannerId '{scannerId}' не принадлежит Windows scanner backend.");
+        }
+
+        var devices = await EnumerateSelectedBackendAsync(
+            "scanner.resolve",
+            scannerId,
+            backend,
+            MapDriver(backend),
+            getDevices,
+            logger,
+            cancellationToken);
+
+        var matches = devices
+            .Where(candidate => string.Equals(
+                ScannerIdentity.Create(backend, candidate.ID),
+                scannerId,
+                StringComparison.Ordinal))
+            .ToArray();
+
+        if (matches.Length == 0)
+        {
+            return null;
+        }
+
+        if (matches.Length > 1)
+        {
+            throw new InvalidOperationException(
+                $"ScannerId '{scannerId}' неоднозначен внутри backend '{backend}'.");
+        }
+
+        return CreateRegisteredEndpoint(matches[0], backend);
     }
 
     internal static Task<ScannerDevice?> ResolveCapabilitiesAsync(
