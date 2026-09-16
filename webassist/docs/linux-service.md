@@ -1,14 +1,14 @@
 # WebAssistant как systemd-служба
 
-## Canonical artifact
+## Канонический артефакт
 
-Поддерживаемая целевая среда Linux distribution:
+Поддерживаемая целевая среда Linux:
 
 ```text
 ALT Linux 10.1
 ```
 
-Canonical package producer:
+Канонический сценарий упаковки:
 
 ```bash
 ./build/linux/package.sh
@@ -20,29 +20,29 @@ Canonical package producer:
 <installerBaseName>-linux-x64-<VERSION>.zip
 ```
 
-где `<VERSION>` равен exact content файла `VERSION`, а `<installerBaseName>` берётся из effective product metadata. Public default `installerBaseName` равен `WebAssistant`, поэтому без override имя имеет вид:
+где `<VERSION>` равен точному содержимому файла `VERSION`, а `<installerBaseName>` берётся из фактических метаданных продукта. Публичное значение `installerBaseName` по умолчанию равно `WebAssistant`, поэтому без переопределения имя имеет вид:
 
 ```text
 WebAssistant-linux-x64-<VERSION>.zip
 ```
 
-Рядом создаются `.sha256` и `.provenance.json` для final ZIP.
+Рядом создаются `.sha256` и `.provenance.json` для итогового ZIP.
 
-ZIP содержит self-contained `linux-x64` application, `VERSION`, package-owned `appsettings.json`, `install.sh`, `uninstall.sh` и `webassist.service`. Build-time display metadata не меняет stable technical identity systemd unit `webassist.service`.
+ZIP содержит самодостаточное приложение `linux-x64`, `VERSION`, принадлежащий пакету `appsettings.json`, `install.sh`, `uninstall.sh` и `webassist.service`. Отображаемые метаданные, задаваемые при сборке, не меняют стабильный технический идентификатор systemd unit `webassist.service`.
 
-## Package-owned configuration
+## Конфигурация, принадлежащая пакету
 
-Configuration выбирается package-time:
+Конфигурация выбирается во время упаковки:
 
 ```text
 src/WebAssistant/appsettings.json существует
-  -> producer копирует exact bytes этого файла
+  -> сценарий копирует точные байты этого файла
 
 файл отсутствует
-  -> producer копирует build/common/default-appsettings.json
+  -> сценарий копирует build/common/default-appsettings.json
 ```
 
-После формирования ZIP `appsettings.json` является immutable package payload. `install.sh` не генерирует, не заменяет и не патчит configuration. Если packaged `appsettings.json` отсутствует, package считается повреждённым и installation завершается fail-closed.
+После формирования ZIP `appsettings.json` является неизменяемой частью пакета. `install.sh` не генерирует, не заменяет и не исправляет конфигурацию. Если упакованный `appsettings.json` отсутствует, пакет считается повреждённым и установка завершается с закрытием при неопределённости.
 
 ## Установка на ALT Linux 10.1
 
@@ -52,7 +52,7 @@ src/WebAssistant/appsettings.json существует
 <installerBaseName>-linux-x64-<VERSION>.zip
 ```
 
-При public default это `WebAssistant-linux-x64-<VERSION>.zip`.
+При публичном значении по умолчанию это `WebAssistant-linux-x64-<VERSION>.zip`.
 
 Из распакованного каталога запустите:
 
@@ -60,32 +60,32 @@ src/WebAssistant/appsettings.json существует
 sudo ./install.sh
 ```
 
-Target workstation не требует заранее установленного .NET Runtime, .NET SDK, NuGet или compiler/build tools: application payload self-contained.
+Целевая рабочая станция не требует заранее установленного .NET Runtime, .NET SDK, NuGet или инструментов компиляции и сборки: payload приложения самодостаточен.
 
-`install.sh` проверяет distro-owned runtime dependencies через RPM database. Текущий список включает `libicu74`, `libgtk+3`, `libsane` и `sane`.
+`install.sh` проверяет системные зависимости дистрибутива через базу RPM. Текущий список включает `libicu74`, `libgtk+3`, `libsane` и `sane`.
 
-Если все зависимости уже установлены, apt-rpm не изменяется. Если чего-то не хватает, installer выполняет штатные:
+Если все зависимости уже установлены, apt-rpm не изменяется. Если чего-то не хватает, установщик выполняет штатные команды:
 
 ```text
 apt-get update
 apt-get install
 ```
 
-Ошибка repository/package-manager state завершается явной диагностикой; системные RPM не vendoring'ятся внутрь WebAssistant ZIP.
+Ошибка состояния репозитория или пакетного менеджера завершается явной диагностикой; системные RPM не включаются внутрь ZIP WebAssistant.
 
-Installer затем:
+Затем установщик:
 
-- создаёт system group/user `webassist`, если они отсутствуют;
-- добавляет service identity в доступные scanner groups;
-- устанавливает application в `/opt/webassist`;
-- использует packaged `appsettings.json` без замены;
-- создаёт runtime state directories;
+- создаёт системную группу и пользователя `webassist`, если они отсутствуют;
+- добавляет учётную запись службы в доступные группы сканеров;
+- устанавливает приложение в `/opt/webassist`;
+- использует упакованный `appsettings.json` без замены;
+- создаёт каталоги состояния времени выполнения;
 - устанавливает `webassist.service`;
-- выполняет systemd daemon reload;
-- enables и starts `webassist.service`;
-- fail-closed проверяет активность службы.
+- выполняет перечитывание конфигурации systemd;
+- включает и запускает `webassist.service`;
+- с закрытием при неопределённости проверяет активность службы.
 
-## Runtime state
+## Состояние времени выполнения
 
 ```text
 application: /opt/webassist
@@ -94,11 +94,11 @@ data:        /var/lib/webassistant
 unit:        /etc/systemd/system/webassist.service
 ```
 
-`/var/lib/webassistant` является default `WebAssistant:FileSystem:RootDirectory`. Environment-specific package configuration может задать другой root; browser API сам `RootDirectory` не меняет.
+`/var/lib/webassistant` является значением `WebAssistant:FileSystem:RootDirectory` по умолчанию. Конфигурация пакета для конкретного окружения может задать другой корень; браузерный API сам `RootDirectory` не меняет.
 
-`/var/log/webassistant` и `/var/lib/webassistant` принадлежат service identity и сохраняются по умолчанию при uninstall.
+`/var/log/webassistant` и `/var/lib/webassistant` принадлежат учётной записи службы и по умолчанию сохраняются при удалении.
 
-Служба слушает только loopback `127.0.0.1`; default port — `17654`.
+Служба слушает только loopback `127.0.0.1`; порт по умолчанию — `17654`.
 
 ## Проверка
 
@@ -108,13 +108,13 @@ unit:        /etc/systemd/system/webassist.service
 systemctl status webassist.service
 ```
 
-Health:
+Проверка состояния HTTP:
 
 ```bash
 curl http://127.0.0.1:17654/v1/health
 ```
 
-Остановка/запуск/перезапуск выполняются стандартными systemd командами:
+Остановка, запуск и перезапуск выполняются стандартными командами systemd:
 
 ```bash
 sudo systemctl stop webassist.service
@@ -124,25 +124,25 @@ sudo systemctl restart webassist.service
 
 ## Удаление
 
-Из распакованного canonical package:
+Из распакованного канонического пакета:
 
 ```bash
 sudo ./uninstall.sh
 ```
 
-По умолчанию удаляются unit, installed application и service identity, но сохраняются:
+По умолчанию удаляются unit, установленное приложение и учётная запись службы, но сохраняются:
 
 ```text
 /var/log/webassistant
 /var/lib/webassistant
 ```
 
-Для явного удаления runtime state используется:
+Для явного удаления состояния времени выполнения используется:
 
 ```bash
 sudo ./uninstall.sh --purge-data
 ```
 
-## Evidence boundary
+## Граница доказательств
 
-Canonical target остаётся ALT Linux 10.1. Automated execution в другой ALT environment может быть полезной regression evidence для package/systemd mechanics, но не заменяет target acceptance именно на ALT Linux 10.1.
+Канонической целевой средой остаётся ALT Linux 10.1. Автоматизированное выполнение в другой среде ALT может быть полезным регрессионным доказательством механики пакета и systemd, но не заменяет приёмку именно на ALT Linux 10.1.
