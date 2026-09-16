@@ -1,26 +1,26 @@
 # Установка WebAssistant
 
-Эта инструкция относится к WebAssistant **{{VERSION}}**, собранному из source commit `{{SOURCE_SHA}}`.
+Эта инструкция относится к WebAssistant **{{VERSION}}**, собранному из исходного commit `{{SOURCE_SHA}}`.
 
-Она описывает установку двух canonical distribution artifacts:
+Она описывает установку двух канонических дистрибутивов:
 
 - Windows: `{{WINDOWS_FILENAME}}`;
 - ALT Linux 10.1: `{{LINUX_FILENAME}}`.
 
 ## Проверка полученных файлов
 
-Перед установкой убедитесь, что имя файла и SHA-256 совпадают с release metadata.
+Перед установкой убедитесь, что имя файла и SHA-256 совпадают с метаданными выпуска.
 
 | Платформа | Файл | SHA-256 |
 | --- | --- | --- |
 | Windows | `{{WINDOWS_FILENAME}}` | `{{WINDOWS_SHA256}}` |
 | ALT Linux 10.1 | `{{LINUX_FILENAME}}` | `{{LINUX_SHA256}}` |
 
-Package configuration выбирается **во время сборки**. После формирования installer/package файл `appsettings.json` является частью package payload. Installer не создаёт, не заменяет и не патчит packaged configuration.
+Конфигурация пакета выбирается **во время сборки**. После формирования установщика или пакета файл `appsettings.json` является частью payload пакета. Установщик не создаёт, не заменяет и не исправляет упакованную конфигурацию.
 
 # Windows
 
-## 1. Проверка installer identity
+## 1. Проверка идентичности установщика
 
 Проверьте имя и SHA-256 файла `{{WINDOWS_FILENAME}}`.
 
@@ -34,17 +34,17 @@ Package configuration выбирается **во время сборки**. П�
 {{WINDOWS_FILENAME}}
 ```
 
-Подтвердите UAC elevation. Canonical installer выполняет machine-wide installation в Program Files, устанавливает self-contained application, регистрирует Windows Service `WebAssistant`, настраивает automatic start и запускает службу.
+Подтвердите повышение прав UAC. Канонический установщик выполняет общесистемную установку в Program Files, устанавливает самодостаточное приложение, регистрирует Windows Service `WebAssistant`, настраивает автоматический запуск и запускает службу.
 
 {{WIN_INSTALL_UAC}}
 
 ## 3. Installed Apps и версия
 
-После установки `WebAssistant` должен присутствовать в Installed Apps / Programs and Features. `DisplayVersion` должен совпадать с `{{VERSION}}`.
+После установки WebAssistant должен присутствовать в Installed Apps / Programs and Features. `DisplayVersion` должен совпадать с `{{VERSION}}`.
 
 {{WIN_INSTALLED_APPS}}
 
-## 4. Проверка службы и health endpoint
+## 4. Проверка службы и точки состояния
 
 В PowerShell:
 
@@ -53,11 +53,11 @@ Get-Service -Name WebAssistant
 Invoke-WebRequest http://127.0.0.1:17654/v1/health
 ```
 
-Служба слушает только loopback. Default endpoint: `http://127.0.0.1:17654`.
+Служба слушает только loopback. Адрес по умолчанию: `http://127.0.0.1:17654`.
 
 {{WIN_SERVICE_HEALTH}}
 
-Machine-wide runtime state расположен отдельно от Program Files:
+Общесистемное состояние времени выполнения расположено отдельно от Program Files:
 
 ```text
 %ProgramData%\WebAssistant\logs
@@ -66,17 +66,17 @@ Machine-wide runtime state расположен отдельно от Program Fi
 
 ## 5. Удаление
 
-Используйте стандартное удаление WebAssistant через Installed Apps / Programs and Features либо штатный uninstall canonical bundle.
+Используйте стандартное удаление WebAssistant через Installed Apps / Programs and Features либо штатное удаление канонического bundle.
 
-Uninstall останавливает и удаляет Windows Service, product registration и installed application files. `%ProgramData%\WebAssistant\logs` и `%ProgramData%\WebAssistant\data` по текущей state policy сохраняются.
+Удаление останавливает и удаляет Windows Service, регистрацию продукта и установленные файлы приложения. `%ProgramData%\WebAssistant\logs` и `%ProgramData%\WebAssistant\data` по текущей политике состояния сохраняются.
 
 {{WIN_UNINSTALL}}
 
 # ALT Linux 10.1
 
-Подтверждённая target environment для этой инструкции: **{{ALT_OS_NAME}} {{ALT_OS_VERSION}}**.
+Подтверждённая целевая среда для этой инструкции: **{{ALT_OS_NAME}} {{ALT_OS_VERSION}}**.
 
-## 1. Проверка package identity
+## 1. Проверка идентичности пакета
 
 Проверьте имя и SHA-256 файла `{{LINUX_FILENAME}}`.
 
@@ -90,22 +90,22 @@ Uninstall останавливает и удаляет Windows Service, product 
 sudo ./install.sh
 ```
 
-Application payload self-contained: target workstation не требует заранее установленного .NET Runtime, .NET SDK, NuGet или compiler/build tools.
+Payload приложения самодостаточен: целевая рабочая станция не требует заранее установленного .NET Runtime, .NET SDK, NuGet или инструментов компиляции и сборки.
 
-`install.sh` проверяет distro-owned dependencies через RPM database. Если их не хватает, используются штатные `apt-get update` и `apt-get install`. Текущий dependency set включает `libicu74`, `libgtk+3`, `libsane` и `sane`.
+`install.sh` проверяет системные зависимости дистрибутива через базу RPM. Если их не хватает, используются штатные `apt-get update` и `apt-get install`. Текущий набор зависимостей включает `libicu74`, `libgtk+3`, `libsane` и `sane`.
 
-Installer устанавливает application в `/opt/webassist`, создаёт service identity и runtime directories, устанавливает `webassist.service`, выполняет systemd daemon reload, enable/start и fail-closed проверку активности службы.
+Установщик устанавливает приложение в `/opt/webassist`, создаёт учётную запись службы и каталоги состояния времени выполнения, устанавливает `webassist.service`, выполняет перечитывание конфигурации systemd, включает и запускает службу и с закрытием при неопределённости проверяет её активность.
 
 {{ALT_INSTALL}}
 
-## 3. Проверка systemd и health
+## 3. Проверка systemd и состояния HTTP
 
 ```bash
 systemctl status webassist.service
 curl http://127.0.0.1:17654/v1/health
 ```
 
-Runtime state:
+Состояние времени выполнения:
 
 ```text
 application: /opt/webassist
@@ -128,7 +128,7 @@ curl http://127.0.0.1:17654/v1/health
 
 ## 5. Удаление
 
-Из распакованного canonical package:
+Из распакованного канонического пакета:
 
 ```bash
 sudo ./uninstall.sh
@@ -141,7 +141,7 @@ sudo ./uninstall.sh
 /var/lib/webassistant
 ```
 
-Для явного удаления runtime state:
+Для явного удаления состояния времени выполнения:
 
 ```bash
 sudo ./uninstall.sh --purge-data
@@ -151,7 +151,7 @@ sudo ./uninstall.sh --purge-data
 
 # Диагностика
 
-Если установка или запуск завершились ошибкой, сначала проверяйте system service state и `/v1/health`. Не заменяйте packaged `appsettings.json` во время установки: configuration принадлежит уже сформированному package.
+Если установка или запуск завершились ошибкой, сначала проверяйте состояние системной службы и `/v1/health`. Не заменяйте упакованный `appsettings.json` во время установки: конфигурация принадлежит уже сформированному пакету.
 
 Windows:
 
