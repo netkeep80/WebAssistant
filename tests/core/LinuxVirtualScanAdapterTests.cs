@@ -32,7 +32,7 @@ public sealed class LinuxVirtualScanAdapterTests
         Assert.NotEmpty(virtualDevices);
         Assert.All(
             virtualDevices,
-            device => Assert.StartsWith("wa1-sane-", device.Id, StringComparison.Ordinal));
+            device => Assert.StartsWith("wa2-sane-", device.Id, StringComparison.Ordinal));
         Assert.Equal(
             virtualDevices.Length,
             virtualDevices.Select(device => device.Id).Distinct(StringComparer.Ordinal).Count());
