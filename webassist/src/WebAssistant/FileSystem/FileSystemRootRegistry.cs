@@ -49,14 +49,24 @@ internal sealed record FileSystemLogicalPath(
             return new FileSystemLogicalPath(rootName, string.Empty);
         }
 
-        var parsed = FileSystemPathPolicy.Parse(relativePath, allowRoot: false);
-        return new FileSystemLogicalPath(rootName, parsed.Value);
+        try
+        {
+            var parsed = FileSystemPathPolicy.Parse(relativePath, allowRoot: false);
+            return new FileSystemLogicalPath(rootName, parsed.Value);
+        }
+        catch (FileSystemOperationException exception)
+            when (exception.Code == FileSystemErrorCodes.InvalidPath)
+        {
+            throw InvalidPath(exception);
+        }
     }
 
-    private static FileSystemOperationException InvalidPath() =>
+    private static FileSystemOperationException InvalidPath(
+        Exception? innerException = null) =>
         new(
             FileSystemErrorCodes.FileSystemPathInvalid,
-            "Логический путь файловой системы имеет недопустимую форму.");
+            "Логический путь файловой системы имеет недопустимую форму.",
+            innerException);
 }
 
 internal sealed record ResolvedFileSystemPath(
