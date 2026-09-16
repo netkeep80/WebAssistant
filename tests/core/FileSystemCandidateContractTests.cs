@@ -6,7 +6,7 @@ namespace WebAssistant.CoreTests;
 public sealed class FileSystemCandidateContractTests
 {
     [Fact]
-    public void CandidateV03_DeclaresRootedFilesystemExchangeTransaction()
+    public void CandidateV03_DeclaresMultiRootFilesystemExchangeTransaction()
     {
         var root = FindRepositoryRoot();
         var contractText = File.ReadAllText(Path.Combine(
@@ -20,24 +20,34 @@ public sealed class FileSystemCandidateContractTests
 
         var requiredFragments = new[]
         {
+            "/v1/filesystem/roots",
             "/v1/filesystem/list",
             "/v1/filesystem/file",
             "/v1/filesystem/directory",
             "/v1/filesystem/move",
+            "logicalRootName",
+            "[A-Za-z0-9][A-Za-z0-9._-]*",
+            "filesystem_not_configured",
+            "filesystem_configuration_invalid",
+            "filesystem_root_not_found",
+            "filesystem_root_unavailable",
+            "filesystem_path_invalid",
             "destination_exists",
             "directory_not_empty",
             "unsafe_link",
             "hardlink_rejected",
             "blocked_file_type",
             "locked",
-            "filesystem_unavailable",
+            "cross-root",
             "atomic",
             "no-replace",
             "stream",
             "opaque",
             "200",
             "1000",
-            "/filesystem.html"
+            "/filesystem.html",
+            "LEFT",
+            "RIGHT"
         };
 
         foreach (var fragment in requiredFragments)
@@ -47,7 +57,34 @@ public sealed class FileSystemCandidateContractTests
     }
 
     [Fact]
-    public void CandidateV03_ConformanceContainsExecutableFilesystemVectors()
+    public void CandidateV03_ReplacesSingleRootAuthorityWithNamedRootRegistry()
+    {
+        var root = FindRepositoryRoot();
+        var contractText = File.ReadAllText(Path.Combine(
+            root,
+            "contracts",
+            "webassistant-contract-v0.3.json"));
+
+        Assert.Contains(
+            "FILESYSTEM AUTHORITY = union(configured named roots)",
+            contractText,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "physicalRootPath",
+            contractText,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "same logical root",
+            contractText,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            "Filesystem capability имеет configured RootDirectory",
+            contractText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CandidateV03_ConformanceContainsExecutableMultiRootVectors()
     {
         var root = FindRepositoryRoot();
         var conformanceText = File.ReadAllText(Path.Combine(
@@ -61,16 +98,23 @@ public sealed class FileSystemCandidateContractTests
 
         var requiredFragments = new[]
         {
-            "filesystem",
-            "atomic",
-            "no-replace",
-            "RootDirectory",
-            "link",
-            "hard-link",
+            "multi-root",
+            "/v1/filesystem/roots",
+            "case-only",
+            "unknown logical root",
+            "root unavailable",
+            "cross-root move",
+            "two-panel",
+            "LEFT",
+            "RIGHT",
             "Playwright",
             "/filesystem.html",
             "external mutation",
-            "tests/core/FileSystemCandidateContractTests.cs", "tests/core/LinuxRootedFileSystemTests.cs", "tests/core/WindowsRootedFileSystemTests.cs", "tests/core/HttpFileSystemContractTests.cs", "tests/core/FilePublicationTests.cs", "tests/core/FileSystemPageContractTests.cs", "tests/core/FileSystemBrowserTests.cs"
+            "tests/core/FileSystemRootRegistryTests.cs",
+            "tests/core/MultiRootFileSystemTests.cs",
+            "tests/core/HttpFileSystemContractTests.cs",
+            "tests/core/FileSystemPageContractTests.cs",
+            "tests/core/FileSystemBrowserTests.cs"
         };
 
         foreach (var fragment in requiredFragments)
