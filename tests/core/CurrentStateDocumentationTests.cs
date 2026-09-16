@@ -10,7 +10,8 @@ public sealed class CurrentStateDocumentationTests
         var readme = ReadRepositoryFile("README.md");
 
         Assert.Contains("/v1/filesystem/list", readme, StringComparison.Ordinal);
-        Assert.Contains("кандидат v0.3", readme, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("v0.3", readme, StringComparison.Ordinal);
+        Assert.Contains("остаётся кандидатом", readme, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
             "browser-facing filesystem routes в текущем accepted baseline отсутствуют",
             readme,
