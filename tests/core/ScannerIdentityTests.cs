@@ -71,6 +71,31 @@ public sealed class ScannerIdentityTests
         }
     }
 
+    [Fact]
+    public void ExcludeAmbiguousPublicIds_RemovesEveryEndpointSharingOnePublicId()
+    {
+        var unique = new ScannerDevice(
+            "wa2-wia-AAAAAAAAAAAAAAAA",
+            "Unique",
+            ScannerBackend.Wia);
+        var firstCollision = new ScannerDevice(
+            "wa2-wia-BBBBBBBBBBBBBBBB",
+            "First collision",
+            ScannerBackend.Wia);
+        var secondCollision = new ScannerDevice(
+            "wa2-wia-BBBBBBBBBBBBBBBB",
+            "Second collision",
+            ScannerBackend.Wia);
+
+        var result = ScannerIdentity.ExcludeAmbiguousPublicIds(
+            [unique, firstCollision, secondCollision],
+            out var removedAmbiguousIds);
+
+        Assert.True(removedAmbiguousIds);
+        var remaining = Assert.Single(result);
+        Assert.Same(unique, remaining);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("wa2-wia-")]
