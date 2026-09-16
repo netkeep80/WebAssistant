@@ -63,6 +63,17 @@ public sealed class ConfigurationOwnershipTests
     }
 
     [Fact]
+    public void WindowsWixInstaller_RemovesHistoricalProductAfterCandidateComponentsAreInstalled()
+    {
+        var package = ReadRequired("webassist/build/windows/installer/Package.wxs");
+
+        Assert.Contains(
+            "<MajorUpgrade Schedule=\"afterInstallExecute\" />",
+            package,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LinuxInstaller_RequiresPackagedAppsettingsAndCopiesPayloadWithoutGeneratingDefaults()
     {
         var install = ReadRequired("webassist/install/linux/install.sh");
