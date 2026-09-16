@@ -31,9 +31,20 @@ internal static class ScannerEndpointHandlers
                     title: "Обнаружение сканеров недоступно");
             }
 
+            var scanners = ScannerIdentity.ExcludeAmbiguousPublicIds(
+                discovery.Scanners,
+                out var hasPublicIdCollision);
+            if (hasPublicIdCollision)
+            {
+                logger.LogError("Обнаружена коллизия публичного scannerId; listing отклонён fail-closed");
+                return Results.Problem(
+                    statusCode: StatusCodes.Status502BadGateway,
+                    title: "Неоднозначная идентичность сканера");
+            }
+
             return Results.Ok(new
             {
-                scanners = discovery.Scanners.Select(scanner => new
+                scanners = scanners.Select(scanner => new
                 {
                     scannerId = scanner.Id,
                     name = scanner.Name,
