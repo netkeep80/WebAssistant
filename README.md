@@ -1,39 +1,41 @@
 # WebAssistant
 
-WebAssistant — локальная machine-wide служба для browser-facing операций с возможностями рабочей станции.
+WebAssistant — локальная общесистемная служба для браузерных операций с возможностями рабочей станции.
 
-Текущий scanner module предоставляет versioned `/v1` API, raw PDF transport, явный выбор устройства и единый physical-acquisition lock. Product root находится в `webassist/` и остаётся автономно переносимым как самостоятельный проект.
+Текущий модуль сканирования предоставляет версионированный API `/v1`, передачу необработанного PDF, явный выбор устройства и единый блокировщик физической операции сканирования. Корень продукта находится в `webassist/` и остаётся автономно переносимым как самостоятельный проект.
 
-Поддерживаемые платформы: Windows 10+ и ALT Linux. Runtime: .NET 10 / ASP.NET Core.
+Поддерживаемые платформы: Windows 10+ и ALT Linux. Среда выполнения: .NET 10 / ASP.NET Core.
 
-Canonical product version хранится в [`webassist/VERSION`](webassist/VERSION) и переносится вместе с product root без `.git`. Build, assembly metadata, package metadata и runtime diagnostics используют это persisted значение как единственный product-version authority; Git history и CI run numbers не заменяют его.
+Каноническая версия продукта хранится в [`webassist/VERSION`](webassist/VERSION) и переносится вместе с корнем продукта без `.git`. Сборка, метаданные сборки .NET, метаданные пакета и диагностика времени выполнения используют это сохранённое значение как единственный источник версии продукта; история Git и номера запусков CI его не заменяют.
 
-Runtime configuration загружается из JSON. CORS по умолчанию выключен и включается только явным allowlist. Текущий runtime/candidate v0.3 также предоставляет rooted filesystem exchange: public API начинается с `GET /v1/filesystem/list`, остальные filesystem operations остаются внутри configured `RootDirectory`, а visual client доступен по `/filesystem.html`. Это не означает promotion semantic authority: current accepted contract/conformance pair по-прежнему v0.2, а v0.3 остаётся candidate.
+Конфигурация времени выполнения загружается из JSON. CORS по умолчанию выключен и включается только явным списком разрешённых источников. Текущая реализация кандидата v0.3 также предоставляет файловый обмен внутри заданного корневого каталога: публичный API начинается с `GET /v1/filesystem/list`, остальные операции файлового обмена остаются внутри настроенного `RootDirectory`, а визуальный клиент доступен по `/filesystem.html`. Это не означает принятия новой нормативной семантики: текущей принятой парой контракта и соответствия по-прежнему является v0.2, а v0.3 остаётся кандидатом.
 
 Продуктовая документация: [`webassist/README.md`](webassist/README.md) и [`webassist/docs/api.md`](webassist/docs/api.md).
 
-Versioned contract/conformance artifacts сохраняются монотонно; какая pair является current, определяет только `contract_conformance.current` в [`repo-policy.json`](repo-policy.json). Текущая accepted pair — v0.2:
+Каталог `docs/superpowers/**` содержит датированные исторические материалы разработки — планы и проектные решения конкретных транзакций. Они не являются нормативным описанием текущего продукта; актуальное поведение определяется текущим кодом, принятой парой contract/conformance и канонической документацией продукта.
+
+Версионированные артефакты контракта и соответствия сохраняются монотонно; какая пара является текущей, определяет только `contract_conformance.current` в [`repo-policy.json`](repo-policy.json). Текущая принятая пара — v0.2:
 - [`contracts/webassistant-contract-v0.1.json`](contracts/webassistant-contract-v0.1.json)
 - [`contracts/webassistant-conformance-v0.1.json`](contracts/webassistant-conformance-v0.1.json)
 - [`contracts/webassistant-contract-v0.2.json`](contracts/webassistant-contract-v0.2.json)
 - [`contracts/webassistant-conformance-v0.2.json`](contracts/webassistant-conformance-v0.2.json)
 
-Requirement → conformance vector → evidence graph проверяется repository-owned validator в `tests/core`; automated evidence должно быть связано со stable CI surface, а physical/manual evidence не считается автоматически принятым без явного acceptance fact.
+Цепочка «требование → вектор соответствия → граф доказательств» проверяется валидатором репозитория в `tests/core`; автоматизированное доказательство должно быть связано со стабильной поверхностью CI, а физическое или ручное доказательство не считается автоматически принятым без явного факта приёмки.
 
-## Repository governance
+## Управление репозиторием
 
-Repository policy задаётся в [`repo-policy.json`](repo-policy.json) и исполняется `repo-guard` в blocking mode. Accepted contract/conformance pair, обязательные repository paths и автономность `webassist/` являются частью этой исполняемой границы.
+Политика репозитория задаётся в [`repo-policy.json`](repo-policy.json) и исполняется `repo-guard` в блокирующем режиме. Принятая пара contract/conformance, обязательные пути репозитория и автономность `webassist/` являются частью этой исполняемой границы.
 
 Язык актуальной человекочитаемой документации определяется канонической политикой [`webassist/docs/documentation-language-policy.md`](webassist/docs/documentation-language-policy.md): повествовательный текст должен быть на русском, а без перевода сохраняются только буквальные технические идентификаторы, собственные имена, команды, коды, пути и машинные значения.
 
-Permanent governance check находится в [`.github/workflows/repo-guard.yml`](.github/workflows/repo-guard.yml). Workflow запускает exact-pinned `netkeep80/repo-guard@92432809fcddc290080beb51ba151e13a5761869` в `mode: check-pr` и `enforcement: blocking`; governance failure или cancelled run не являются допустимым merge-ready состоянием.
+Постоянная проверка управления находится в [`.github/workflows/repo-guard.yml`](.github/workflows/repo-guard.yml). Процесс запускает точно закреплённый `netkeep80/repo-guard@92432809fcddc290080beb51ba151e13a5761869` в `mode: check-pr` и `enforcement: blocking`; ошибка управления или отменённый запуск не являются допустимым состоянием для слияния.
 
-Product CI PR orchestration находится в [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Его стабильный внешний job/check называется `ci-required`. Текущий baseline консервативно требует core, ALT Linux systemd, Windows Service и virtual-scanner suites; classifier может в дальнейшем сделать отдельные suites необязательными, не меняя имя внешнего gate.
+Оркестрация CI для PR находится в [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Её стабильная внешняя проверка называется `ci-required`. Текущая базовая конфигурация консервативно требует ядро тестов, ALT Linux systemd, Windows Service и наборы виртуальных сканеров; классификатор в дальнейшем может сделать отдельные наборы необязательными, не меняя имя внешнего шлюза.
 
-`ci-required` работает fail-closed: обязательная suite принимается только с `success`; явно необязательная suite может иметь `success` или `skipped`; `failure`, `cancelled`, неизвестный result и некорректный requirement flag блокируют gate. Truth table self-test выполняется внутри governance-owned `ci.yml` перед оценкой фактических job results.
+`ci-required` работает с закрытием при неопределённости: обязательный набор принимается только со значением `success`; явно необязательный набор может иметь `success` или `skipped`; `failure`, `cancelled`, неизвестный результат и некорректный признак обязательности блокируют шлюз. Самопроверка таблицы истинности выполняется внутри принадлежащего политике `ci.yml` до оценки фактических результатов заданий.
 
-`ci-required` и `repo-guard` — отдельные trust boundaries. Product aggregator не вызывает и не агрегирует `repo-guard`. Branch protection/ruleset для `main` должен требовать оба check отдельно и запрещать ordinary direct push. Пока GitHub settings ещё не включены, действует fixed-head discipline: fresh `main`, GREEN applicable checks, `behind_by=0`, exact expected head SHA и post-merge reread.
+`ci-required` и `repo-guard` — отдельные границы доверия. Агрегатор продуктовых проверок не вызывает и не агрегирует `repo-guard`. Защита ветки или ruleset для `main` должна требовать обе проверки отдельно и запрещать обычную прямую запись. Пока настройки GitHub ещё не включены, применяется дисциплина фиксированной вершины: свежий `main`, зелёные применимые проверки, `behind_by=0`, точный ожидаемый SHA вершины и повторное чтение состояния после слияния.
 
-Каждый обычный PR объявляет `ChangeIntent`. Канонический блок находится в [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md); Issue form — в [`.github/ISSUE_TEMPLATE/change-intent.yml`](.github/ISSUE_TEMPLATE/change-intent.yml). Минимальные обязательные поля intent: `change_type`, `scope` и `anchors.affects`; budgets, `must_touch`, `must_not_touch` и `expected_effects` уточняют исполняемую форму изменения.
+Каждый обычный PR объявляет `ChangeIntent`. Канонический блок находится в [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md); форма Issue — в [`.github/ISSUE_TEMPLATE/change-intent.yml`](.github/ISSUE_TEMPLATE/change-intent.yml). Минимальные обязательные поля: `change_type`, `scope` и `anchors.affects`; `budgets`, `must_touch`, `must_not_touch` и `expected_effects` уточняют исполняемую форму изменения.
 
-Изменение governance paths требует отдельного `GovernanceGrant` в связанной Issue. Grant в PR не считается доверенным источником. Broad root policy relaxation не является штатным способом разработки.
+Изменение путей управления требует отдельного `GovernanceGrant` в связанной Issue. Разрешение, записанное только в PR, не считается доверенным источником. Широкое ослабление корневой политики не является штатным способом разработки.

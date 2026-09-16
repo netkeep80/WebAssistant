@@ -10,7 +10,8 @@ public sealed class CurrentStateDocumentationTests
         var readme = ReadRepositoryFile("README.md");
 
         Assert.Contains("/v1/filesystem/list", readme, StringComparison.Ordinal);
-        Assert.Contains("candidate v0.3", readme, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("v0.3", readme, StringComparison.Ordinal);
+        Assert.Contains("остаётся кандидатом", readme, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
             "browser-facing filesystem routes в текущем accepted baseline отсутствуют",
             readme,
@@ -64,7 +65,7 @@ public sealed class CurrentStateDocumentationTests
         var api = ReadRepositoryFile("webassist/docs/api.md");
 
         Assert.Contains("/filesystem.html", api, StringComparison.Ordinal);
-        Assert.Contains("public filesystem API", api, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("публичного API файлового обмена", api, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -74,11 +75,11 @@ public sealed class CurrentStateDocumentationTests
         var linux = ReadRepositoryFile("webassist/docs/linux-service.md");
 
         Assert.Contains("<installerBaseName>-win-x64-<VERSION>.exe", windows, StringComparison.Ordinal);
-        Assert.Contains("public default", windows, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("публичном значении по умолчанию", windows, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("WebAssistant", windows, StringComparison.Ordinal);
 
         Assert.Contains("<installerBaseName>-linux-x64-<VERSION>.zip", linux, StringComparison.Ordinal);
-        Assert.Contains("public default", linux, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("публичном значении по умолчанию", linux, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("WebAssistant", linux, StringComparison.Ordinal);
     }
 
@@ -92,6 +93,78 @@ public sealed class CurrentStateDocumentationTests
         Assert.Contains("%ProgramData%\\WebAssistant\\data", windows, StringComparison.Ordinal);
         Assert.Contains("WebAssistant:FileSystem:RootDirectory", linux, StringComparison.Ordinal);
         Assert.Contains("/var/lib/webassistant", linux, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CanonicalHumanDocumentation_DoesNotUseKnownMixedLanguageNarrative()
+    {
+        var forbiddenByFile = new Dictionary<string, string[]>
+        {
+            ["README.md"] =
+            [
+                "локальная machine-wide служба",
+                "Текущий scanner module",
+                "Canonical product version",
+                "## Repository governance"
+            ],
+            ["webassist/README.md"] =
+            [
+                "persisted source of truth for product version",
+                "## Build-time product metadata",
+                "Текущий scanner module",
+                "## Runtime configuration и package-time ownership"
+            ],
+            ["webassist/docs/api.md"] =
+            [
+                "Текущая major version",
+                "Machine endpoints",
+                "Canonical machine-readable schema",
+                "Единственный acquisition endpoint"
+            ],
+            ["webassist/docs/windows-service.md"] =
+            [
+                "## Canonical artifact",
+                "## Package-owned configuration",
+                "## Runtime state"
+            ],
+            ["webassist/docs/linux-service.md"] =
+            [
+                "## Canonical artifact",
+                "## Package-owned configuration",
+                "## Evidence boundary"
+            ],
+            ["webassist/docs/installation-guide.md"] =
+            [
+                "source commit",
+                "canonical distribution artifacts",
+                "release metadata"
+            ],
+            ["webassist/vendor/naps2/README.md"] =
+            [
+                "# Fixed NAPS2 SDK provenance",
+                "Current committed package",
+                "The .3 package"
+            ]
+        };
+
+        foreach (var (path, forbiddenPhrases) in forbiddenByFile)
+        {
+            var content = ReadRepositoryFile(path);
+            foreach (var phrase in forbiddenPhrases)
+            {
+                Assert.DoesNotContain(phrase, content, StringComparison.Ordinal);
+            }
+        }
+    }
+
+    [Fact]
+    public void RootReadme_MarksDatedDevelopmentPlansAsHistoricalNonNormativeRecords()
+    {
+        var readme = ReadRepositoryFile("README.md");
+
+        Assert.Contains("docs/superpowers", readme, StringComparison.Ordinal);
+        Assert.Contains("исторические", readme, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("не являются нормативным описанием текущего продукта", readme, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string ReadRepositoryFile(string relativePath)

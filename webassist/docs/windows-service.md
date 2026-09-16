@@ -1,77 +1,77 @@
 # WebAssistant как Windows Service
 
-## Canonical artifact
+## Канонический артефакт
 
-Windows distribution собирается только через canonical producer:
+Дистрибутив Windows собирается только через канонический сценарий:
 
 ```bat
 build\windows\package.bat
 ```
 
-Он создаёт пользовательский installation artifact:
+Он создаёт пользовательский установочный артефакт:
 
 ```text
 <installerBaseName>-win-x64-<VERSION>.exe
 ```
 
-где `<VERSION>` равен exact content файла `VERSION`, а `<installerBaseName>` берётся из effective product metadata. Public default `installerBaseName` равен `WebAssistant`, поэтому без override имя имеет вид:
+где `<VERSION>` равен точному содержимому файла `VERSION`, а `<installerBaseName>` берётся из фактических метаданных продукта. Публичное значение `installerBaseName` по умолчанию равно `WebAssistant`, поэтому без переопределения имя имеет вид:
 
 ```text
 WebAssistant-win-x64-<VERSION>.exe
 ```
 
-Рядом создаются `.sha256` и `.provenance.json` для final EXE.
+Рядом создаются `.sha256` и `.provenance.json` для итогового EXE.
 
-Producer сначала собирает self-contained `win-x64` application payload, затем внутренний MSI и финальный WiX 7 Burn bundle. Внутренний MSI — build intermediate; устанавливать вручную его не требуется. Build-time display metadata не меняет stable technical identities: executable `WebAssistant.exe` и Windows Service `WebAssistant` остаются прежними.
+Сценарий сначала собирает самодостаточный payload приложения `win-x64`, затем внутренний MSI и итоговый WiX 7 Burn bundle. Внутренний MSI — промежуточный результат сборки; устанавливать его вручную не требуется. Отображаемые метаданные, задаваемые при сборке, не меняют стабильные технические идентификаторы: исполняемый файл `WebAssistant.exe` и Windows Service `WebAssistant` остаются прежними.
 
-## Package-owned configuration
+## Конфигурация, принадлежащая пакету
 
-Configuration выбирается package-time:
+Конфигурация выбирается во время упаковки:
 
 ```text
 src/WebAssistant/appsettings.json существует
-  -> в payload попадают exact bytes этого файла
+  -> в payload попадают точные байты этого файла
 
 файл отсутствует
   -> в payload копируется build/common/default-appsettings.json
 ```
 
-После формирования EXE `appsettings.json` принадлежит package. Installer не создаёт default configuration, не заменяет packaged config и не патчит его во время install/reinstall.
+После формирования EXE `appsettings.json` принадлежит пакету. Установщик не создаёт конфигурацию по умолчанию, не заменяет упакованный файл и не исправляет его во время установки или переустановки.
 
-Публичный product root поэтому может не содержать environment-specific `src/WebAssistant/appsettings.json`: canonical producer в таком случае использует безопасный repository default.
+Поэтому публичный корень продукта может не содержать зависящий от окружения `src/WebAssistant/appsettings.json`: канонический сценарий в таком случае использует безопасную конфигурацию репозитория по умолчанию.
 
 ## Установка
 
-Запустите от имени пользователя, который может подтвердить UAC elevation:
+Запустите установщик от имени пользователя, который может подтвердить повышение прав UAC:
 
 ```text
 <installerBaseName>-win-x64-<VERSION>.exe
 ```
 
-При public default это `WebAssistant-win-x64-<VERSION>.exe`.
+При публичном значении по умолчанию это `WebAssistant-win-x64-<VERSION>.exe`.
 
-Canonical installer:
+Канонический установщик:
 
-- запрашивает elevation;
-- выполняет machine-wide installation в Program Files;
-- устанавливает self-contained application, поэтому target workstation не требует заранее установленного .NET Runtime/SDK/NuGet/build tools;
+- запрашивает повышение прав;
+- выполняет общесистемную установку в Program Files;
+- устанавливает самодостаточное приложение, поэтому целевая рабочая станция не требует заранее установленного .NET Runtime, SDK, NuGet или инструментов сборки;
 - регистрирует Windows Service `WebAssistant`;
-- задаёт automatic service start;
-- запускает service после установки;
-- регистрирует effective product display identity в Installed Apps / Programs and Features;
-- записывает DisplayVersion, совпадающий с product `VERSION`.
+- настраивает автоматический запуск службы;
+- запускает службу после установки;
+- регистрирует фактическую отображаемую идентичность продукта в Installed Apps / Programs and Features;
+- записывает `DisplayVersion`, совпадающий с `VERSION` продукта.
 
-Installed application использует package-owned `appsettings.json` без installer-side regeneration.
+Установленное приложение использует принадлежащий пакету `appsettings.json` без повторного создания со стороны установщика.
 
 ## Проверка
 
-Состояние службы можно проверить стандартными Windows средствами, например PowerShell:
+Состояние службы можно проверить стандартными средствами Windows, например PowerShell:
 
 ```powershell
 Get-Service -Name WebAssistant
 ```
 
-Health endpoint доступен только через loopback:
+Точка проверки состояния доступна только через loopback:
 
 ```text
 http://127.0.0.1:17654/v1/health
@@ -83,25 +83,25 @@ http://127.0.0.1:17654/v1/health
 Invoke-WebRequest http://127.0.0.1:17654/v1/health
 ```
 
-В Installed Apps / Programs and Features должен присутствовать effective application display name с ожидаемым DisplayVersion.
+В Installed Apps / Programs and Features должно присутствовать фактическое отображаемое имя приложения с ожидаемым `DisplayVersion`.
 
-## Runtime state
+## Состояние времени выполнения
 
-Machine-wide state расположен отдельно от Program Files:
+Общесистемное состояние расположено отдельно от Program Files:
 
 ```text
 %ProgramData%\WebAssistant\logs
 %ProgramData%\WebAssistant\data
 ```
 
-`%ProgramData%\WebAssistant\data` является default `WebAssistant:FileSystem:RootDirectory`. Environment-specific package configuration может задать другой root; browser API сам `RootDirectory` не меняет.
+`%ProgramData%\WebAssistant\data` является значением `WebAssistant:FileSystem:RootDirectory` по умолчанию. Конфигурация пакета для конкретного окружения может задать другой корень; браузерный API сам `RootDirectory` не меняет.
 
-Служба слушает только `127.0.0.1`; default port — `17654`.
+Служба слушает только `127.0.0.1`; порт по умолчанию — `17654`.
 
 ## Удаление
 
-Используйте стандартное удаление effective WebAssistant product через Installed Apps / Programs and Features либо штатный uninstall canonical bundle.
+Используйте стандартное удаление фактического продукта WebAssistant через Installed Apps / Programs and Features либо штатное удаление канонического bundle.
 
-Uninstall останавливает и удаляет Windows Service, product registration и установленные application files. `%ProgramData%\WebAssistant\logs` и `%ProgramData%\WebAssistant\data` по текущей state policy сохраняются.
+Удаление останавливает и удаляет Windows Service, регистрацию продукта и установленные файлы приложения. `%ProgramData%\WebAssistant\logs` и `%ProgramData%\WebAssistant\data` по текущей политике состояния сохраняются.
 
-Исторические repository scripts `install.bat` / `install.ps1` не являются canonical end-user installation path для versioned Windows distribution artifact.
+Исторические сценарии репозитория `install.bat` / `install.ps1` не являются каноническим пользовательским способом установки версионированного дистрибутива Windows.

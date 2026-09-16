@@ -4,35 +4,35 @@
 
 ## Версия продукта
 
-Файл `VERSION` в корне продукта — единственный persisted source of truth для product version. Он содержит numeric SemVer `major.minor.patch` и переносится вместе с продуктом без зависимости от `.git`, tags или CI metadata.
+Файл `VERSION` в корне продукта — единственный сохраняемый источник истины для версии продукта. Он содержит числовой SemVer `major.minor.patch` и переносится вместе с продуктом без зависимости от `.git`, тегов или метаданных CI.
 
-Canonical package producers читают это значение и формируют versioned artifacts по effective installer basename:
+Канонические упаковщики читают это значение и формируют версионированные артефакты по фактическому базовому имени установщика:
 
 ```text
 Windows: <installerBaseName>-win-x64-<VERSION>.exe
 Linux:   <installerBaseName>-linux-x64-<VERSION>.zip
 ```
 
-При отсутствии product metadata override public default `installerBaseName` равен `WebAssistant`, поэтому обычная GitHub/manual сборка по-прежнему даёт:
+При отсутствии переопределения метаданных продукта публичное значение `installerBaseName` по умолчанию равно `WebAssistant`, поэтому обычная сборка через GitHub или вручную по-прежнему даёт:
 
 ```text
 Windows: WebAssistant-win-x64-<VERSION>.exe
 Linux:   WebAssistant-linux-x64-<VERSION>.zip
 ```
 
-`<VERSION>` всегда означает exact content файла `VERSION`. То же значение передаётся в application/package metadata и записывается в provenance. Product metadata не может задавать или переопределять version.
+`<VERSION>` всегда означает точное содержимое файла `VERSION`. То же значение передаётся в метаданные приложения и пакета и записывается в provenance. Метаданные продукта не могут задавать или переопределять версию.
 
-## Build-time product metadata
+## Метаданные продукта при сборке
 
-Windows и Linux используют один repository-owned `ProductMetadataResolver` и одну schema `webassistant-product-metadata/v1`. Сначала берутся public defaults из `build/common/product-metadata.defaults.json`, затем при наличии применяется optional override:
+Windows и Linux используют один принадлежащий репозиторию `ProductMetadataResolver` и одну схему `webassistant-product-metadata/v1`. Сначала берутся публичные значения по умолчанию из `build/common/product-metadata.defaults.json`, затем при наличии применяется необязательное переопределение:
 
 ```text
 src/WebAssistant/product-metadata.json
 ```
 
-Файл находится рядом с runtime `src/WebAssistant/appsettings.json`, но имеет другую семантику: `appsettings.json` управляет runtime configuration, а `product-metadata.json` — только build-time product/display identity.
+Файл находится рядом с `src/WebAssistant/appsettings.json`, используемым во время выполнения, но имеет другую семантику: `appsettings.json` управляет конфигурацией времени выполнения, а `product-metadata.json` — только отображаемой идентичностью продукта на этапе сборки.
 
-Допустимые поля override:
+Допустимые поля переопределения:
 
 ```json
 {
@@ -45,44 +45,44 @@ src/WebAssistant/product-metadata.json
 }
 ```
 
-Все поля кроме `schema` опциональны и наследуют public defaults. Неизвестные поля, другая schema, пустые/некорректные значения и непереносимый `installerBaseName` приводят к fail-closed build до создания canonical artifact. Поля `applicationName`, `fileDescription` и `companyName` дополнительно не могут содержать `;`, потому что эти значения передаются в WiX через semicolon-delimited `DefineConstants`; resolver отклоняет такой input до publish/package. Поля `version`, service name, executable name, install paths и WiX lifecycle identifiers в metadata contract отсутствуют намеренно.
+Все поля кроме `schema` необязательны и наследуют публичные значения по умолчанию. Неизвестные поля, другая `schema`, пустые или некорректные значения и непереносимый `installerBaseName` приводят к остановке сборки до создания канонического артефакта. Поля `applicationName`, `fileDescription` и `companyName` дополнительно не могут содержать `;`, потому что эти значения передаются в WiX через разделённый точкой с запятой `DefineConstants`; `ProductMetadataResolver` отклоняет такие входные данные до публикации и упаковки. Поля `version`, имя службы, имя исполняемого файла, пути установки и идентификаторы жизненного цикла WiX намеренно отсутствуют в контракте метаданных.
 
-Public GitHub repository специально игнорирует `webassist/src/WebAssistant/product-metadata.json` через development-root `.gitignore`. При copy-export содержимого `webassist` это правило не переносится: product-local `.gitignore` не запрещает этот path. Поэтому downstream GitLab repository может track-ить собственный `src/WebAssistant/product-metadata.json` и использовать другую product identity без изменения producer scripts. Различаются данные, а не packaging code.
+Публичный GitHub-репозиторий специально игнорирует `webassist/src/WebAssistant/product-metadata.json` через `.gitignore` корня разработки. При копировании содержимого `webassist` это правило не переносится: локальный `.gitignore` продукта не запрещает этот путь. Поэтому downstream-репозиторий GitLab может хранить собственный `src/WebAssistant/product-metadata.json` и использовать другую идентичность продукта без изменения сценариев упаковки. Различаются данные, а не код упаковки.
 
-Effective metadata применяются к .NET file/product metadata, Windows WiX/ARP display identity, Linux human-visible service description и basename canonical artifacts. Технические identifiers остаются стабильными: `WebAssistant.exe`, Windows Service `WebAssistant`, Linux unit `webassist.service`, install paths и WiX package/bundle lifecycle identities не переименовываются через branding override.
+Фактические метаданные применяются к метаданным файла и продукта .NET, отображаемой идентичности Windows WiX/ARP, человекочитаемому описанию службы Linux и базовому имени канонических артефактов. Технические идентификаторы остаются стабильными: `WebAssistant.exe`, Windows Service `WebAssistant`, Linux unit `webassist.service`, пути установки и идентификаторы жизненного цикла пакета и bundle WiX не переименовываются через переопределение брендинга.
 
-Provenance final artifact фиксирует `metadataMode` (`defaults` или `override`), effective `applicationName`, `installerBaseName`, `metadataInputSha256` и `effectiveMetadataSha256`. Metadata разрешаются до publish/package/checksum; post-build branding patching не используется.
+Provenance итогового артефакта фиксирует `metadataMode` (`defaults` или `override`), фактические `applicationName`, `installerBaseName`, `metadataInputSha256` и `effectiveMetadataSha256`. Метаданные разрешаются до публикации, упаковки и вычисления контрольной суммы; исправление брендинга после сборки не используется.
 
 ## Что работает сейчас
 
-WebAssistant устанавливается как machine-wide системная служба рабочей станции:
+WebAssistant устанавливается как общесистемная служба рабочей станции:
 
 - Windows — Windows Service `WebAssistant`;
-- ALT Linux — systemd service `webassist.service`.
+- ALT Linux — служба systemd `webassist.service`.
 
-Служба слушает только loopback. Default endpoint: `http://127.0.0.1:17654`. Публикация listener на LAN или `0.0.0.0` не является допустимой runtime configuration.
+Служба слушает только loopback. Адрес по умолчанию: `http://127.0.0.1:17654`. Публикация слушателя в LAN или на `0.0.0.0` не является допустимой конфигурацией времени выполнения.
 
-Текущий scanner module:
+Текущий модуль сканирования:
 
-- перечисляет доступные scanner endpoints и позволяет явно выбрать persistent `scannerId`;
-- на Windows WIA и TWAIN перечисляются независимо; успешные endpoints обоих backend объединяются, а частичный backend failure не скрывает успешную часть;
-- поддерживает `auto`, explicit flatbed, feeder и duplex semantics через единый `POST /v1/scan`;
-- явно заданный `flatbed` или `feeder` не имеет скрытого fallback на другой source;
-- для `auto` есть одна узкая recovery-семантика: если был выбран feeder, он оказался пуст именно во время acquisition и flatbed доступен, WebAssistant один раз повторяет acquisition через flatbed;
-- выполняет не более одного physical acquisition одновременно;
-- возвращает один raw `application/pdf`, содержащий все страницы acquisition;
-- не использует Base64, JSON document envelope или ZIP/raster envelope как scanner document transport;
-- после передачи PDF вызывающей стороне не хранит завершённый scan document как long-term scanner storage.
+- перечисляет доступные конечные точки сканеров и позволяет явно выбрать сохраняемый `scannerId`;
+- в Windows WIA и TWAIN перечисляются независимо; успешные конечные точки обеих подсистем объединяются, а частичный сбой одной подсистемы не скрывает успешную часть;
+- поддерживает `auto`, явно заданные `flatbed`, `feeder` и двустороннее сканирование через единый `POST /v1/scan`;
+- явно заданный `flatbed` или `feeder` не имеет скрытого fallback на другой источник;
+- для `auto` есть одна узкая восстановительная семантика: если был выбран `feeder`, он оказался пуст именно во время физической операции и доступен `flatbed`, WebAssistant один раз повторяет физическую операцию через `flatbed`;
+- выполняет не более одной физической операции сканирования одновременно;
+- возвращает один необработанный `application/pdf`, содержащий все страницы одной физической операции;
+- не использует Base64, JSON-конверт документа или ZIP/растровый конверт как транспорт результата сканирования;
+- после передачи PDF вызывающей стороне не хранит завершённый документ как долговременное хранилище сканирования.
 
-На Linux используется direct SANE SDK path через NAPS2, без CLI orchestration. Caller владеет scanner preferences и передаёт их в каждом request; WebAssistant не хранит mutable per-user/per-scanner profile.
+В Linux используется прямой путь SANE SDK через NAPS2 без оркестрации CLI. Вызывающая сторона владеет предпочтениями сканирования и передаёт их в каждом запросе; WebAssistant не хранит изменяемый пользовательский профиль сканера.
 
-Scanner operation ограничена acquisition → PDF. Она сама не выполняет edit/merge/split PDF, OCR/annotation/watermark/deskew или другую semantic document transformation, signing/encryption, business/backend upload и не требует business authentication или per-user business profile.
+Операция сканирования ограничена цепочкой «получение изображения → PDF». Она сама не выполняет редактирование, объединение или разделение PDF, OCR, аннотацию, водяные знаки, выравнивание, другую смысловую обработку документа, подписание, шифрование, загрузку в бизнес-систему и не требует бизнес-аутентификации или пользовательского бизнес-профиля.
 
 ### Файловый обмен
 
-Filesystem capability предоставляет browser/local integration только внутри administrator-configured `WebAssistant:FileSystem:RootDirectory`. Public API принимает root-relative paths и остаётся stateless: текущая директория принадлежит caller, абсолютный host path наружу не публикуется.
+Возможность файлового обмена предоставляет браузерную и локальную интеграцию только внутри настроенного администратором `WebAssistant:FileSystem:RootDirectory`. Публичный API принимает пути относительно корня и не хранит состояние текущего каталога: текущая директория принадлежит вызывающей стороне, абсолютный путь хоста наружу не публикуется.
 
-Public filesystem routes:
+Публичные маршруты файлового обмена:
 
 ```text
 GET    /v1/filesystem/list
@@ -94,35 +94,35 @@ DELETE /v1/filesystem/directory
 POST   /v1/filesystem/move
 ```
 
-Upload и move используют atomic no-replace semantics: существующий destination не перезаписывается. Symlink/junction/reparse traversal и hard-link alias operations fail-closed. Standalone active file extensions блокируются для upload/download/move согласно filename policy. Download всегда имеет file-transfer semantics как opaque `application/octet-stream` attachment и не превращает `RootDirectory` в static web tree.
+Загрузка и перемещение используют атомарную семантику `no-replace`: существующее назначение не перезаписывается. Проход через symlink/junction/reparse и операции с hard-link alias завершаются с закрытием при неопределённости. Самостоятельные активные расширения файлов блокируются для загрузки, скачивания и перемещения согласно политике имени файла. Скачивание всегда имеет семантику передачи непрозрачного файла как `application/octet-stream` с вложением и не превращает `RootDirectory` в дерево статических веб-ресурсов.
 
-Repository-owned `/filesystem.html` — обычный visual client того же public filesystem API без private/test-only privilege. Он показывает только Root-relative navigation и не выполняет inline preview пользовательских файлов.
+Принадлежащая репозиторию страница `/filesystem.html` — обычный визуальный клиент того же публичного API файлового обмена без закрытых или тестовых привилегий. Она показывает только навигацию относительно `RootDirectory` и не выполняет встроенный просмотр пользовательских файлов.
 
-Точные REST schemas, status/error codes, scanner capability model и filesystem policy: [`docs/api.md`](docs/api.md).
+Точные REST-схемы, коды состояний и ошибок, модель возможностей сканера и политика файлового обмена описаны в [`docs/api.md`](docs/api.md).
 
-## Runtime configuration и package-time ownership
+## Конфигурация времени выполнения и владение при упаковке
 
-Deployment configuration выбирается **package-time** одним из двух способов:
+Конфигурация развёртывания выбирается во время упаковки одним из двух способов:
 
 ```text
 src/WebAssistant/appsettings.json существует
-  -> producer включает exact bytes этого файла
+  -> упаковщик включает точные байты этого файла
 
 src/WebAssistant/appsettings.json отсутствует
-  -> producer включает build/common/default-appsettings.json
+  -> упаковщик включает build/common/default-appsettings.json
 ```
 
-После формирования canonical artifact `appsettings.json` является package-owned payload. Installer не генерирует, не заменяет и не патчит packaged configuration.
+После формирования канонического артефакта `appsettings.json` принадлежит пакету. Установщик не генерирует, не заменяет и не исправляет упакованную конфигурацию.
 
-Repository default configuration выключает CORS и использует platform defaults для log/data roots. При включении CORS разрешены только явно заданные exact HTTP/HTTPS origins; wildcard `*` не допускается. Для current filesystem API intentional CORS methods — `GET`, `POST`, `PUT`, `DELETE`; cross-origin mutations проходят обычный browser preflight.
+Конфигурация репозитория по умолчанию выключает CORS и использует платформенные каталоги по умолчанию для журналов и данных. При включении CORS разрешены только явно заданные точные HTTP/HTTPS origins; wildcard `*` не допускается. Для текущего API файлового обмена намеренно разрешены методы `GET`, `POST`, `PUT`, `DELETE`; межсайтовые изменяющие запросы проходят обычный браузерный preflight.
 
-`WebAssistant:FileSystem:RootDirectory` задаёт единственную filesystem authority. Platform default: `%ProgramData%\WebAssistant\data` на Windows и `/var/lib/webassistant` на Linux. Browser/API не могут менять root; containment обеспечивается native handle/descriptor-relative operations с no-follow/fail-closed policy, а не повторным открытием уже проверенного абсолютного pathname.
+`WebAssistant:FileSystem:RootDirectory` задаёт единственную область полномочий файловой системы. Платформенное значение по умолчанию: `%ProgramData%\WebAssistant\data` в Windows и `/var/lib/webassistant` в Linux. Браузер и API не могут менять корень; удержание внутри корня обеспечивается нативными операциями относительно дескриптора с политикой запрета перехода по ссылкам и закрытия при неопределённости, а не повторным открытием уже проверенного абсолютного пути.
 
-WebAssistant пишет собственные технические события в суточные log files. В журналы не записываются PDF bytes, Base64 и содержимое страниц/документов. Current service сам не выполняет automatic retention/delete старых daily logs.
+WebAssistant пишет собственные технические события в суточные файлы журналов. В журналы не записываются байты PDF, Base64 и содержимое страниц или документов. Текущая служба сама не выполняет автоматическое удаление старых суточных журналов.
 
-## Сборка canonical artifacts
+## Сборка канонических артефактов
 
-Packaging scripts определяют product root относительно собственного расположения и не зависят от текущего рабочего каталога. Оба producer-а используют один effective product metadata contract, описанный выше.
+Сценарии упаковки определяют корень продукта относительно собственного расположения и не зависят от текущего рабочего каталога. Оба упаковщика используют единый контракт фактических метаданных продукта, описанный выше.
 
 ### Windows
 
@@ -138,11 +138,11 @@ build\windows\package.bat
 <installerBaseName>-win-x64-<VERSION>.exe.provenance.json
 ```
 
-При public defaults `<installerBaseName>` равен `WebAssistant`. Producer собирает self-contained `win-x64` payload, внутренний MSI и финальный WiX 7 Burn EXE. Внутренний MSI является build intermediate; пользовательским installation artifact является только versioned EXE.
+При публичных значениях по умолчанию `<installerBaseName>` равен `WebAssistant`. Упаковщик собирает самодостаточный `win-x64` payload, внутренний MSI и итоговый WiX 7 Burn EXE. Внутренний MSI является промежуточным результатом сборки; пользовательским установочным артефактом является только версионированный EXE.
 
-Интерактивный Windows installer по умолчанию использует repository-owned русскую локализацию `build/windows/installer/localization/ru-RU.wxl`. Единственный hand-authored источник графической identity — `build/windows/installer/branding/webassistant-icon.svg`. Во время canonical packaging repository-owned generator воспроизводимо строит из него ICO с кадрами 16×16, 32×32, 48×48 и 256×256 для bundle EXE / Installed Apps, а также PNG 64×64 для WixStandardBootstrapperApplication. Локальный графический редактор или внешний machine-local converter для сборки не требуется. `product-metadata.json` управляет только текстовой product/display identity; `WebAssistant.exe`, Windows Service `WebAssistant`, `netkeep80.WebAssistant.Bundle` и `netkeep80.WebAssistant` остаются стабильными technical lifecycle identities.
+Интерактивный установщик Windows по умолчанию использует принадлежащую репозиторию русскую локализацию `build/windows/installer/localization/ru-RU.wxl`. Единственный созданный вручную источник графической идентичности — `build/windows/installer/branding/webassistant-icon.svg`. Во время канонической упаковки принадлежащий репозиторию генератор воспроизводимо строит из него ICO с кадрами 16×16, 32×32, 48×48 и 256×256 для bundle EXE / Installed Apps, а также PNG 64×64 для `WixStandardBootstrapperApplication`. Локальный графический редактор или внешний конвертер, зависящий от машины, для сборки не требуется. `product-metadata.json` управляет только текстовой отображаемой идентичностью; `WebAssistant.exe`, Windows Service `WebAssistant`, `netkeep80.WebAssistant.Bundle` и `netkeep80.WebAssistant` остаются стабильными техническими идентификаторами жизненного цикла.
 
-Для build machine требуется .NET SDK 10 и WiX toolchain, управляемый repository-owned installer projects. Target workstation заранее установленный .NET Runtime/SDK не требуется.
+Для машины сборки требуется .NET SDK 10 и инструментарий WiX, управляемый проектами установщика в репозитории. На целевой рабочей станции заранее установленный .NET Runtime или SDK не требуется.
 
 ### Linux
 
@@ -158,34 +158,34 @@ build\windows\package.bat
 <installerBaseName>-linux-x64-<VERSION>.zip.provenance.json
 ```
 
-При public defaults `<installerBaseName>` равен `WebAssistant`. Linux producer публикует self-contained `linux-x64` application и кладёт в ZIP `VERSION`, `install.sh`, `uninstall.sh`, `webassist.service` и package-owned `appsettings.json`.
+При публичных значениях по умолчанию `<installerBaseName>` равен `WebAssistant`. Упаковщик Linux публикует самодостаточное приложение `linux-x64` и кладёт в ZIP `VERSION`, `install.sh`, `uninstall.sh`, `webassist.service` и принадлежащий пакету `appsettings.json`.
 
-Для build machine требуется .NET SDK 10. `package.sh` ищет его в следующем порядке:
+Для машины сборки требуется .NET SDK 10. `package.sh` ищет его в следующем порядке:
 
 1. `WEBASSISTANT_DOTNET_ROOT`;
 2. `toolchain/dotnet/linux-x64/`;
-3. system .NET SDK 10;
-4. при разрешённом network bootstrap — официальный `dotnet-install.sh`.
+3. системный .NET SDK 10;
+4. если разрешена сетевая загрузка — официальный `dotnet-install.sh`.
 
-Строго сетевой bootstrap можно запретить:
+Строго сетевую загрузку можно запретить:
 
 ```bash
 WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0 ./build/linux/package.sh
 ```
 
-Это не является полной clean offline build guarantee: NuGet dependency closure для полностью offline build environment остаётся отдельной задачей.
+Это не является гарантией полностью автономной сборки без сети: замыкание зависимостей NuGet для полностью автономной среды сборки остаётся отдельной задачей.
 
 ## Установка
 
 ### Windows
 
-Администратор запускает canonical artifact:
+Администратор запускает канонический артефакт:
 
 ```text
 <installerBaseName>-win-x64-<VERSION>.exe
 ```
 
-Для public defaults это `WebAssistant-win-x64-<VERSION>.exe`. Installer запрашивает elevation, выполняет machine-wide установку в Program Files, регистрирует и автоматически запускает Windows Service `WebAssistant`, а также регистрирует effective product display identity в Installed Apps / Programs and Features. Подробности: [`docs/windows-service.md`](docs/windows-service.md).
+При публичных значениях по умолчанию это `WebAssistant-win-x64-<VERSION>.exe`. Установщик запрашивает повышение прав, выполняет общесистемную установку в Program Files, регистрирует и автоматически запускает Windows Service `WebAssistant`, а также регистрирует фактическую отображаемую идентичность продукта в Installed Apps / Programs and Features. Подробности: [`docs/windows-service.md`](docs/windows-service.md).
 
 ### ALT Linux 10.1
 
@@ -195,25 +195,25 @@ WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0 ./build/linux/package.sh
 <installerBaseName>-linux-x64-<VERSION>.zip
 ```
 
-Для public defaults это `WebAssistant-linux-x64-<VERSION>.zip`. Из распакованного каталога запускается:
+При публичных значениях по умолчанию это `WebAssistant-linux-x64-<VERSION>.zip`. Из распакованного каталога запускается:
 
 ```bash
 sudo ./install.sh
 ```
 
-Installer использует packaged configuration без замены. Отсутствующие distro-owned runtime dependencies могут устанавливаться штатно через apt-rpm. Подробности: [`docs/linux-service.md`](docs/linux-service.md).
+Установщик использует упакованную конфигурацию без замены. Отсутствующие системные зависимости дистрибутива могут устанавливаться штатно через apt-rpm. Подробности: [`docs/linux-service.md`](docs/linux-service.md).
 
 ## Каноническая PDF-инструкция
 
-Редактируемый источник пользовательской инструкции находится внутри автономного product root:
+Редактируемый источник пользовательской инструкции находится внутри автономного корня продукта:
 
 ```text
 docs/installation-guide.md
 ```
 
-Post-freeze machine evidence передаётся отдельно через строгий manifest `docs/installation-guide/evidence.schema.json`. Manifest связывает каждую процедуру и screenshot с exact `sourceSha`, `VERSION`, именами installer artifacts и их SHA-256. Fixture evidence предназначен только для проверки механики и не может использоваться как final evidence.
+Машинные доказательства, полученные после заморозки исходного состояния, передаются отдельно через строгий манифест `docs/installation-guide/evidence.schema.json`. Манифест связывает каждую процедуру и снимок экрана с точными `sourceSha`, `VERSION`, именами установочных артефактов и их SHA-256. Фикстурные доказательства предназначены только для проверки механики и не могут использоваться как окончательные реальные доказательства.
 
-Финальная инструкция строится только для exact frozen source SHA:
+Финальная инструкция строится только для точного замороженного SHA исходного состояния:
 
 ```bash
 WEBASSISTANT_SOURCE_SHA=<exact-frozen-main-sha> \
@@ -229,24 +229,24 @@ WEBASSISTANT_SOURCE_SHA=<exact-frozen-main-sha> \
 artifacts/installation-guide/WebAssistant-Installation-Guide.pdf
 ```
 
-`final` mode fail-closed требует complete evidence именно для ALT Linux 10.1 и всех обязательных Windows/ALT capture slots. `verify.sh` повторно проверяет evidence identity, структуру и текст PDF и рендерит каждую страницу в raster image через pinned Poppler toolchain. Editable source и build/verify infrastructure являются repository authority; реальные post-freeze screenshots и generated PDF в repository не коммитятся.
+Режим `final` с закрытием при неопределённости требует полного набора доказательств именно для ALT Linux 10.1 и всех обязательных точек захвата Windows/ALT. `verify.sh` повторно проверяет идентичность доказательств, структуру и текст PDF и визуализирует каждую страницу в растровое изображение через закреплённый инструментарий Poppler. Редактируемый источник и инфраструктура сборки/проверки являются нормативными материалами репозитория; реальные снимки экрана после заморозки и сгенерированный PDF в репозиторий не коммитятся.
 
-Pinned document toolchain описан в `docs/installation-guide/toolchain.env` и не использует mutable `latest` identity.
+Закреплённый инструментарий документа описан в `docs/installation-guide/toolchain.env` и не использует изменяемый идентификатор `latest`.
 
 ## GitLab CI
 
-В export root находится самостоятельный `.gitlab-ci.yml`. Текущая product-local GitLab surface содержит только Linux package orchestration и вызывает тот же canonical entrypoint:
+В экспортируемом корне находится самостоятельный `.gitlab-ci.yml`. Текущая локальная для продукта поверхность GitLab содержит только оркестрацию сборки Linux-пакета и вызывает тот же канонический вход:
 
 ```bash
 ./build/linux/package.sh artifacts/linux-x64
 ```
 
-Downstream GitLab может commit-ить собственный `src/WebAssistant/product-metadata.json`: export-root `.gitignore` этот path не запрещает. Producer автоматически применит этот override через тот же `ProductMetadataResolver`; отдельная GitLab-specific branding/package implementation не требуется.
+Нижестоящий GitLab-репозиторий может хранить собственный `src/WebAssistant/product-metadata.json`: `.gitignore` экспортируемого корня этот путь не запрещает. Упаковщик автоматически применит это переопределение через тот же `ProductMetadataResolver`; отдельная реализация брендинга или упаковки для GitLab не требуется.
 
-Файл `.gitlab-ci.yml` не определяет отдельную product packaging implementation. Конкретные runner/container/registry/network параметры будущей ALT Linux 10.1 build infrastructure должны задаваться downstream infrastructure только после их фактического определения; наличие `.gitlab-ci.yml` само по себе не является доказательством ALT Linux 10.1 target acceptance.
+Файл `.gitlab-ci.yml` не определяет отдельную реализацию упаковки продукта. Конкретные параметры runner/container/registry/network будущей среды сборки ALT Linux 10.1 должны задаваться нижестоящей инфраструктурой только после их фактического определения; наличие `.gitlab-ci.yml` само по себе не является доказательством приёмки на целевой ALT Linux 10.1.
 
-Windows distribution в GitLab не является частью текущей target architecture.
+Сборка Windows в GitLab не является частью текущей целевой архитектуры.
 
 ## Зависимость NAPS2 SDK
 
-Исправленный SDK хранится под отдельной identity `WebAssistant.NAPS2.Sdk` в `vendor/nuget`. Сборка продукта не маскирует его под официальный `NAPS2.Sdk` той же версии. Provenance, fixed package identity и способ воспроизводимой пересборки описаны в `vendor/naps2/README.md`.
+Исправленный SDK хранится под отдельной идентичностью `WebAssistant.NAPS2.Sdk` в `vendor/nuget`. Сборка продукта не маскирует его под официальный `NAPS2.Sdk` той же версии. Происхождение, фиксированная идентичность пакета и способ воспроизводимой пересборки описаны в `vendor/naps2/README.md`.
