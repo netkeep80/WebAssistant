@@ -49,6 +49,10 @@ public sealed class ConfigurationOwnershipTests
             package,
             StringComparison.Ordinal);
         Assert.Contains("Id=\"WebAssistantConfigurationComponent\"", package, StringComparison.Ordinal);
+        Assert.Contains(
+            "Id=\"WebAssistantConfigurationComponent\"\n        Directory=\"INSTALLFOLDER\"\n        Guid=\"*\"\n        NeverOverwrite=\"yes\"",
+            package,
+            StringComparison.Ordinal);
         Assert.Contains("NeverOverwrite=\"yes\"", package, StringComparison.Ordinal);
         Assert.Contains("Id=\"WebAssistantConfigurationFile\"", package, StringComparison.Ordinal);
         Assert.Contains(
