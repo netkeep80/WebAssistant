@@ -30,6 +30,25 @@ internal static class ScannerIdentity
         return $"{Prefix}{token}-{encoded}";
     }
 
+    internal static IReadOnlyList<ScannerDevice> ExcludeAmbiguousPublicIds(
+        IEnumerable<ScannerDevice> scanners,
+        out bool removedAmbiguousIds)
+    {
+        ArgumentNullException.ThrowIfNull(scanners);
+
+        var materialized = scanners.ToArray();
+        var ambiguous = materialized
+            .GroupBy(scanner => scanner.Id, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
+        removedAmbiguousIds = ambiguous.Count > 0;
+        return removedAmbiguousIds
+            ? materialized.Where(scanner => !ambiguous.Contains(scanner.Id)).ToArray()
+            : materialized;
+    }
+
     internal static bool TryParse(string? value, out ScannerBackend backend)
     {
         backend = default;
