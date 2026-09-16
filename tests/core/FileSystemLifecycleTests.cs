@@ -68,6 +68,19 @@ public sealed class FileSystemLifecycleTests : IDisposable
     }
 
     [Fact]
+    public void Provider_MissingRoot_CanBeReacquiredLater()
+    {
+        var missing = Path.Combine(testRoot, "later");
+        using var provider = new RootedFileSystemProvider(missing);
+        Assert.False(provider.IsAvailable);
+
+        Directory.CreateDirectory(missing);
+
+        Assert.True(provider.IsAvailable);
+        Assert.NotNull(provider.FileSystem);
+    }
+
+    [Fact]
     public async Task MissingRoot_ServiceStartsAndDiagnosticsDoNotDiscloseAbsoluteRoot()
     {
         var missing = Path.Combine(testRoot, "missing-service-root");
@@ -108,7 +121,7 @@ public sealed class FileSystemLifecycleTests : IDisposable
         var settings = new Dictionary<string, string?>
         {
             ["WebAssistant:LogDirectory"] = logDirectory,
-            ["WebAssistant:FileSystem:RootDirectory"] = rootDirectory
+            ["WebAssistant:FileSystem:archive"] = rootDirectory
         };
 
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
