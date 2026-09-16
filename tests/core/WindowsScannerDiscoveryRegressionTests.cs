@@ -113,6 +113,7 @@ public sealed class WindowsScannerDiscoveryRegressionTests
             logger);
 
         Assert.NotNull(scanner);
+        Assert.Equal(ScannerCapabilityState.Complete, scanner.CapabilityState);
         Assert.Contains(logger.Messages, message =>
             message.Contains(
                 $"scanner.capabilities backend=wia scannerId={scannerId} stage=getDeviceList outcome=success",
@@ -128,25 +129,27 @@ public sealed class WindowsScannerDiscoveryRegressionTests
     }
 
     [Fact]
-    public async Task SelectedCapabilities_GetCapsFailureLogsExceptionDetailsWithoutNativeId()
+    public async Task SelectedCapabilities_GetCapsFailureReturnsUnavailableAndLogsExceptionDetailsWithoutNativeId()
     {
         var logger = new CaptureLogger();
         const string nativeId = "machine-specific-failing-native-id";
         var scannerId = ScannerIdentity.Create(ScannerBackend.Wia, nativeId);
 
-        await Assert.ThrowsAsync<TimeoutException>(() =>
-            WindowsScanAdapter.ResolveCapabilitiesAsync(
-                scannerId,
-                driver => Task.FromResult(driver == Driver.Wia
-                    ? new List<ScanDevice>
-                    {
-                        new(Driver.Wia, nativeId, "Selected WIA scanner")
-                    }
-                    : throw new InvalidOperationException("unrelated backend must not run")),
-                (_, _) => Task.FromException<ScanCaps>(
-                    new TimeoutException("selected capability timeout")),
-                logger));
+        var scanner = await WindowsScanAdapter.ResolveCapabilitiesAsync(
+            scannerId,
+            driver => Task.FromResult(driver == Driver.Wia
+                ? new List<ScanDevice>
+                {
+                    new(Driver.Wia, nativeId, "Selected WIA scanner")
+                }
+                : throw new InvalidOperationException("unrelated backend must not run")),
+            (_, _) => Task.FromException<ScanCaps>(
+                new TimeoutException("selected capability timeout")),
+            logger);
 
+        Assert.NotNull(scanner);
+        Assert.Equal(ScannerCapabilityState.Unavailable, scanner.CapabilityState);
+        Assert.Null(scanner.Capabilities);
         Assert.Contains(logger.Messages, message =>
             message.Contains(
                 $"scanner.capabilities backend=wia scannerId={scannerId} stage=getCaps outcome=failure",
@@ -160,26 +163,27 @@ public sealed class WindowsScannerDiscoveryRegressionTests
     }
 
     [Fact]
-    public async Task SelectedCapabilities_RedactsNativeIdBeforeMessageTruncation()
+    public async Task SelectedCapabilities_GetCapsFailureRedactsNativeIdBeforeMessageTruncation()
     {
         var logger = new CaptureLogger();
         const string nativeId = "machine-specific-boundary-native-id";
         var scannerId = ScannerIdentity.Create(ScannerBackend.Wia, nativeId);
         var boundaryMessage = new string('x', 492) + nativeId;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            WindowsScanAdapter.ResolveCapabilitiesAsync(
-                scannerId,
-                driver => Task.FromResult(driver == Driver.Wia
-                    ? new List<ScanDevice>
-                    {
-                        new(Driver.Wia, nativeId, "Selected WIA scanner")
-                    }
-                    : throw new InvalidOperationException("unrelated backend must not run")),
-                (_, _) => Task.FromException<ScanCaps>(
-                    new InvalidOperationException(boundaryMessage)),
-                logger));
+        var scanner = await WindowsScanAdapter.ResolveCapabilitiesAsync(
+            scannerId,
+            driver => Task.FromResult(driver == Driver.Wia
+                ? new List<ScanDevice>
+                {
+                    new(Driver.Wia, nativeId, "Selected WIA scanner")
+                }
+                : throw new InvalidOperationException("unrelated backend must not run")),
+            (_, _) => Task.FromException<ScanCaps>(
+                new InvalidOperationException(boundaryMessage)),
+            logger);
 
+        Assert.NotNull(scanner);
+        Assert.Equal(ScannerCapabilityState.Unavailable, scanner.CapabilityState);
         Assert.DoesNotContain(logger.Messages, message =>
             message.Contains(nativeId[..8], StringComparison.OrdinalIgnoreCase));
     }
