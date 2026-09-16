@@ -10,7 +10,7 @@ public sealed class CurrentStateDocumentationTests
         var readme = ReadRepositoryFile("README.md");
 
         Assert.Contains("/v1/filesystem/list", readme, StringComparison.Ordinal);
-        Assert.Contains("candidate v0.3", readme, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("кандидат v0.3", readme, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
             "browser-facing filesystem routes в текущем accepted baseline отсутствуют",
             readme,
@@ -64,7 +64,7 @@ public sealed class CurrentStateDocumentationTests
         var api = ReadRepositoryFile("webassist/docs/api.md");
 
         Assert.Contains("/filesystem.html", api, StringComparison.Ordinal);
-        Assert.Contains("public filesystem API", api, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("публичного API файлового обмена", api, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -74,11 +74,11 @@ public sealed class CurrentStateDocumentationTests
         var linux = ReadRepositoryFile("webassist/docs/linux-service.md");
 
         Assert.Contains("<installerBaseName>-win-x64-<VERSION>.exe", windows, StringComparison.Ordinal);
-        Assert.Contains("public default", windows, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("публичном значении по умолчанию", windows, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("WebAssistant", windows, StringComparison.Ordinal);
 
         Assert.Contains("<installerBaseName>-linux-x64-<VERSION>.zip", linux, StringComparison.Ordinal);
-        Assert.Contains("public default", linux, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("публичном значении по умолчанию", linux, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("WebAssistant", linux, StringComparison.Ordinal);
     }
 
