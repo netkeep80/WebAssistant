@@ -6,6 +6,10 @@
       Version="$(var.ProductVersion)"
       Scope="perMachine">
 
+    <MajorUpgrade
+        Schedule="afterInstallExecute"
+        DowngradeErrorMessage="!(loc.WixDowngradePreventedMessage)" />
+
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="WebAssistant" />
     </StandardDirectory>
@@ -19,7 +23,19 @@
 
     <Files Include="$(var.PayloadRoot)\**" Directory="INSTALLFOLDER">
       <Exclude Files="$(var.PayloadRoot)\WebAssistant.exe" />
+      <Exclude Files="$(var.PayloadRoot)\appsettings.json" />
     </Files>
+
+    <Component
+        Id="WebAssistantConfigurationComponent"
+        Directory="INSTALLFOLDER"
+        Guid="*"
+        NeverOverwrite="yes">
+      <File
+          Id="WebAssistantConfigurationFile"
+          Source="$(var.PayloadRoot)\appsettings.json"
+          KeyPath="yes" />
+    </Component>
 
     <Component Id="WebAssistantServiceComponent" Directory="INSTALLFOLDER" Guid="*">
       <File

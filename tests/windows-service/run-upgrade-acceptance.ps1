@@ -38,6 +38,9 @@ $logSentinel = Join-Path $logDirectory "upgrade-preserve-log.sentinel"
 $dataSentinel = Join-Path $dataDirectory "upgrade-preserve-data.sentinel"
 $logSentinelContent = "webassistant-upgrade-log-state"
 $dataSentinelContent = "webassistant-upgrade-data-state"
+$installedConfig = Join-Path $installDirectoryFull "appsettings.json"
+$configPreservationSentinel = "webassistant-existing-appsettings-must-survive-upgrade-and-repair"
+$configSentinelSha256 = $null
 
 function Assert-ArtifactEvidence {
     param(
@@ -332,6 +335,43 @@ function Assert-ProgramDataSentinels {
     }
 }
 
+function Write-ConfigMsiLogEvidence {
+    param([Parameter(Mandatory = $true)][string]$PrimaryLog)
+
+    $directory = Split-Path -Parent $PrimaryLog
+    $stem = [IO.Path]::GetFileNameWithoutExtension($PrimaryLog)
+    foreach ($log in @(Get-ChildItem -LiteralPath $directory -Filter "$stem*.log" -File -ErrorAction SilentlyContinue)) {
+        $matches = @(Select-String `
+            -LiteralPath $log.FullName `
+            -Pattern 'appsettings|Component:|RemoveFiles|InstallFiles' `
+            -CaseSensitive:$false `
+            -ErrorAction SilentlyContinue | Select-Object -First 120)
+        if ($matches.Count -gt 0) {
+            Write-Host "config_msi_log=$($log.Name)"
+            foreach ($match in $matches) {
+                Write-Host "config_msi_evidence=$($match.LineNumber):$($match.Line.Trim())"
+            }
+        }
+    }
+}
+
+function Assert-InstalledConfigPreserved {
+    param(
+        [Parameter(Mandatory = $true)][string]$ExpectedSha256,
+        [Parameter(Mandatory = $true)][string]$Stage
+    )
+
+    if (-not (Test-Path -LiteralPath $installedConfig -PathType Leaf)) {
+        Write-ConfigMsiLogEvidence -PrimaryLog $burnLog
+        throw "Installed appsettings.json disappeared during $Stage."
+    }
+    $actualSha256 = (Get-FileHash -LiteralPath $installedConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualSha256 -ne $ExpectedSha256) {
+        Write-ConfigMsiLogEvidence -PrimaryLog $burnLog
+        throw "Installed appsettings.json was overwritten during $Stage. expected=$ExpectedSha256 actual=$actualSha256"
+    }
+}
+
 function Assert-CandidateInstalled {
     param(
         [Parameter(Mandatory = $true)][string]$ExpectedVersion,
@@ -436,6 +476,30 @@ try {
     Set-Content -LiteralPath $logSentinel -Value $logSentinelContent -NoNewline
     Set-Content -LiteralPath $dataSentinel -Value $dataSentinelContent -NoNewline
 
+    if (-not (Test-Path -LiteralPath $installedConfig -PathType Leaf)) {
+        throw "Historical installer did not create appsettings.json."
+    }
+    $preservedConfig = [ordered]@{
+        WebAssistant = [ordered]@{
+            Port = $Port
+            LogDirectory = ""
+            Cors = [ordered]@{
+                Enabled = $false
+                AllowedOrigins = @()
+            }
+            FileSystem = [ordered]@{
+                RootDirectory = $dataDirectory
+            }
+        }
+        InstallerPreservationSentinel = $configPreservationSentinel
+    }
+    $preservedConfigJson = $preservedConfig | ConvertTo-Json -Depth 8
+    [IO.File]::WriteAllText(
+        $installedConfig,
+        $preservedConfigJson,
+        [Text.UTF8Encoding]::new($false))
+    $configSentinelSha256 = (Get-FileHash -LiteralPath $installedConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+
     Invoke-Scanners -ExpectedPort $Port | Out-Null
 
     $serviceInfo = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
@@ -475,6 +539,7 @@ try {
     }
     Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
     Assert-ProgramDataSentinels
+    Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'upgrade'
 
     # Candidate runtime shutdown invariant: once SCM reports stopped, no worker owned by that service instance may remain.
     Invoke-Scanners -ExpectedPort $Port | Out-Null
@@ -508,6 +573,7 @@ try {
     Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
     Invoke-Scanners -ExpectedPort $Port | Out-Null
     Assert-ProgramDataSentinels
+    Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'service restart'
 
     # Same-version behavior is canonical Burn maintenance/repair, with the service running and scanner worker materialized.
     $repairServiceInfo = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
@@ -524,6 +590,7 @@ try {
     Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
     Invoke-Scanners -ExpectedPort $Port | Out-Null
     Assert-ProgramDataSentinels
+    Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'same-version repair'
 
     # Downgrade must be rejected and leave the candidate intact.
     if (Test-Path -LiteralPath $downgradeLog) {
@@ -540,6 +607,7 @@ try {
     Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
     Invoke-Scanners -ExpectedPort $Port | Out-Null
     Assert-ProgramDataSentinels
+    Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'rejected downgrade'
 
     $finalCandidateSha = (Get-FileHash -LiteralPath $candidate.Path -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($finalCandidateSha -ne $candidate.Sha256) {

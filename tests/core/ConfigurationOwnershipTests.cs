@@ -40,6 +40,43 @@ public sealed class ConfigurationOwnershipTests
     }
 
     [Fact]
+    public void WindowsWixInstaller_DoesNotOverwriteExistingAppsettings()
+    {
+        var package = ReadRequired("webassist/build/windows/installer/Package.wxs");
+
+        Assert.Contains(
+            "<Exclude Files=\"$(var.PayloadRoot)\\appsettings.json\" />",
+            package,
+            StringComparison.Ordinal);
+        Assert.Contains("Id=\"WebAssistantConfigurationComponent\"", package, StringComparison.Ordinal);
+        Assert.Contains(
+            "Id=\"WebAssistantConfigurationComponent\"\n        Directory=\"INSTALLFOLDER\"\n        Guid=\"*\"\n        NeverOverwrite=\"yes\"",
+            package,
+            StringComparison.Ordinal);
+        Assert.Contains("NeverOverwrite=\"yes\"", package, StringComparison.Ordinal);
+        Assert.Contains("Id=\"WebAssistantConfigurationFile\"", package, StringComparison.Ordinal);
+        Assert.Contains(
+            "Source=\"$(var.PayloadRoot)\\appsettings.json\"",
+            package,
+            StringComparison.Ordinal);
+        Assert.Contains("KeyPath=\"yes\"", package, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WindowsWixInstaller_RemovesHistoricalProductAfterCandidateComponentsAreInstalled()
+    {
+        var package = ReadRequired("webassist/build/windows/installer/Package.wxs");
+
+        Assert.Contains("<MajorUpgrade", package, StringComparison.Ordinal);
+        Assert.Contains("Schedule=\"afterInstallExecute\"", package, StringComparison.Ordinal);
+        Assert.Contains(
+            "DowngradeErrorMessage=\"!(loc.WixDowngradePreventedMessage)\"",
+            package,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("AllowDowngrades=\"yes\"", package, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LinuxInstaller_RequiresPackagedAppsettingsAndCopiesPayloadWithoutGeneratingDefaults()
     {
         var install = ReadRequired("webassist/install/linux/install.sh");
