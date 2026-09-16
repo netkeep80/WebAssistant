@@ -104,7 +104,8 @@ public sealed class ScannerRobustnessAndIdentityTests
                         SupportsFeeder: false,
                         SupportsDuplex: false,
                         FeederPaperState.Unknown,
-                        Capabilities: null)
+                        Capabilities: null,
+                        CapabilityState: ScannerCapabilityState.Unavailable)
                     : null);
         }
 
