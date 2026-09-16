@@ -20,7 +20,7 @@ internal sealed record FileSystemLogicalPath(
     internal static FileSystemLogicalPath Parse(string? value, bool allowRoot)
     {
         if (string.IsNullOrEmpty(value) ||
-            value.Contains('\\', StringComparison.Ordinal) ||
+            value.Contains('\\') ||
             value.Any(char.IsControl))
         {
             throw InvalidPath();
