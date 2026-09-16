@@ -12,8 +12,9 @@ internal enum ScannerBackend
 
 internal static class ScannerIdentity
 {
-    private const string Prefix = "wa1-";
-    private const int DigestLength = 43;
+    private const string Prefix = "wa2-";
+    private const int DigestByteLength = 12;
+    private const int DigestLength = 16;
 
     internal static string Create(ScannerBackend backend, string nativeId)
     {
@@ -21,7 +22,7 @@ internal static class ScannerIdentity
 
         var token = ToToken(backend);
         var digest = SHA256.HashData(Encoding.UTF8.GetBytes(token + "\0" + nativeId));
-        var encoded = Convert.ToBase64String(digest)
+        var encoded = Convert.ToBase64String(digest, 0, DigestByteLength)
             .TrimEnd('=')
             .Replace('+', '-')
             .Replace('/', '_');
