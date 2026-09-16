@@ -12,8 +12,9 @@ internal enum ScannerBackend
 
 internal static class ScannerIdentity
 {
-    private const string Prefix = "wa1-";
-    private const int DigestLength = 43;
+    private const string Prefix = "wa2-";
+    private const int DigestByteLength = 12;
+    private const int DigestLength = 16;
 
     internal static string Create(ScannerBackend backend, string nativeId)
     {
@@ -21,12 +22,31 @@ internal static class ScannerIdentity
 
         var token = ToToken(backend);
         var digest = SHA256.HashData(Encoding.UTF8.GetBytes(token + "\0" + nativeId));
-        var encoded = Convert.ToBase64String(digest)
+        var encoded = Convert.ToBase64String(digest, 0, DigestByteLength)
             .TrimEnd('=')
             .Replace('+', '-')
             .Replace('/', '_');
 
         return $"{Prefix}{token}-{encoded}";
+    }
+
+    internal static IReadOnlyList<ScannerDevice> ExcludeAmbiguousPublicIds(
+        IEnumerable<ScannerDevice> scanners,
+        out bool removedAmbiguousIds)
+    {
+        ArgumentNullException.ThrowIfNull(scanners);
+
+        var materialized = scanners.ToArray();
+        var ambiguous = materialized
+            .GroupBy(scanner => scanner.Id, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
+        removedAmbiguousIds = ambiguous.Count > 0;
+        return removedAmbiguousIds
+            ? materialized.Where(scanner => !ambiguous.Contains(scanner.Id)).ToArray()
+            : materialized;
     }
 
     internal static bool TryParse(string? value, out ScannerBackend backend)

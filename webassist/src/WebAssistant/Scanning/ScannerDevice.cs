@@ -2,6 +2,13 @@ using System.Collections;
 
 namespace WebAssistant.Scanning;
 
+internal enum ScannerCapabilityState
+{
+    Unavailable,
+    Partial,
+    Complete
+}
+
 internal sealed record ScannerDevice(
     string Id,
     string Name,
@@ -10,7 +17,8 @@ internal sealed record ScannerDevice(
     bool SupportsFeeder = false,
     bool SupportsDuplex = false,
     FeederPaperState FeederPaperState = FeederPaperState.Unknown,
-    ScannerEndpointCapabilities? Capabilities = null);
+    ScannerEndpointCapabilities? Capabilities = null,
+    ScannerCapabilityState CapabilityState = ScannerCapabilityState.Complete);
 
 internal sealed record ScannerDiscoveryWarning(ScannerBackend Backend, string Code);
 

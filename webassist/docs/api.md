@@ -26,7 +26,7 @@ Windows runtime lifecycle не меняет HTTP contract: scanner adapter ос�
 {
   "scanners": [
     {
-      "scannerId": "wa1-wia-...",
+      "scannerId": "wa2-wia-AbCdEfGhIjKlMnOp",
       "name": "Scanner name",
       "backend": "wia"
     }
@@ -40,7 +40,17 @@ Windows runtime lifecycle не меняет HTTP contract: scanner adapter ос�
 }
 ```
 
-`scannerId` — opaque persistent identifier WebAssistant. Он детерминированно выводится из backend и exact native identity устройства, не зависит от порядка перечисления и предназначен для сохранения вызывающим приложением между restart/reboot. Один физический сканер, доступный через разные backend, например WIA и TWAIN, является разными scanner endpoints и получает разные `scannerId`.
+`scannerId` — opaque persistent identifier WebAssistant. Текущая схема идентичности имеет версию `wa2` и формат:
+
+```text
+wa2-<backend>-<16 Base64Url symbols>
+```
+
+Digest вычисляется детерминированно как первые 96 бит `SHA-256(backend + "\0" + nativeId)`, после чего кодируется в Base64Url без padding. В вычислении участвует полный exact native identity, который WebAssistant не нормализует и не сокращает. Display name сканера не участвует в формировании публичного идентификатора и не изменяется WebAssistant.
+
+Префикс `wa2` является версией схемы scanner identity. Идентификаторы предыдущей схемы `wa1-*` не принимаются как текущие `scannerId`; вызывающее приложение должно сохранить значения, полученные из актуального `GET /v1/scanners`.
+
+`scannerId` не зависит от порядка перечисления и предназначен для сохранения вызывающим приложением между restart/reboot. Один физический сканер, доступный через разные backend, например WIA и TWAIN, является разными scanner endpoints и получает разные `scannerId`. Если два разных endpoint неожиданно получили один и тот же публичный `scannerId`, WebAssistant не объединяет их и отклоняет listing fail-closed.
 
 `GET /v1/scanners` — shallow registry/enumeration view, а не physical health check и не capability probe. Listing не вызывает deep `GetCaps` для каждого устройства и поэтому не публикует `sources`, feeder state или другие scanner capabilities. Зарегистрированный в ОС endpoint может оставаться в списке, даже если физически устройство сейчас недоступно.
 
@@ -59,7 +69,7 @@ Backend semantics:
 - `enumerationFailed` — backend не удалось перечислить;
 - `ambiguousNativeIdentity` — внутри backend обнаружена неоднозначная native identity.
 
-Если хотя бы один применимый backend успешно перечислен, `GET /v1/scanners` возвращает `200`, в том числе когда список устройств пуст. Если discovery в целом недоступен, возвращается `503`. Непредвиденная ошибка discovery boundary возвращается как `502`.
+Если хотя бы один применимый backend успешно перечислен, `GET /v1/scanners` возвращает `200`, в том числе когда список устройств пуст. Если discovery в целом недоступен, возвращается `503`. Непредвиденная ошибка discovery boundary или коллизия публичного `scannerId` возвращается как `502`.
 
 Native identity, capabilities и внутреннее состояние наличия бумаги наружу через listing не публикуются.
 
@@ -88,11 +98,18 @@ Preferred default не означает, что каждое устройств�
 
 Endpoint возвращает read-only snapshot нормализованных возможностей выбранного scanner endpoint. Он не читает и не меняет пользовательские preferences. По корректному `scannerId` WebAssistant разрешает только backend, закодированный в этом идентификаторе, и выполняет capability probe только выбранного endpoint; global WIA+TWAIN/SANE listing для этого запроса не выполняется.
 
-Пример:
+Ответ содержит `capabilityState`:
+
+- `complete` — получен полный используемый WebAssistant snapshot;
+- `partial` — известна только часть возможностей; неизвестное нельзя трактовать как отсутствие поддержки;
+- `unavailable` — capability probe не дал достоверного snapshot. В этом состоянии `modes` пуст и это не означает, что scanner endpoint не поддерживает flatbed, feeder или конкретные настройки.
+
+Пример полного snapshot:
 
 ```json
 {
-  "scannerId": "wa1-wia-...",
+  "scannerId": "wa2-wia-AbCdEfGhIjKlMnOp",
+  "capabilityState": "complete",
   "modes": [
     {
       "mode": "auto",
@@ -144,6 +161,16 @@ Endpoint возвращает read-only snapshot нормализованных 
 }
 ```
 
+При недоступном probe endpoint остаётся адресуемым:
+
+```json
+{
+  "scannerId": "wa2-twain-XyZ123456789abcd",
+  "capabilityState": "unavailable",
+  "modes": []
+}
+```
+
 Public mode vocabulary:
 
 - `auto` → request `source=auto`, `duplex=false`;
@@ -151,7 +178,7 @@ Public mode vocabulary:
 - `feeder` → request `source=feeder`, `duplex=false`;
 - `feederDuplex` → request `source=feeder`, `duplex=true`.
 
-Modes, которых concrete endpoint не поддерживает, отсутствуют.
+При `complete` modes, которых concrete endpoint не поддерживает, отсутствуют. При `unavailable` отсутствие mode не является доказательством неподдерживаемости.
 
 Capabilities являются source-specific. Поэтому значения flatbed, feeder и duplex могут различаться. Для dual-source `auto` WebAssistant публикует только пересечение значений, которые допустимы для каждого concrete source, который auto реально может выбрать. Например flatbed `[100,300,600]` и feeder `[200,300]` дают auto `[300]`. Это гарантирует, что настройка, выбранная до проверки наличия бумаги, останется допустимой после выбора feeder или flatbed.
 
@@ -160,7 +187,7 @@ Capabilities являются source-specific. Поэтому значения f
 - `400` — синтаксически неверный `scannerId`;
 - `404` — корректный `scannerId` отсутствует после успешного перечисления только указанного им backend;
 - `503` — scanner module/discovery либо backend указанного scannerId недоступен;
-- `502` — непредвиденная ошибка capability discovery boundary.
+- `502` — непредвиденная ошибка capability boundary. Обычный отказ выбранного capability probe, который удалось изолировать как недоступный snapshot, представляется успешным ответом с `capabilityState=unavailable`.
 
 ## Сканирование
 
@@ -172,7 +199,7 @@ Request обязан иметь `Content-Type: application/json` и содерж
 
 ```json
 {
-  "scannerId": "wa1-wia-...",
+  "scannerId": "wa2-wia-AbCdEfGhIjKlMnOp",
   "source": "auto",
   "settings": {
     "duplex": false,
@@ -192,11 +219,13 @@ Request обязан иметь `Content-Type: application/json` и содерж
 - `settings.colorMode` — опционально, exact `color`, `grayscale` или `blackAndWhite`;
 - `settings.paperSize` — опционально, exact `letter`, `legal`, `a5`, `a4`, `a3`, `b5` или `b4`.
 
-Если `dpi`, `colorMode` или `paperSize` не переданы, применяется effective default выбранного public mode из той же capability/default policy, которая используется `GET /v1/scanners/{scannerId}/settings`. Если backend не предоставил доказуемые normalized values для optional setting и caller его не передал, WebAssistant сохраняет backend default вместо изобретения значения.
+Если для выбранного режима доступен достоверный capability snapshot, отсутствующие `dpi`, `colorMode` и `paperSize` получают effective defaults из той же capability/default policy, которая используется `GET /v1/scanners/{scannerId}/settings`. Если explicit acquisition выполняется без доступного capability snapshot и caller не передал optional setting, WebAssistant оставляет его незаданным и сохраняет backend/device default вместо изобретения значения.
 
 Caller обязан сохранять пользовательские scanner preferences у себя и передавать их в каждом acquisition request. WebAssistant не хранит mutable per-user/per-scanner profile.
 
-Source-specific routes `/v1/scan/feeder` и `/v1/scan/duplex` отсутствуют. `scannerId` не передаётся через query parameter и автоматический выбор scanner endpoint по количеству найденных устройств не выполняется. Перед acquisition WebAssistant разрешает capabilities только выбранного `scannerId` и не выполняет global scanner listing или обращение к другому backend.
+Source-specific routes `/v1/scan/feeder` и `/v1/scan/duplex` отсутствуют. `scannerId` не передаётся через query parameter и автоматический выбор scanner endpoint по количеству найденных устройств не выполняется.
+
+Для `source=auto` WebAssistant выполняет capability probe только выбранного `scannerId`, потому что корректный выбор источника требует доказанного состояния источников/бумаги. Для явно указанного `source=flatbed|feeder` WebAssistant сначала выполняет только shallow resolution выбранного endpoint/backend и не делает extended `GetCaps` обязательным условием physical acquisition. Это позволяет попытаться сканирование даже если отдельный capability probe конкретного TWAIN driver аварийно недоступен.
 
 ### Автовыбор источника
 
@@ -210,7 +239,7 @@ Source-specific routes `/v1/scan/feeder` и `/v1/scan/duplex` отсутству
 
 `UNKNOWN` никогда не трактуется как `PRESENT`.
 
-Если доступен только feeder, `auto` использует feeder. Если доступен только flatbed, `auto` использует flatbed. Если подходящего source нет, запрос отклоняется до physical acquisition.
+Если доступен только feeder, `auto` использует feeder. Если доступен только flatbed, `auto` использует flatbed. Если подходящего source нет, запрос отклоняется до physical acquisition. Если capability snapshot выбранного endpoint имеет состояние `unavailable`, `source=auto` не угадывает источник, не запускает acquisition и возвращает `503`.
 
 Состояние бумаги является snapshot capability, а не гарантией успешной последующей подачи. Если `auto` выбрал feeder для endpoint с доступным flatbed, но реальная попытка acquisition завершилась именно `DeviceFeederEmptyException`, WebAssistant один раз повторяет acquisition со стекла. Другие ошибки feeder не вызывают такого fallback.
 
@@ -223,26 +252,26 @@ Source-specific routes `/v1/scan/feeder` и `/v1/scan/duplex` отсутству
 - `source=auto` + `duplex=true` → `400`;
 - `source=flatbed` + `duplex=true` → `400`;
 - `source=feeder` + `duplex=false` → simplex feeder;
-- `source=feeder` + `duplex=true` → duplex feeder, только если capability projection выбранного endpoint содержит `feederDuplex`; иначе `422`.
+- `source=feeder` + `duplex=true` → duplex feeder.
 
-Неподдерживаемый явно запрошенный flatbed/feeder также возвращает `422` до acquisition.
+Если достоверный capability snapshot доказывает, что явно запрошенный source/duplex не поддерживается, запрос возвращает `422` до acquisition. Если capability snapshot недоступен для explicit source, WebAssistant не подменяет неизвестность значением «не поддерживается»: syntactically valid request передаётся backend/device и его фактический отказ становится ошибкой acquisition.
 
 ### Валидация settings
 
-Валидация выполняется до physical acquisition:
+Синтаксическая валидация всегда выполняется до physical acquisition:
 
 - неизвестное имя `colorMode` или `paperSize`, неположительный `dpi` и другая syntactic/schema ошибка → `400`;
-- syntactically valid normalized value, которого нет в capability projection выбранного mode → `422`;
-- invalid/unsupported request не запускает scanner acquisition.
+- если достоверный capability snapshot существует, syntactically valid normalized value, которого нет в projection выбранного mode → `422` и acquisition не запускается;
+- если capability snapshot недоступен при explicit source, syntactically valid явно заданное значение передаётся backend/device; отсутствие знания не превращается в `422`.
 
 ### Ошибки acquisition
 
 - `400` — отсутствующий/пустой/синтаксически неверный `scannerId`, malformed JSON, неверный `source`, неверное сочетание `source`/`duplex` либо malformed normalized setting;
 - `404` — синтаксически корректный `scannerId` отсутствует после успешного перечисления указанного им backend;
 - `409` — другой physical scanner acquisition уже выполняется;
-- `422` — запрошенный source, duplex или valid normalized setting не поддерживается выбранным endpoint/mode;
+- `422` — достоверный capability snapshot доказывает, что запрошенный source, duplex или valid normalized setting не поддерживается выбранным endpoint/mode;
 - `502` — ошибка scanner acquisition либо scanner backend не вернул читаемый PDF;
-- `503` — scanner module/discovery недоступен либо backend, на который указывает корректный `scannerId`, в данный момент не удалось перечислить.
+- `503` — scanner module/discovery недоступен, backend выбранного `scannerId` не удалось перечислить либо `source=auto` не может быть разрешён из-за `capabilityState=unavailable`.
 
 На рабочей станции действует единый acquisition lock: одновременно выполняется не более одного physical scanner acquisition.
 
@@ -374,7 +403,7 @@ Content-Disposition: attachment
 X-Content-Type-Options: nosniff
 ```
 
-WebAssistant не определяет rendering behavior по filename extension и не отображает `RootDirectory` как static web tree.
+WebAssistant не определяет способ отображения по расширению имени файла и не предоставляет `RootDirectory` как дерево статических веб-ресурсов.
 
 ### Move / rename
 

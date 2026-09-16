@@ -54,6 +54,9 @@
     "tests/core/PlatformEndToEndTests.cs",
     "tests/core/ScanAdapterContractTests.cs",
     "tests/core/ScannerIdentityTests.cs",
+    "tests/core/ScannerRobustnessAndIdentityTests.cs",
+    "tests/core/ScannerCapabilityAvailabilityTests.cs",
+    "tests/core/WindowsScannerDiscoveryRegressionTests.cs",
     "tests/core/ScanSourcePolicyTests.cs",
     "tests/core/ScannerCapabilityProjectionTests.cs",
     "tests/core/ScannerSettingsSchemaTests.cs",
@@ -148,37 +151,44 @@
     {
       "id": "WA-C-SCANNER-DISCOVERY-001",
       "kind": "positive",
-      "assertion": "GET /v1/scanners возвращает только identity descriptors зарегистрированных scanner endpoints со stable scannerId без capability/GetCaps fan-out; на Windows WIA и TWAIN перечисляются независимо, partial backend failures видимы через warnings, а неоднозначная native identity отклоняется fail-closed.",
+      "assertion": "GET /v1/scanners возвращает только identity descriptors зарегистрированных scanner endpoints без capability/GetCaps fan-out; текущий scannerId имеет схему wa2, использует первые 96 бит SHA-256 от backend и exact native identity, не зависит от порядка перечисления, отвергает previous-schema identifiers и fail-closed обрабатывает неоднозначную native identity либо public scannerId collision. На Windows WIA и TWAIN перечисляются независимо, partial backend failures видимы через warnings.",
       "requirements": ["WA-SCAN-001"],
-      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/ScannerIdentityTests.cs", "tests/core/LinuxScanAdapterTests.cs", "tests/core/LinuxVirtualScanAdapterTests.cs", "tests/core/WindowsScanAdapterTests.cs", "tests/core/ScannerCapabilityBoundaryTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
+      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/ScannerIdentityTests.cs", "tests/core/ScannerRobustnessAndIdentityTests.cs", "tests/core/LinuxScanAdapterTests.cs", "tests/core/LinuxVirtualScanAdapterTests.cs", "tests/core/WindowsScanAdapterTests.cs", "tests/core/ScannerCapabilityBoundaryTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
     },
     {
       "id": "WA-C-SCANNER-HTTP-001",
       "kind": "positive",
-      "assertion": "POST /v1/scan является единственным acquisition route, принимает JSON с обязательным stable scannerId, разрешает capabilities только выбранного backend/endpoint без global listing, применяет exact source auto|flatbed|feeder, normalized settings и явные 400/404/409/422/502/503 outcomes, возвращая raw application/pdf при успехе.",
-      "requirements": ["WA-SCAN-001", "WA-SCAN-002", "WA-SCAN-003", "WA-SCAN-006", "WA-TRANSPORT-001"],
-      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/ScannerSettingsHttpContractTests.cs", "tests/core/ScannerCapabilityBoundaryTests.cs", "tests/core/PlatformEndToEndTests.cs", "tests/core/ServicePanelScannerApiTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
+      "assertion": "POST /v1/scan является единственным acquisition route, принимает JSON с обязательным current scannerId, использует только выбранный backend/endpoint без global listing, применяет exact source auto|flatbed|feeder, normalized settings и явные 400/404/409/422/502/503 outcomes. Explicit flatbed/feeder не требует extended capability probe как обязательного условия acquisition, а auto требует достаточного capability snapshot. Успех возвращает raw application/pdf.",
+      "requirements": ["WA-SCAN-001", "WA-SCAN-002", "WA-SCAN-003", "WA-SCAN-006", "WA-SCAN-008", "WA-TRANSPORT-001"],
+      "evidence": ["tests/core/HttpScanContractTests.cs", "tests/core/ScannerRobustnessAndIdentityTests.cs", "tests/core/ScannerCapabilityAvailabilityTests.cs", "tests/core/ScannerSettingsHttpContractTests.cs", "tests/core/ScannerCapabilityBoundaryTests.cs", "tests/core/PlatformEndToEndTests.cs", "tests/core/ServicePanelScannerApiTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
     },
     {
       "id": "WA-C-SCANNER-AUTO-001",
       "kind": "positive",
-      "assertion": "WebAssistant-owned auto policy выбирает feeder только при PRESENT; для dual-source ABSENT и UNKNOWN выбирают flatbed, UNKNOWN не считается PRESENT, explicit source не имеет fallback, а unsupported source/duplex отклоняется до acquisition.",
-      "requirements": ["WA-SCAN-002"],
-      "evidence": ["tests/core/ScanSourcePolicyTests.cs", "tests/core/HttpScanContractTests.cs", "tests/core/WindowsScanAdapterTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
+      "assertion": "WebAssistant-owned auto policy выбирает feeder только при PRESENT; для dual-source ABSENT и UNKNOWN выбирают flatbed, UNKNOWN не считается PRESENT, explicit source не имеет fallback. Auto с capabilityState=unavailable не угадывает source, не запускает acquisition и получает 503; unsupported source/duplex отклоняется до acquisition только когда это доказано достоверным capability snapshot.",
+      "requirements": ["WA-SCAN-002", "WA-SCAN-008"],
+      "evidence": ["tests/core/ScanSourcePolicyTests.cs", "tests/core/HttpScanContractTests.cs", "tests/core/ScannerCapabilityAvailabilityTests.cs", "tests/core/WindowsScanAdapterTests.cs", ".github/workflows/virtual-scanner.yml", "webassist/docs/api.md"]
     },
     {
       "id": "WA-C-SCANNER-STATELESS-001",
       "kind": "negative",
-      "assertion": "scannerId детерминированно выводится из backend и exact native identity и может сохраняться caller'ом между restart/reboot; WebAssistant не хранит mutable scanner profile, выбранный scannerId, source или settings и при acquisition заново разрешает endpoint stateless.",
+      "assertion": "Current scannerId schema wa2 детерминированно выводится из backend и exact native identity через 96-битный digest и может сохраняться caller'ом между restart/reboot; WebAssistant не хранит mutable scanner profile, выбранный scannerId, source или settings и при acquisition заново разрешает endpoint stateless.",
       "requirements": ["WA-SCAN-001", "WA-SCAN-002", "WA-SCAN-006"],
-      "evidence": ["tests/core/ScannerIdentityTests.cs", "tests/core/WindowsScanAdapterTests.cs", "tests/core/LinuxScanAdapterTests.cs", "tests/core/HttpScanContractTests.cs", "tests/core/ScannerSettingsHttpContractTests.cs", "webassist/docs/api.md"]
+      "evidence": ["tests/core/ScannerIdentityTests.cs", "tests/core/ScannerRobustnessAndIdentityTests.cs", "tests/core/WindowsScanAdapterTests.cs", "tests/core/LinuxScanAdapterTests.cs", "tests/core/HttpScanContractTests.cs", "tests/core/ScannerSettingsHttpContractTests.cs", "webassist/docs/api.md"]
     },
     {
       "id": "WA-C-SCANNER-SETTINGS-001",
       "kind": "positive",
-      "assertion": "Canonical scanner-settings schema и GET /v1/scanners/{scannerId}/settings позволяют получить normalized dpi/colorMode/paperSize capabilities только выбранного scanner endpoint/backend; auto projection является пересечением возможностей concrete sources, defaults детерминированы, invalid syntax получает 400, а valid unsupported value получает 422 до acquisition.",
-      "requirements": ["WA-SCAN-006"],
-      "evidence": ["webassist/docs/scanner-settings.schema.json", "tests/core/ScannerSettingsSchemaTests.cs", "tests/core/ScannerCapabilityProjectionTests.cs", "tests/core/ScannerSettingsHttpContractTests.cs", "tests/core/ScannerCapabilityBoundaryTests.cs", "webassist/src/WebAssistant/Http/ScannerSettingsEndpointHandlers.cs", "webassist/src/WebAssistant/Scanning/ScannerCapabilityProjection.cs", "webassist/docs/api.md"]
+      "assertion": "Canonical scanner-settings schema и GET /v1/scanners/{scannerId}/settings публикуют capabilityState complete|partial|unavailable и известную normalized dpi/colorMode/paperSize projection только выбранного scanner endpoint/backend. Unknown/unavailable не трактуется как unsupported; auto projection использует только доказуемо безопасные значения, defaults детерминированы при известной projection, invalid syntax получает 400, а valid unsupported value получает 422 до acquisition только при достоверном доказательстве неподдерживаемости.",
+      "requirements": ["WA-SCAN-006", "WA-SCAN-008"],
+      "evidence": ["webassist/docs/scanner-settings.schema.json", "tests/core/ScannerSettingsSchemaTests.cs", "tests/core/ScannerCapabilityProjectionTests.cs", "tests/core/ScannerSettingsHttpContractTests.cs", "tests/core/ScannerCapabilityAvailabilityTests.cs", "tests/core/ScannerCapabilityBoundaryTests.cs", "webassist/src/WebAssistant/Http/ScannerSettingsEndpointHandlers.cs", "webassist/src/WebAssistant/Scanning/ScannerCapabilityProjection.cs", "webassist/docs/api.md"]
+    },
+    {
+      "id": "WA-C-SCANNER-CAPABILITY-DEGRADATION-001",
+      "kind": "negative",
+      "assertion": "Capability probe failure сохраняет зарегистрированный endpoint и представляется как unavailable вместо ложного unsupported. На Windows explicit flatbed/feeder может после shallow selected-endpoint resolution продолжить acquisition без обязательного extended GetCaps; явно заданные syntactically valid settings передаются backend/device, отсутствующие optional settings сохраняют backend defaults. Auto при unavailable fail-closed без acquisition.",
+      "requirements": ["WA-SCAN-006", "WA-SCAN-008"],
+      "evidence": ["tests/core/ScannerRobustnessAndIdentityTests.cs", "tests/core/ScannerCapabilityAvailabilityTests.cs", "tests/core/WindowsScannerDiscoveryRegressionTests.cs", "tests/core/WindowsScanAdapterTests.cs", "webassist/src/WebAssistant/Http/ScanCoordinator.cs", "webassist/src/WebAssistant/Http/ScannerSettingsEndpointHandlers.cs", "webassist/docs/api.md"]
     },
     {
       "id": "WA-C-SCANNER-PANEL-001",

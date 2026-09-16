@@ -73,6 +73,39 @@ public sealed class WindowsScanAdapterTests
     }
 
     [Fact]
+    public async Task SelectedEndpoint_ResolvesOnlySelectedBackendWithoutCapabilityProbe()
+    {
+        var calls = new List<Driver>();
+        var selectedId = ScannerIdentity.Create(ScannerBackend.Twain, "twain-native-2");
+
+        var scanner = await WindowsScanAdapter.ResolveRegisteredEndpointAsync(
+            selectedId,
+            driver =>
+            {
+                calls.Add(driver);
+                return Task.FromResult(driver switch
+                {
+                    Driver.Twain => new List<ScanDevice>
+                    {
+                        new(Driver.Twain, "twain-native-1", "TWAIN first"),
+                        new(Driver.Twain, "twain-native-2", "TWAIN selected")
+                    },
+                    _ => throw new InvalidOperationException("wrong backend")
+                });
+            });
+
+        Assert.NotNull(scanner);
+        Assert.Equal(new[] { Driver.Twain }, calls);
+        Assert.Equal(selectedId, scanner.Id);
+        Assert.Equal("TWAIN selected", scanner.Name);
+        Assert.False(scanner.SupportsFlatbed);
+        Assert.False(scanner.SupportsFeeder);
+        Assert.False(scanner.SupportsDuplex);
+        Assert.Equal(FeederPaperState.Unknown, scanner.FeederPaperState);
+        Assert.Null(scanner.Capabilities);
+    }
+
+    [Fact]
     public async Task SelectedCapabilities_ProbesOnlySelectedEndpointAndNormalizesCapabilities()
     {
         var capabilityCalls = new List<string>();
@@ -221,7 +254,7 @@ public sealed class WindowsScanAdapterTests
                 "TWAIN2 Software Scanner",
                 StringComparison.OrdinalIgnoreCase));
 
-        Assert.StartsWith("wa1-twain-", scanner.Id, StringComparison.Ordinal);
+        Assert.StartsWith("wa2-twain-", scanner.Id, StringComparison.Ordinal);
         var capabilities = await adapter.GetScannerCapabilitiesAsync(scanner.Id);
         Assert.NotNull(capabilities);
         Assert.True(capabilities.SupportsFlatbed);

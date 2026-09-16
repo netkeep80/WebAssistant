@@ -46,10 +46,13 @@ internal static class ScannerSettingsEndpointHandlers
                     title: "Сканер не найден");
             }
 
-            var modes = ScannerCapabilityProjection.BuildModes(scanner);
+            var modes = scanner.CapabilityState == ScannerCapabilityState.Unavailable
+                ? []
+                : ScannerCapabilityProjection.BuildModes(scanner);
             return Results.Ok(new
             {
                 scannerId = scanner.Id,
+                capabilityState = CapabilityStateName(scanner.CapabilityState),
                 modes = modes.Select(ModeResponse).ToArray()
             });
         }
@@ -82,6 +85,14 @@ internal static class ScannerSettingsEndpointHandlers
                 title: "Ошибка получения настроек сканера");
         }
     }
+
+    private static string CapabilityStateName(ScannerCapabilityState state) => state switch
+    {
+        ScannerCapabilityState.Unavailable => "unavailable",
+        ScannerCapabilityState.Partial => "partial",
+        ScannerCapabilityState.Complete => "complete",
+        _ => throw new ArgumentOutOfRangeException(nameof(state), state, null)
+    };
 
     private static object ModeResponse(ScannerModeCapabilities mode)
     {
