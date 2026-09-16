@@ -98,9 +98,25 @@ public sealed class FileSystemBrowserTests
             var upload = Path.Combine(temp, "a.bin");
             var bytes = "browser-opaque-payload"u8.ToArray();
             await File.WriteAllBytesAsync(upload, bytes);
+            var uploadResponseSource = new TaskCompletionSource<IResponse>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            EventHandler<IResponse> observeUpload = (_, response) =>
+            {
+                if (response.Request.Method == "PUT" &&
+                    response.Url.Contains("/v1/filesystem/file", StringComparison.Ordinal))
+                {
+                    uploadResponseSource.TrySetResult(response);
+                }
+            };
+            page.Response += observeUpload;
             var chooser = await page.RunAndWaitForFileChooserAsync(
                 () => page.ClickAsync("#filesystem-left-upload"));
             await chooser.SetFilesAsync(upload);
+            var uploadResponse = await uploadResponseSource.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            page.Response -= observeUpload;
+            Assert.True(
+                uploadResponse.Ok,
+                $"Browser upload PUT returned HTTP {uploadResponse.Status}: {await uploadResponse.TextAsync()}");
             await Visible("left", "a.bin");
             Assert.Equal(0, await Row("right", "a.bin").CountAsync());
 
