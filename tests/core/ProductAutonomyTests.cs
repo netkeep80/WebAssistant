@@ -57,7 +57,7 @@ public sealed class ProductAutonomyTests
         var windows = File.ReadAllText(Path.Combine(productRoot, "docs", "windows-service.md"));
         var linux = File.ReadAllText(Path.Combine(productRoot, "docs", "linux-service.md"));
 
-        Assert.Contains("package-time", readme, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("После формирования канонического артефакта `appsettings.json` принадлежит пакету.", readme, StringComparison.Ordinal);
         Assert.Contains("WebAssistant-win-x64-<VERSION>.exe", windows, StringComparison.Ordinal);
         Assert.Contains("WebAssistant-linux-x64-<VERSION>.zip", linux, StringComparison.Ordinal);
         Assert.Contains("ALT Linux 10.1", linux, StringComparison.Ordinal);
