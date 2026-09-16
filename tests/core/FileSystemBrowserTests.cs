@@ -116,7 +116,7 @@ public sealed class FileSystemBrowserTests
             page.Response -= observeUpload;
             Assert.True(
                 uploadResponse.Ok,
-                $"Browser upload PUT returned HTTP {uploadResponse.Status}: {await uploadResponse.TextAsync()}");
+                $"Browser upload PUT returned HTTP {uploadResponse.Status}.");
             await Visible("left", "a.bin");
             Assert.Equal(0, await Row("right", "a.bin").CountAsync());
 
