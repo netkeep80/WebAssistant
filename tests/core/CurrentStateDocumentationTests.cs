@@ -94,6 +94,78 @@ public sealed class CurrentStateDocumentationTests
         Assert.Contains("/var/lib/webassistant", linux, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void CanonicalHumanDocumentation_DoesNotUseKnownMixedLanguageNarrative()
+    {
+        var forbiddenByFile = new Dictionary<string, string[]>
+        {
+            ["README.md"] =
+            [
+                "локальная machine-wide служба",
+                "Текущий scanner module",
+                "Canonical product version",
+                "## Repository governance"
+            ],
+            ["webassist/README.md"] =
+            [
+                "persisted source of truth for product version",
+                "## Build-time product metadata",
+                "Текущий scanner module",
+                "## Runtime configuration и package-time ownership"
+            ],
+            ["webassist/docs/api.md"] =
+            [
+                "Текущая major version",
+                "Machine endpoints",
+                "Canonical machine-readable schema",
+                "Единственный acquisition endpoint"
+            ],
+            ["webassist/docs/windows-service.md"] =
+            [
+                "## Canonical artifact",
+                "## Package-owned configuration",
+                "## Runtime state"
+            ],
+            ["webassist/docs/linux-service.md"] =
+            [
+                "## Canonical artifact",
+                "## Package-owned configuration",
+                "## Evidence boundary"
+            ],
+            ["webassist/docs/installation-guide.md"] =
+            [
+                "source commit",
+                "canonical distribution artifacts",
+                "release metadata"
+            ],
+            ["webassist/vendor/naps2/README.md"] =
+            [
+                "# Fixed NAPS2 SDK provenance",
+                "Current committed package",
+                "The .3 package"
+            ]
+        };
+
+        foreach (var (path, forbiddenPhrases) in forbiddenByFile)
+        {
+            var content = ReadRepositoryFile(path);
+            foreach (var phrase in forbiddenPhrases)
+            {
+                Assert.DoesNotContain(phrase, content, StringComparison.Ordinal);
+            }
+        }
+    }
+
+    [Fact]
+    public void RootReadme_MarksDatedDevelopmentPlansAsHistoricalNonNormativeRecords()
+    {
+        var readme = ReadRepositoryFile("README.md");
+
+        Assert.Contains("docs/superpowers", readme, StringComparison.Ordinal);
+        Assert.Contains("исторические", readme, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("не являются нормативным описанием текущего продукта", readme, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string ReadRepositoryFile(string relativePath)
     {
         var root = FindRepositoryRoot();
