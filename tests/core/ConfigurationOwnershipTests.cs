@@ -67,10 +67,13 @@ public sealed class ConfigurationOwnershipTests
     {
         var package = ReadRequired("webassist/build/windows/installer/Package.wxs");
 
+        Assert.Contains("<MajorUpgrade", package, StringComparison.Ordinal);
+        Assert.Contains("Schedule=\"afterInstallExecute\"", package, StringComparison.Ordinal);
         Assert.Contains(
-            "<MajorUpgrade Schedule=\"afterInstallExecute\" />",
+            "DowngradeErrorMessage=\"!(loc.WixDowngradePreventedMessage)\"",
             package,
             StringComparison.Ordinal);
+        Assert.DoesNotContain("AllowDowngrades=\"yes\"", package, StringComparison.Ordinal);
     }
 
     [Fact]
