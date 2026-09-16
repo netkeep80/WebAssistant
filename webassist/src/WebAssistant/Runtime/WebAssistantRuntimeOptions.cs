@@ -10,14 +10,12 @@ internal sealed class WebAssistantRuntimeOptions
         int port,
         bool corsEnabled,
         IReadOnlySet<string> allowedOrigins,
-        string logDirectory,
-        string fileSystemRootDirectory)
+        string logDirectory)
     {
         Port = port;
         CorsEnabled = corsEnabled;
         AllowedOrigins = allowedOrigins;
         LogDirectory = logDirectory;
-        FileSystemRootDirectory = fileSystemRootDirectory;
     }
 
     internal int Port { get; }
@@ -29,8 +27,6 @@ internal sealed class WebAssistantRuntimeOptions
     internal IReadOnlySet<string> AllowedOrigins { get; }
 
     internal string LogDirectory { get; }
-
-    internal string FileSystemRootDirectory { get; }
 
     internal static WebAssistantRuntimeOptions Load(IConfiguration configuration)
     {
@@ -46,15 +42,12 @@ internal sealed class WebAssistantRuntimeOptions
             : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var logDirectory = ResolveLogDirectory(
             configuration["WebAssistant:LogDirectory"]);
-        var fileSystemRootDirectory = ResolveFileSystemRootDirectory(
-            configuration["WebAssistant:FileSystem:RootDirectory"]);
 
         return new WebAssistantRuntimeOptions(
             port,
             corsEnabled,
             allowedOrigins,
-            logDirectory,
-            fileSystemRootDirectory);
+            logDirectory);
     }
 
     private static bool ParseBoolean(string? value, string key)
@@ -110,29 +103,6 @@ internal sealed class WebAssistantRuntimeOptions
         }
 
         return Path.Combine(AppContext.BaseDirectory, "logs");
-    }
-
-    private static string ResolveFileSystemRootDirectory(string? configuredDirectory)
-    {
-        if (!string.IsNullOrWhiteSpace(configuredDirectory))
-        {
-            return Path.GetFullPath(configuredDirectory.Trim());
-        }
-
-        if (OperatingSystem.IsWindows())
-        {
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                "WebAssistant",
-                "data");
-        }
-
-        if (OperatingSystem.IsLinux())
-        {
-            return "/var/lib/webassistant";
-        }
-
-        return Path.Combine(AppContext.BaseDirectory, "data");
     }
 
     private static IReadOnlySet<string> ParseAllowedOrigins(
