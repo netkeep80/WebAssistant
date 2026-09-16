@@ -2,35 +2,61 @@ namespace WebAssistant.FileSystem;
 
 internal sealed class RootedFileSystemProvider : IDisposable
 {
-    private readonly IDisposable? disposableFileSystem;
+    private readonly string rootDirectory;
+    private readonly object sync = new();
+    private IRootedFileSystem? fileSystem;
     private bool disposed;
 
     internal RootedFileSystemProvider(string rootDirectory)
     {
-        try
+        this.rootDirectory = rootDirectory;
+        _ = TryGetFileSystem(out _);
+    }
+
+    internal bool IsAvailable => TryGetFileSystem(out _);
+
+    internal IRootedFileSystem? FileSystem =>
+        TryGetFileSystem(out var current) ? current : null;
+
+    internal bool TryGetFileSystem(out IRootedFileSystem? current)
+    {
+        lock (sync)
         {
-            FileSystem = Create(rootDirectory);
-            disposableFileSystem = FileSystem as IDisposable;
-        }
-        catch (Exception exception) when (IsExpectedCapabilityFailure(exception))
-        {
-            FileSystem = null;
+            ObjectDisposedException.ThrowIf(disposed, this);
+
+            if (fileSystem is not null)
+            {
+                current = fileSystem;
+                return true;
+            }
+
+            try
+            {
+                fileSystem = Create(rootDirectory);
+                current = fileSystem;
+                return true;
+            }
+            catch (Exception exception) when (IsExpectedCapabilityFailure(exception))
+            {
+                current = null;
+                return false;
+            }
         }
     }
 
-    internal bool IsAvailable => FileSystem is not null;
-
-    internal IRootedFileSystem? FileSystem { get; }
-
     public void Dispose()
     {
-        if (disposed)
+        lock (sync)
         {
-            return;
-        }
+            if (disposed)
+            {
+                return;
+            }
 
-        disposed = true;
-        disposableFileSystem?.Dispose();
+            disposed = true;
+            (fileSystem as IDisposable)?.Dispose();
+            fileSystem = null;
+        }
     }
 
     private static IRootedFileSystem Create(string rootDirectory)
