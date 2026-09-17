@@ -19,6 +19,7 @@ public sealed class FileSystemBrowserTests
             Guid.NewGuid().ToString("N"));
         var archive = Path.Combine(temp, "archive");
         var nfs = Path.Combine(temp, "nfs");
+        var offline = Path.Combine(temp, "offline");
         var logs = Path.Combine(temp, "logs");
         Directory.CreateDirectory(Path.Combine(archive, "incoming"));
         Directory.CreateDirectory(Path.Combine(archive, "processed"));
@@ -38,6 +39,7 @@ public sealed class FileSystemBrowserTests
         psi.Environment["WebAssistant__Port"] = port.ToString();
         psi.Environment["WebAssistant__FileSystem__archive"] = archive;
         psi.Environment["WebAssistant__FileSystem__nfs"] = nfs;
+        psi.Environment["WebAssistant__FileSystem__offline"] = offline;
         psi.Environment["WebAssistant__LogDirectory"] = logs;
         using var service = Process.Start(psi)!;
 
@@ -87,6 +89,7 @@ public sealed class FileSystemBrowserTests
 
             await page.Locator("#filesystem-roots [data-root='archive']").WaitForAsync();
             await page.Locator("#filesystem-roots [data-root='nfs']").WaitForAsync();
+            await page.Locator("#filesystem-roots [data-root='offline']").WaitForAsync();
             await page.ClickAsync("#filesystem-roots [data-root='archive']");
             await WaitBreadcrumb("left", "archive");
             await WaitBreadcrumb("right", "archive");
@@ -251,6 +254,20 @@ public sealed class FileSystemBrowserTests
             var nfsExternal = Path.Combine(nfs, "nfs-external.txt");
             await File.WriteAllTextAsync(nfsExternal, "nfs");
             await page.ClickAsync("#filesystem-right-refresh");
+            await Visible("right", "nfs-external.txt");
+
+            await page.ClickAsync("#filesystem-roots [data-root='offline']");
+            await page.Locator("#filesystem-left-status")
+                .GetByText("filesystem_root_unavailable", new() { Exact = false })
+                .WaitForAsync();
+            await page.Locator("#filesystem-right-status")
+                .GetByText("filesystem_root_unavailable", new() { Exact = false })
+                .WaitForAsync();
+            Assert.False(Directory.Exists(offline));
+
+            await page.ClickAsync("#filesystem-roots [data-root='nfs']");
+            await WaitBreadcrumb("left", "nfs");
+            await WaitBreadcrumb("right", "nfs");
             await Visible("right", "nfs-external.txt");
         }
         finally
