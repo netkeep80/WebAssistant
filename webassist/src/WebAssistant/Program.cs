@@ -28,9 +28,8 @@ builder.Services.AddSingleton(serviceProvider =>
     WebAssistantRuntimeOptions.Load(
         serviceProvider.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton(serviceProvider =>
-    new RootedFileSystemProvider(
-        serviceProvider.GetRequiredService<WebAssistantRuntimeOptions>()
-            .FileSystemRootDirectory));
+    FileSystemRootRegistry.Load(
+        serviceProvider.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton(_ => new AgentRuntimeInfo());
 builder.Services.AddSingleton(serviceProvider =>
     new DailyLogReader(
@@ -138,7 +137,7 @@ api.MapGet("/diag/info", (
     AgentRuntimeInfo runtimeInfo,
     WebAssistantRuntimeOptions options,
     ScanCoordinator coordinator,
-    RootedFileSystemProvider fileSystemProvider) =>
+    FileSystemRootRegistry fileSystemRegistry) =>
 {
     var uptime = DateTimeOffset.Now - runtimeInfo.StartedAt;
     return Results.Ok(new
@@ -149,9 +148,7 @@ api.MapGet("/diag/info", (
         listenUrl = $"http://{options.ListenAddress}:{options.Port}",
         apiVersion = ApiVersion.Current,
         scanState = coordinator.IsBusy ? "busy" : "idle",
-        fileSystemState = fileSystemProvider.IsAvailable
-            ? "available"
-            : "unavailable"
+        fileSystemState = fileSystemRegistry.DiagnosticState
     });
 });
 api.MapGet("/diag/logs", async (

@@ -6,8 +6,6 @@
       "Enabled": false,
       "AllowedOrigins": []
     },
-    "FileSystem": {
-      "RootDirectory": ""
-    }
+    "FileSystem": {}
   }
 }

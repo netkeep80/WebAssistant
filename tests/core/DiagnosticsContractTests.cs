@@ -28,6 +28,7 @@ public sealed class DiagnosticsContractTests
         Assert.Contains("\"apiVersion\":\"v1\"", json);
         Assert.Contains("http://127.0.0.1:17654", json);
         Assert.Contains("\"scanState\":\"idle\"", json);
+        Assert.Contains("\"fileSystemState\":\"available\"", json);
     }
 
     [Fact]
@@ -87,13 +88,44 @@ public sealed class DiagnosticsContractTests
     }
 
     [Fact]
-    public async Task FileSystem_WritesTechnicalLogsWithoutPathContentOrRoot()
+    public async Task FileSystem_LogsLogicalAuthorityWithoutPhysicalPathOrContent()
     {
-        using var fixture=CreateFixture();using var client=fixture.Factory.CreateClient();var marker=$"private-{Guid.NewGuid():N}.bin";var moved=$"moved-{Guid.NewGuid():N}.bin";var content=$"secret-{Guid.NewGuid():N}";var bytes=System.Text.Encoding.UTF8.GetBytes(content);
-        using(var put=new HttpRequestMessage(HttpMethod.Put,$"/v1/filesystem/file?path={marker}"){Content=new ByteArrayContent(bytes)})Assert.Equal(HttpStatusCode.NoContent,(await client.SendAsync(put)).StatusCode);
-        Assert.Equal(HttpStatusCode.OK,(await client.GetAsync("/v1/filesystem/list?path=")).StatusCode);Assert.Equal(HttpStatusCode.OK,(await client.GetAsync($"/v1/filesystem/file?path={marker}")).StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent,(await client.PostAsJsonAsync("/v1/filesystem/move",new{sourcePath=marker,destinationPath=moved})).StatusCode);Assert.Equal(HttpStatusCode.NoContent,(await client.DeleteAsync($"/v1/filesystem/file?path={moved}")).StatusCode);
-        var log=await ReadTodayLogAsync(fixture.LogDirectory);Assert.Contains("/v1/filesystem/",log);Assert.DoesNotContain(marker,log);Assert.DoesNotContain(moved,log);Assert.DoesNotContain(content,log);Assert.DoesNotContain(Convert.ToBase64String(bytes),log);Assert.DoesNotContain(fixture.FileSystemRoot,log);
+        using var fixture = CreateFixture();
+        using var client = fixture.Factory.CreateClient();
+        var marker = $"private-{Guid.NewGuid():N}.bin";
+        var moved = $"moved-{Guid.NewGuid():N}.bin";
+        var content = $"secret-{Guid.NewGuid():N}";
+        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+        var source = $"archive/{marker}";
+        var destination = $"archive/{moved}";
+
+        using (var put = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"/v1/filesystem/file?path={Uri.EscapeDataString(source)}")
+        {
+            Content = new ByteArrayContent(bytes)
+        })
+        {
+            Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(put)).StatusCode);
+        }
+
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            (await client.PostAsJsonAsync(
+                "/v1/filesystem/move",
+                new { sourcePath = source, destinationPath = destination })).StatusCode);
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            (await client.DeleteAsync(
+                $"/v1/filesystem/file?path={Uri.EscapeDataString(destination)}")).StatusCode);
+
+        var log = await ReadTodayLogAsync(fixture.LogDirectory);
+        Assert.Contains("logicalRoot=archive", log);
+        Assert.Contains($"relativePath={marker}", log);
+        Assert.Contains($"relativePath={moved}", log);
+        Assert.DoesNotContain(content, log);
+        Assert.DoesNotContain(Convert.ToBase64String(bytes), log);
+        Assert.DoesNotContain(fixture.FileSystemRoot, log);
     }
 
     [Fact]
@@ -145,7 +177,7 @@ public sealed class DiagnosticsContractTests
         var settings = new Dictionary<string, string?>
         {
             ["WebAssistant:LogDirectory"] = logDirectory,
-            ["WebAssistant:FileSystem:RootDirectory"] = fileSystemRoot
+            ["WebAssistant:FileSystem:archive"] = fileSystemRoot
         };
 
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>

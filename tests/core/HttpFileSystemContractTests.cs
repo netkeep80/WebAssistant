@@ -11,6 +11,7 @@ namespace WebAssistant.CoreTests;
 
 public sealed class HttpFileSystemContractTests : IDisposable
 {
+    private const string LogicalRoot = "archive";
     private readonly string root;
     private readonly WebApplicationFactory<Program> factory;
     private readonly HttpClient client;
@@ -28,11 +29,11 @@ public sealed class HttpFileSystemContractTests : IDisposable
     }
 
     [Fact]
-    public async Task FileSystemApi_HappyPathUsesOnlyRootRelativePublicSurface()
+    public async Task FileSystemApi_HappyPathUsesOnlyLogicalPublicSurface()
     {
         using (var createDirectory = await client.PostAsJsonAsync(
             "/v1/filesystem/directory",
-            new { path = "incoming" }))
+            new { path = "archive/incoming" }))
         {
             Assert.Equal(HttpStatusCode.NoContent, createDirectory.StatusCode);
         }
@@ -40,7 +41,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
         var payload = "opaque-payload"u8.ToArray();
         using (var upload = new HttpRequestMessage(
             HttpMethod.Put,
-            "/v1/filesystem/file?path=incoming%2Fa.bin"))
+            "/v1/filesystem/file?path=archive%2Fincoming%2Fa.bin"))
         {
             upload.Content = new ByteArrayContent(payload);
             upload.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
@@ -49,12 +50,12 @@ public sealed class HttpFileSystemContractTests : IDisposable
         }
 
         using (var listing = await client.GetAsync(
-            "/v1/filesystem/list?path=incoming&limit=200"))
+            "/v1/filesystem/list?path=archive%2Fincoming&limit=200"))
         {
             Assert.Equal(HttpStatusCode.OK, listing.StatusCode);
             using var document = JsonDocument.Parse(await listing.Content.ReadAsStringAsync());
             var rootElement = document.RootElement;
-            Assert.Equal("incoming", rootElement.GetProperty("path").GetString());
+            Assert.Equal("archive/incoming", rootElement.GetProperty("path").GetString());
             var entries = rootElement.GetProperty("entries");
             var entry = Assert.Single(entries.EnumerateArray());
             Assert.Equal("a.bin", entry.GetProperty("name").GetString());
@@ -64,7 +65,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
         }
 
         using (var download = await client.GetAsync(
-            "/v1/filesystem/file?path=incoming%2Fa.bin"))
+            "/v1/filesystem/file?path=archive%2Fincoming%2Fa.bin"))
         {
             Assert.Equal(HttpStatusCode.OK, download.StatusCode);
             Assert.Equal("application/octet-stream", download.Content.Headers.ContentType?.MediaType);
@@ -79,21 +80,21 @@ public sealed class HttpFileSystemContractTests : IDisposable
             "/v1/filesystem/move",
             new
             {
-                sourcePath = "incoming/a.bin",
-                destinationPath = "incoming/b.bin"
+                sourcePath = "archive/incoming/a.bin",
+                destinationPath = "archive/incoming/b.bin"
             }))
         {
             Assert.Equal(HttpStatusCode.NoContent, move.StatusCode);
         }
 
         using (var deleteFile = await client.DeleteAsync(
-            "/v1/filesystem/file?path=incoming%2Fb.bin"))
+            "/v1/filesystem/file?path=archive%2Fincoming%2Fb.bin"))
         {
             Assert.Equal(HttpStatusCode.NoContent, deleteFile.StatusCode);
         }
 
         using (var deleteDirectory = await client.DeleteAsync(
-            "/v1/filesystem/directory?path=incoming"))
+            "/v1/filesystem/directory?path=archive%2Fincoming"))
         {
             Assert.Equal(HttpStatusCode.NoContent, deleteDirectory.StatusCode);
         }
@@ -111,7 +112,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Put,
-            "/v1/filesystem/file?path=empty.bin")
+            "/v1/filesystem/file?path=archive%2Fempty.bin")
         {
             Content = new ByteArrayContent(Array.Empty<byte>())
         };
@@ -131,7 +132,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
 
         using (var upload = new HttpRequestMessage(
             HttpMethod.Put,
-            "/v1/filesystem/file?path=exists.bin")
+            "/v1/filesystem/file?path=archive%2Fexists.bin")
         {
             Content = new ByteArrayContent("replacement"u8.ToArray())
         })
@@ -147,7 +148,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
         Directory.CreateDirectory(Path.Combine(root, "non-empty"));
         await File.WriteAllTextAsync(Path.Combine(root, "non-empty", "child.txt"), "child");
         using (var response = await client.DeleteAsync(
-            "/v1/filesystem/directory?path=non-empty"))
+            "/v1/filesystem/directory?path=archive%2Fnon-empty"))
         {
             await AssertProblemCodeAsync(
                 response,
@@ -156,7 +157,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
         }
 
         using (var response = await client.GetAsync(
-            "/v1/filesystem/file?path=missing.bin"))
+            "/v1/filesystem/file?path=archive%2Fmissing.bin"))
         {
             await AssertProblemCodeAsync(
                 response,
@@ -170,7 +171,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
     {
         using (var upload = new HttpRequestMessage(
             HttpMethod.Put,
-            "/v1/filesystem/file?path=payload.sh")
+            "/v1/filesystem/file?path=archive%2Fpayload.sh")
         {
             Content = new ByteArrayContent("echo unsafe"u8.ToArray())
         })
@@ -184,7 +185,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
 
         await File.WriteAllTextAsync(Path.Combine(root, "external.sh"), "echo external");
 
-        using (var listing = await client.GetAsync("/v1/filesystem/list?path="))
+        using (var listing = await client.GetAsync("/v1/filesystem/list?path=archive%2F"))
         {
             Assert.Equal(HttpStatusCode.OK, listing.StatusCode);
             using var document = JsonDocument.Parse(await listing.Content.ReadAsStringAsync());
@@ -197,7 +198,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
         }
 
         using (var response = await client.GetAsync(
-            "/v1/filesystem/file?path=external.sh"))
+            "/v1/filesystem/file?path=archive%2Fexternal.sh"))
         {
             await AssertProblemCodeAsync(
                 response,
@@ -207,7 +208,11 @@ public sealed class HttpFileSystemContractTests : IDisposable
 
         using (var move = await client.PostAsJsonAsync(
             "/v1/filesystem/move",
-            new { sourcePath = "external.sh", destinationPath = "external.txt" }))
+            new
+            {
+                sourcePath = "archive/external.sh",
+                destinationPath = "archive/external.txt"
+            }))
         {
             await AssertProblemCodeAsync(
                 move,
@@ -216,7 +221,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
         }
 
         using (var delete = await client.DeleteAsync(
-            "/v1/filesystem/file?path=external.sh"))
+            "/v1/filesystem/file?path=archive%2Fexternal.sh"))
         {
             Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
         }
@@ -233,7 +238,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
 
         string cursor;
         using (var first = await client.GetAsync(
-            "/v1/filesystem/list?path=alpha&limit=2"))
+            "/v1/filesystem/list?path=archive%2Falpha&limit=2"))
         {
             Assert.Equal(HttpStatusCode.OK, first.StatusCode);
             using var document = JsonDocument.Parse(await first.Content.ReadAsStringAsync());
@@ -243,7 +248,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
         }
 
         using (var second = await client.GetAsync(
-            $"/v1/filesystem/list?path=alpha&limit=2&cursor={Uri.EscapeDataString(cursor)}"))
+            $"/v1/filesystem/list?path=archive%2Falpha&limit=2&cursor={Uri.EscapeDataString(cursor)}"))
         {
             Assert.Equal(HttpStatusCode.OK, second.StatusCode);
             using var document = JsonDocument.Parse(await second.Content.ReadAsStringAsync());
@@ -252,12 +257,12 @@ public sealed class HttpFileSystemContractTests : IDisposable
         }
 
         using (var foreign = await client.GetAsync(
-            $"/v1/filesystem/list?path=beta&limit=2&cursor={Uri.EscapeDataString(cursor)}"))
+            $"/v1/filesystem/list?path=archive%2Fbeta&limit=2&cursor={Uri.EscapeDataString(cursor)}"))
         {
             await AssertProblemCodeAsync(
                 foreign,
                 HttpStatusCode.BadRequest,
-                "invalid_path");
+                "filesystem_path_invalid");
         }
     }
 
@@ -265,18 +270,18 @@ public sealed class HttpFileSystemContractTests : IDisposable
     public async Task InvalidPath_IsProblemJsonAndNeverDisclosesHostRoot()
     {
         using var response = await client.GetAsync(
-            "/v1/filesystem/list?path=..%2Foutside");
+            "/v1/filesystem/list?path=archive%2F..%2Foutside");
 
         await AssertProblemCodeAsync(
             response,
             HttpStatusCode.BadRequest,
-            "invalid_path");
+            "filesystem_path_invalid");
         var body = await response.Content.ReadAsStringAsync();
         Assert.DoesNotContain(root, body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task UnavailableFileSystem_Returns503WithoutBreakingHealth()
+    public async Task UnavailableRoot_Returns503WithoutBreakingHealth()
     {
         var missingRoot = Path.Combine(
             Path.GetTempPath(),
@@ -286,12 +291,12 @@ public sealed class HttpFileSystemContractTests : IDisposable
         using var unavailableClient = unavailableFactory.CreateClient();
 
         using (var response = await unavailableClient.GetAsync(
-            "/v1/filesystem/list?path="))
+            "/v1/filesystem/list?path=archive%2F"))
         {
             await AssertProblemCodeAsync(
                 response,
                 HttpStatusCode.ServiceUnavailable,
-                "filesystem_unavailable");
+                "filesystem_root_unavailable");
         }
 
         using (var health = await unavailableClient.GetAsync("/v1/health"))
@@ -307,7 +312,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
             {
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["WebAssistant:FileSystem:RootDirectory"] = rootDirectory
+                    [$"WebAssistant:FileSystem:{LogicalRoot}"] = rootDirectory
                 });
             });
         });

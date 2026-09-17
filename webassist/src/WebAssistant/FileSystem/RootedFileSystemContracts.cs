@@ -6,6 +6,11 @@ namespace WebAssistant.FileSystem;
 internal static class FileSystemErrorCodes
 {
     internal const string InvalidPath = "invalid_path";
+    internal const string FileSystemPathInvalid = "filesystem_path_invalid";
+    internal const string FileSystemNotConfigured = "filesystem_not_configured";
+    internal const string FileSystemConfigurationInvalid = "filesystem_configuration_invalid";
+    internal const string FileSystemRootNotFound = "filesystem_root_not_found";
+    internal const string FileSystemRootUnavailable = "filesystem_root_unavailable";
     internal const string NotFound = "not_found";
     internal const string DestinationExists = "destination_exists";
     internal const string DirectoryNotEmpty = "directory_not_empty";

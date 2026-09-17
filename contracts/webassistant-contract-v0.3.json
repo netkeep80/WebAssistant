@@ -124,12 +124,12 @@
     {
       "id": "WA-FS-001",
       "kind": "required",
-      "statement": "Filesystem capability имеет configured RootDirectory и принимает только explicit root-relative paths; absolute paths, navigation segments, выход за root, symlink/junction/reparse traversal, hard-link aliasing и check/use race не могут расширить authority за configured RootDirectory."
+      "statement": "FILESYSTEM AUTHORITY = union(configured named roots). WebAssistant:FileSystem является словарём logicalRootName -> physicalRootPath; logicalRootName соответствует [A-Za-z0-9][A-Za-z0-9._-]*, имена . и .. и case-only collisions запрещены. Каждый logical root создаёт отдельный native rooted authority context; public path имеет форму <logicalRootName>/<relativePathInsideRoot> и не раскрывает physicalRootPath. Absolute paths, navigation segments, выход за root, symlink/junction/reparse traversal, hard-link aliasing и check/use race не могут расширить authority за выбранный configured named root."
     },
     {
       "id": "WA-FS-002",
       "kind": "required",
-      "statement": "Candidate v0.3 публикует GET /v1/filesystem/list, GET/PUT/DELETE /v1/filesystem/file, POST/DELETE /v1/filesystem/directory и POST /v1/filesystem/move. Browser filesystem API stateless: caller владеет текущей директорией и каждый запрос несёт explicit root-relative path."
+      "statement": "Candidate v0.3 публикует GET /v1/filesystem/roots, GET /v1/filesystem/list, GET/PUT/DELETE /v1/filesystem/file, POST/DELETE /v1/filesystem/directory и POST /v1/filesystem/move. Browser filesystem API stateless: caller владеет текущей директорией и каждый запрос несёт explicit logical-root-prefixed path. Move/rename разрешён только внутри same logical root; cross-root move отклоняется до acquisition destination authority и copy+delete fallback запрещён."
     },
     {
       "id": "WA-FS-003",
@@ -154,12 +154,17 @@
     {
       "id": "WA-FS-007",
       "kind": "required",
-      "statement": "Filesystem errors используют application/problem+json и stable code vocabulary: invalid_path, not_found, destination_exists, directory_not_empty, unsafe_link, hardlink_rejected, blocked_file_type, locked, filesystem_unavailable. Unsafe link/reparse и hard-link entries fail-closed; OS/share lock не имеет hidden retry и получает 423 locked."
+      "statement": "Filesystem errors используют application/problem+json и стабильные machine-readable codes: filesystem_not_configured, filesystem_configuration_invalid, filesystem_root_not_found, filesystem_root_unavailable, filesystem_path_invalid, not_found, destination_exists, directory_not_empty, unsafe_link, hardlink_rejected, blocked_file_type и locked. Unsafe link/reparse и hard-link entries fail-closed; OS/share lock не имеет hidden retry и получает 423 locked. HTTP-ошибки не раскрывают physicalRootPath."
     },
     {
       "id": "WA-FS-008",
       "kind": "required",
-      "statement": "Repository-owned /filesystem.html является visual browser client только public filesystem API: наглядно показывает Root-relative breadcrumb, В корень, На уровень вверх, Обновить, paged directory table и позволяет проверить все MVP file operations без отображения absolute host path или inline preview пользовательских файлов. Реальный Playwright/Chromium integration test проверяет page navigation, all MVP operations и external mutation RootDirectory сторонним host process."
+      "statement": "Repository-owned /filesystem.html является visual browser client только public filesystem API: selector logical root выбирает один active logical root для обеих панелей; LEFT и RIGHT имеют независимые breadcrumb, navigation, sorting, .., create file/directory, one-step upload и refresh. Клик по каталогу открывает его в той же панели, клик по обычному файлу скачивает attachment. В каждой обычной строке ровно три action icons: LEFT →, ✎, ×; RIGHT ←, ✎, ×; directional move disabled, когда обе панели показывают один каталог. Переключение logical root сбрасывает BOTH panels в верхний уровень. Physical host paths и inline preview/rendering пользовательских файлов запрещены. Реальный Playwright/Chromium integration test проверяет эти UI-семантики, filesystem operations и external mutation выбранного logical root сторонним host process."
+    },
+    {
+      "id": "WA-FS-009",
+      "kind": "required",
+      "statement": "Multi-root filesystem использует stable application/problem+json codes filesystem_not_configured, filesystem_configuration_invalid, filesystem_root_not_found, filesystem_root_unavailable и filesystem_path_invalid поверх существующих destination_exists, directory_not_empty, unsafe_link, hardlink_rejected, blocked_file_type и locked. Пустая карта WebAssistant:FileSystem означает not configured; недоступность одного root не ломает другие roots, scanner или health. /filesystem.html является two-panel browser client: LEFT и RIGHT имеют независимые navigation/sort state внутри одного active logical root, one-step upload, click-to-open/download и external mutation refresh; inline preview отсутствует."
     },
     {
       "id": "WA-DEPS-001",

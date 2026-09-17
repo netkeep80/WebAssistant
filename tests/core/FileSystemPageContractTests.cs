@@ -6,19 +6,10 @@ namespace WebAssistant.CoreTests;
 public sealed class FileSystemPageContractTests
 {
     [Fact]
-    public void DedicatedFilesystemPage_IsLinkedFromDiagnosticsAndContainsNavigationControls()
+    public void DedicatedFilesystemPage_DeclaresMultiRootTwoPanelStructure()
     {
         var root = FindRepositoryRoot();
-        var pagePath = Path.Combine(
-            root,
-            "webassist",
-            "src",
-            "WebAssistant",
-            "wwwroot",
-            "filesystem.html");
-        Assert.True(File.Exists(pagePath), "filesystem.html должен существовать как отдельная diagnostic page.");
-
-        var page = File.ReadAllText(pagePath);
+        var page = ReadFilesystemPage();
         var index = File.ReadAllText(Path.Combine(
             root,
             "webassist",
@@ -28,17 +19,19 @@ public sealed class FileSystemPageContractTests
             "index.html"));
 
         Assert.Contains("href=\"/filesystem.html\"", index, StringComparison.Ordinal);
-        Assert.Contains("id=\"filesystem-breadcrumb\"", page, StringComparison.Ordinal);
-        Assert.Contains("id=\"filesystem-root\"", page, StringComparison.Ordinal);
-        Assert.Contains("id=\"filesystem-up\"", page, StringComparison.Ordinal);
-        Assert.Contains("id=\"filesystem-refresh\"", page, StringComparison.Ordinal);
-        Assert.Contains("id=\"filesystem-table\"", page, StringComparison.Ordinal);
-        Assert.Contains("let currentPath", page, StringComparison.Ordinal);
-        Assert.Contains("Root", page, StringComparison.Ordinal);
+        Assert.Contains("id=\"filesystem-roots\"", page, StringComparison.Ordinal);
+        Assert.Contains("id=\"filesystem-left\"", page, StringComparison.Ordinal);
+        Assert.Contains("id=\"filesystem-right\"", page, StringComparison.Ordinal);
+        Assert.Contains("id=\"filesystem-left-breadcrumb\"", page, StringComparison.Ordinal);
+        Assert.Contains("id=\"filesystem-right-breadcrumb\"", page, StringComparison.Ordinal);
+        Assert.Contains("/v1/filesystem/roots", page, StringComparison.Ordinal);
+        Assert.Contains("activeRoot", page, StringComparison.Ordinal);
+        Assert.Contains("left", page, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("right", page, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void DedicatedFilesystemPage_ExposesAllMvpOperationsThroughPublicApiOnly()
+    public void DedicatedFilesystemPage_UsesPublicApiAndIndependentPanelOperations()
     {
         var page = ReadFilesystemPage();
 
@@ -47,14 +40,22 @@ public sealed class FileSystemPageContractTests
         Assert.Contains("/v1/filesystem/directory", page, StringComparison.Ordinal);
         Assert.Contains("/v1/filesystem/move", page, StringComparison.Ordinal);
 
-        Assert.Contains("id=\"filesystem-create-directory\"", page, StringComparison.Ordinal);
-        Assert.Contains("id=\"filesystem-upload\"", page, StringComparison.Ordinal);
-        Assert.Contains("id=\"filesystem-upload-input\"", page, StringComparison.Ordinal);
-        Assert.Contains("data-action=\"open\"", page, StringComparison.Ordinal);
-        Assert.Contains("data-action=\"download\"", page, StringComparison.Ordinal);
-        Assert.Contains("data-action=\"rename\"", page, StringComparison.Ordinal);
+        foreach (var side in new[] { "left", "right" })
+        {
+            Assert.Contains($"id=\"filesystem-{side}-create-file\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-create-directory\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-upload\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-upload-input\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-refresh\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-sort-key\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-sort-direction\"", page, StringComparison.Ordinal);
+        }
+
         Assert.Contains("data-action=\"move\"", page, StringComparison.Ordinal);
+        Assert.Contains("data-action=\"rename\"", page, StringComparison.Ordinal);
         Assert.Contains("data-action=\"delete\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-action=\"open\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-action=\"download\"", page, StringComparison.Ordinal);
 
         var apiLiterals = Regex.Matches(page, "[\\\"'`](/v1/[^\\\"'`]+)[\\\"'`]")
             .Select(match => match.Groups[1].Value)
@@ -63,6 +64,43 @@ public sealed class FileSystemPageContractTests
         Assert.All(
             apiLiterals,
             value => Assert.StartsWith("/v1/filesystem/", value, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DedicatedFilesystemPage_UsesIconKindDisplayAndExactlyThreeRowActions()
+    {
+        var page = ReadFilesystemPage();
+
+        Assert.DoesNotContain("<th>Тип</th>", page, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("icon-folder", page, StringComparison.Ordinal);
+        Assert.Contains("icon-file", page, StringComparison.Ordinal);
+        Assert.Contains("icon-restricted", page, StringComparison.Ordinal);
+        Assert.Contains("entry-kind-directory", page, StringComparison.Ordinal);
+        Assert.Contains("entry-kind-file", page, StringComparison.Ordinal);
+        Assert.Contains("entry-restricted", page, StringComparison.Ordinal);
+        Assert.Contains("aria-label", page, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("title", page, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Переместить вправо", page, StringComparison.Ordinal);
+        Assert.Contains("Переместить влево", page, StringComparison.Ordinal);
+        Assert.Contains("Переименовать", page, StringComparison.Ordinal);
+        Assert.Contains("Удалить", page, StringComparison.Ordinal);
+        Assert.Contains("createRowActions", page, StringComparison.Ordinal);
+        Assert.Contains("..", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DedicatedFilesystemPage_ImplementsOneStepUploadSortingAndStaleResponseProtection()
+    {
+        var page = ReadFilesystemPage();
+
+        Assert.Contains("showPicker", page, StringComparison.Ordinal);
+        Assert.Contains("change", page, StringComparison.Ordinal);
+        Assert.Contains("generation", page, StringComparison.Ordinal);
+        Assert.Contains("fullPath", page, StringComparison.Ordinal);
+        Assert.Contains("sortKey", page, StringComparison.Ordinal);
+        Assert.Contains("sortDirection", page, StringComparison.Ordinal);
+        Assert.Contains("kind", page, StringComparison.Ordinal);
+        Assert.Contains("lastModifiedAt", page, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -77,18 +115,6 @@ public sealed class FileSystemPageContractTests
         Assert.DoesNotContain("file://", page, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("C:\\\\", page, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("/var/", page, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void DedicatedFilesystemPage_VisiblyHandlesRestrictionsAndPagination()
-    {
-        var page = ReadFilesystemPage();
-
-        Assert.Contains("restrictionCode", page, StringComparison.Ordinal);
-        Assert.Contains("nextCursor", page, StringComparison.Ordinal);
-        Assert.Contains("id=\"filesystem-load-more\"", page, StringComparison.Ordinal);
-        Assert.Contains("id=\"filesystem-status\"", page, StringComparison.Ordinal);
-        Assert.Contains("disabled", page, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string ReadFilesystemPage()

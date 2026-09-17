@@ -10,25 +10,325 @@ namespace WebAssistant.CoreTests;
 public sealed class FileSystemBrowserTests
 {
     [Fact]
-    public async Task Browser_ExercisesFilesystemMvpNavigationExternalMutationAndFailures()
+    public async Task Browser_ExercisesMultiRootTwoPanelWorkflow()
     {
-        var repo=FindRoot();var temp=Path.Combine(Path.GetTempPath(),"webassistant-browser",Guid.NewGuid().ToString("N"));var root=Path.Combine(temp,"root");var logs=Path.Combine(temp,"logs");Directory.CreateDirectory(root);Directory.CreateDirectory(logs);var port=FreePort();
-        var product=Path.Combine(repo,"webassist","src","WebAssistant");var psi=new ProcessStartInfo("dotnet",$"run --no-build --project \"{Path.Combine(product,"WebAssistant.csproj")}\" --configuration Release"){UseShellExecute=false,WorkingDirectory=product};psi.Environment["WebAssistant__Port"]=port.ToString();psi.Environment["WebAssistant__FileSystem__RootDirectory"]=root;psi.Environment["WebAssistant__LogDirectory"]=logs;using var service=Process.Start(psi)!;
+        var repo = FindRoot();
+        var temp = Path.Combine(
+            Path.GetTempPath(),
+            "webassistant-browser",
+            Guid.NewGuid().ToString("N"));
+        var archive = Path.Combine(temp, "archive");
+        var nfs = Path.Combine(temp, "nfs");
+        var offline = Path.Combine(temp, "offline");
+        var logs = Path.Combine(temp, "logs");
+        Directory.CreateDirectory(Path.Combine(archive, "incoming"));
+        Directory.CreateDirectory(Path.Combine(archive, "processed"));
+        Directory.CreateDirectory(nfs);
+        Directory.CreateDirectory(logs);
+        await File.WriteAllTextAsync(Path.Combine(archive, "blocked.sh"), "echo blocked");
+
+        var port = FreePort();
+        var product = Path.Combine(repo, "webassist", "src", "WebAssistant");
+        var psi = new ProcessStartInfo(
+            "dotnet",
+            $"run --no-build --project \"{Path.Combine(product, "WebAssistant.csproj")}\" --configuration Release")
+        {
+            UseShellExecute = false,
+            WorkingDirectory = product
+        };
+        psi.Environment["WebAssistant__Port"] = port.ToString();
+        psi.Environment["WebAssistant__FileSystem__archive"] = archive;
+        psi.Environment["WebAssistant__FileSystem__nfs"] = nfs;
+        psi.Environment["WebAssistant__FileSystem__offline"] = offline;
+        psi.Environment["WebAssistant__LogDirectory"] = logs;
+        using var service = Process.Start(psi)!;
+
         try
         {
-            var baseUrl=$"http://127.0.0.1:{port}";await WaitHealthy(baseUrl);using var playwright=await Playwright.CreateAsync();await using var browser=await playwright.Chromium.LaunchAsync(new(){Headless=true});var page=await browser.NewPageAsync();var answers=new Queue<string>();page.Dialog+=async(_,d)=>await d.AcceptAsync(d.Type=="prompt"?answers.Dequeue():null);await page.GotoAsync(baseUrl+"/filesystem.html");
-            ILocator Row(string name)=>page.Locator("#filesystem-entries tr").Filter(new(){HasTextString=name});async Task Prompt(string selector,string value){answers.Enqueue(value);await page.ClickAsync(selector);}async Task Visible(string name)=>await Row(name).WaitForAsync();
-            Assert.Equal("Root",(await page.Locator("#filesystem-breadcrumb").InnerTextAsync()).Trim());await Prompt("#filesystem-create-directory","dir-a");await Visible("dir-a");await Row("dir-a").Locator("[data-action=open]").ClickAsync();await Prompt("#filesystem-create-directory","nested");await Visible("nested");await Row("nested").Locator("[data-action=open]").ClickAsync();await page.GetByRole(AriaRole.Button,new(){Name="dir-a",Exact=true}).ClickAsync();await page.ClickAsync("#filesystem-root");await page.WaitForFunctionAsync("document.getElementById('filesystem-up').disabled");Assert.True(await page.Locator("#filesystem-up").IsDisabledAsync());Assert.Equal("Root",(await page.Locator("#filesystem-breadcrumb").InnerTextAsync()).Trim());
-            var upload=Path.Combine(temp,"a.bin");var bytes="browser-opaque-payload"u8.ToArray();await File.WriteAllBytesAsync(upload,bytes);await page.Locator("#filesystem-upload-input").SetInputFilesAsync(upload);await page.ClickAsync("#filesystem-upload");await Visible("a.bin");var download=await page.RunAndWaitForDownloadAsync(async()=>await Row("a.bin").Locator("[data-action=download]").ClickAsync());Assert.Equal(SHA256.HashData(bytes),SHA256.HashData(await File.ReadAllBytesAsync(await download.PathAsync())));
-            answers.Enqueue("b.bin");await Row("a.bin").Locator("[data-action=rename]").ClickAsync();await Visible("b.bin");await Prompt("#filesystem-create-directory","dir-b");await Visible("dir-b");answers.Enqueue("dir-b/b.bin");await Row("b.bin").Locator("[data-action=move]").ClickAsync();await Row("dir-b").Locator("[data-action=open]").ClickAsync();await Visible("b.bin");await Row("b.bin").Locator("[data-action=delete]").ClickAsync();await Row("b.bin").WaitForAsync(new(){State=WaitForSelectorState.Detached});await page.ClickAsync("#filesystem-root");await Row("dir-b").Locator("[data-action=delete]").ClickAsync();
-            await Row("dir-a").Locator("[data-action=delete]").ClickAsync();await page.Locator("#filesystem-status").GetByText("directory_not_empty",new(){Exact=false}).WaitForAsync();await Prompt("#filesystem-create-directory","dup");await Visible("dup");await Prompt("#filesystem-create-directory","dup");await page.Locator("#filesystem-status").GetByText("destination_exists",new(){Exact=false}).WaitForAsync();await Prompt("#filesystem-create-empty-file","bad.sh");await page.Locator("#filesystem-status").GetByText("blocked_file_type",new(){Exact=false}).WaitForAsync();
-            var external=Path.Combine(root,"external.txt");await File.WriteAllTextAsync(external,"external");await page.ClickAsync("#filesystem-refresh");await Visible("external.txt");var renamed=Path.Combine(root,"renamed.txt");File.Move(external,renamed);await page.ClickAsync("#filesystem-refresh");await Visible("renamed.txt");File.Delete(renamed);await page.ClickAsync("#filesystem-refresh");await Row("renamed.txt").WaitForAsync(new(){State=WaitForSelectorState.Detached});var vanished=Path.Combine(root,"vanish.txt");await File.WriteAllTextAsync(vanished,"x");await page.ClickAsync("#filesystem-refresh");await Visible("vanish.txt");File.Delete(vanished);await Row("vanish.txt").Locator("[data-action=delete]").ClickAsync();await page.Locator("#filesystem-status").GetByText("not_found",new(){Exact=false}).WaitForAsync();
-            await Row("dup").Locator("[data-action=delete]").ClickAsync();await Row("dir-a").Locator("[data-action=open]").ClickAsync();await Row("nested").Locator("[data-action=delete]").ClickAsync();await page.ClickAsync("#filesystem-root");await Row("dir-a").Locator("[data-action=delete]").ClickAsync();
+            var baseUrl = $"http://127.0.0.1:{port}";
+            await WaitHealthy(baseUrl);
+            using var playwright = await Playwright.CreateAsync();
+            await using var browser = await playwright.Chromium.LaunchAsync(new() { Headless = true });
+            var page = await browser.NewPageAsync();
+            var prompts = new Queue<string>();
+            var pageErrors = new List<string>();
+            page.PageError += (_, error) => pageErrors.Add(error);
+            page.Dialog += async (_, dialog) =>
+            {
+                if (dialog.Type == "prompt")
+                {
+                    await dialog.AcceptAsync(prompts.Dequeue());
+                }
+                else
+                {
+                    await dialog.AcceptAsync();
+                }
+            };
+
+            await page.GotoAsync(baseUrl + "/filesystem.html");
+
+            ILocator Entries(string side) => page.Locator($"#filesystem-{side}-entries");
+            ILocator Row(string side, string name) => Entries(side)
+                .Locator("tr")
+                .Filter(new() { HasTextString = name });
+            async Task Visible(string side, string name) =>
+                await Row(side, name).WaitForAsync();
+            async Task WaitBreadcrumb(string side, string expected) =>
+                await page.WaitForFunctionAsync(
+                    "args => document.getElementById(args.id).innerText.includes(args.expected)",
+                    new
+                    {
+                        id = $"filesystem-{side}-breadcrumb",
+                        expected
+                    });
+            async Task Prompt(string selector, string value)
+            {
+                prompts.Enqueue(value);
+                await page.ClickAsync(selector);
+            }
+
+            await page.Locator("#filesystem-roots [data-root='archive']").WaitForAsync();
+            await page.Locator("#filesystem-roots [data-root='nfs']").WaitForAsync();
+            await page.Locator("#filesystem-roots [data-root='offline']").WaitForAsync();
+            await page.ClickAsync("#filesystem-roots [data-root='archive']");
+            await WaitBreadcrumb("left", "archive");
+            await WaitBreadcrumb("right", "archive");
+
+            Assert.Equal(
+                "archive",
+                (await page.Locator("#filesystem-left-breadcrumb").InnerTextAsync()).Trim());
+            Assert.Equal(
+                "archive",
+                (await page.Locator("#filesystem-right-breadcrumb").InnerTextAsync()).Trim());
+
+            await Row("left", "incoming").Locator("[data-entry-open]").ClickAsync();
+            await WaitBreadcrumb("left", "archive / incoming");
+            await Row("right", "processed").Locator("[data-entry-open]").ClickAsync();
+            await WaitBreadcrumb("right", "archive / processed");
+            Assert.Contains(
+                "archive / incoming",
+                await page.Locator("#filesystem-left-breadcrumb").InnerTextAsync());
+            Assert.Contains(
+                "archive / processed",
+                await page.Locator("#filesystem-right-breadcrumb").InnerTextAsync());
+
+            var upload = Path.Combine(temp, "a.bin");
+            var publishedUpload = Path.Combine(archive, "incoming", "a.bin");
+            var bytes = "browser-opaque-payload"u8.ToArray();
+            await File.WriteAllBytesAsync(upload, bytes);
+            var uploadResponseSource = new TaskCompletionSource<IResponse>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var leftRefreshResponseSource = new TaskCompletionSource<IResponse>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            EventHandler<IResponse> observeUpload = (_, response) =>
+            {
+                if (response.Request.Method == "PUT" &&
+                    response.Url.Contains("/v1/filesystem/file", StringComparison.Ordinal))
+                {
+                    uploadResponseSource.TrySetResult(response);
+                }
+
+                if (response.Request.Method == "GET" &&
+                    response.Url.Contains("/v1/filesystem/list", StringComparison.Ordinal) &&
+                    Uri.UnescapeDataString(response.Url).Contains(
+                        "path=archive/incoming",
+                        StringComparison.Ordinal))
+                {
+                    leftRefreshResponseSource.TrySetResult(response);
+                }
+            };
+            page.Response += observeUpload;
+            var chooser = await page.RunAndWaitForFileChooserAsync(
+                () => page.ClickAsync("#filesystem-left-upload"));
+            await chooser.SetFilesAsync(upload);
+            var uploadResponse = await uploadResponseSource.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.True(
+                uploadResponse.Ok,
+                $"Browser upload PUT returned HTTP {uploadResponse.Status}.");
+            Assert.True(
+                File.Exists(publishedUpload),
+                $"PUT succeeded, but published file is absent: {publishedUpload}");
+
+            using (var probe = new HttpClient())
+            {
+                var listing = await probe.GetStringAsync(
+                    baseUrl + "/v1/filesystem/list?path=archive%2Fincoming");
+                Assert.Contains("\"name\":\"a.bin\"", listing, StringComparison.Ordinal);
+            }
+
+            var refreshResponse = await leftRefreshResponseSource.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            page.Response -= observeUpload;
+            Assert.True(
+                refreshResponse.Ok,
+                $"Browser post-upload list returned HTTP {refreshResponse.Status}.");
+            await page.WaitForFunctionAsync(
+                "!document.getElementById('filesystem-left-refresh').disabled");
+            var leftEntriesAfterUpload = await Entries("left").InnerTextAsync();
+            var leftStatusAfterUpload = await page.Locator("#filesystem-left-status").InnerTextAsync();
+            Assert.True(
+                leftEntriesAfterUpload.Contains("a.bin", StringComparison.Ordinal),
+                $"Server lists a.bin, but LEFT panel did not render it. status={leftStatusAfterUpload}; pageErrors={string.Join(" | ", pageErrors)}; entries={leftEntriesAfterUpload}");
+            await Visible("left", "a.bin");
+            Assert.Equal(0, await Row("right", "a.bin").CountAsync());
+
+            var download = await page.RunAndWaitForDownloadAsync(
+                () => Row("left", "a.bin").Locator("[data-entry-open]").ClickAsync());
+            Assert.Equal(
+                SHA256.HashData(bytes),
+                SHA256.HashData(await File.ReadAllBytesAsync(await download.PathAsync())));
+
+            await Row("left", "a.bin").Locator("[data-action=move]").ClickAsync();
+            await Row("left", "a.bin").WaitForAsync(new() { State = WaitForSelectorState.Detached });
+            await Visible("right", "a.bin");
+
+            await Row("right", "a.bin").Locator("[data-action=move]").ClickAsync();
+            await Visible("left", "a.bin");
+            await Row("right", "a.bin").WaitForAsync(new() { State = WaitForSelectorState.Detached });
+
+            await page.ClickAsync("#filesystem-right-breadcrumb [data-path='archive/']");
+            await WaitBreadcrumb("right", "archive");
+            await Row("right", "incoming").Locator("[data-entry-open]").ClickAsync();
+            await WaitBreadcrumb("right", "archive / incoming");
+            await Visible("right", "a.bin");
+            Assert.True(await Row("left", "a.bin").Locator("[data-action=move]").IsDisabledAsync());
+            Assert.True(await Row("right", "a.bin").Locator("[data-action=move]").IsDisabledAsync());
+
+            prompts.Enqueue("b.bin");
+            await Row("left", "a.bin").Locator("[data-action=rename]").ClickAsync();
+            await Visible("left", "b.bin");
+            await Visible("right", "b.bin");
+
+            await Prompt("#filesystem-left-create-directory", "nested");
+            await Visible("left", "nested");
+            await Row("left", "nested").Locator("[data-entry-open]").ClickAsync();
+            await WaitBreadcrumb("left", "archive / incoming / nested");
+            await page.Locator("#filesystem-left-entries tr[data-parent-row='true']").WaitForAsync();
+            Assert.Equal(0, await page.Locator(
+                "#filesystem-left-entries tr[data-parent-row='true'] [data-action]").CountAsync());
+            await page.Locator("#filesystem-left-entries tr[data-parent-row='true'] [data-entry-open]").ClickAsync();
+            await WaitBreadcrumb("left", "archive / incoming");
+            Assert.Contains(
+                "archive / incoming",
+                await page.Locator("#filesystem-left-breadcrumb").InnerTextAsync());
+
+            await Prompt("#filesystem-left-create-file", "empty.txt");
+            await Visible("left", "empty.txt");
+            Assert.Equal(0, new FileInfo(Path.Combine(archive, "incoming", "empty.txt")).Length);
+
+            await page.SelectOptionAsync("#filesystem-left-sort-key", "size");
+            await page.ClickAsync("#filesystem-left-sort-direction");
+            Assert.Equal(
+                "name",
+                await page.Locator("#filesystem-right-sort-key").InputValueAsync());
+
+            await page.ClickAsync("#filesystem-left-breadcrumb [data-path='archive/']");
+            await WaitBreadcrumb("left", "archive");
+            await Visible("left", "blocked.sh");
+            Assert.Contains(
+                "entry-restricted",
+                await Row("left", "blocked.sh").GetAttributeAsync("class") ?? string.Empty);
+            Assert.Equal(
+                "true",
+                await Row("left", "blocked.sh").Locator("[data-entry-open]").GetAttributeAsync("aria-disabled"));
+
+            var external = Path.Combine(archive, "external.txt");
+            await File.WriteAllTextAsync(external, "external");
+            await page.ClickAsync("#filesystem-left-refresh");
+            await Visible("left", "external.txt");
+            File.Move(external, Path.Combine(archive, "renamed.txt"));
+            await page.ClickAsync("#filesystem-left-refresh");
+            await Visible("left", "renamed.txt");
+
+            await page.ClickAsync("#filesystem-roots [data-root='nfs']");
+            await WaitBreadcrumb("left", "nfs");
+            await WaitBreadcrumb("right", "nfs");
+            Assert.Equal(
+                "nfs",
+                (await page.Locator("#filesystem-left-breadcrumb").InnerTextAsync()).Trim());
+            Assert.Equal(
+                "nfs",
+                (await page.Locator("#filesystem-right-breadcrumb").InnerTextAsync()).Trim());
+            Assert.Equal(0, await Row("left", "incoming").CountAsync());
+            Assert.Equal(0, await Row("right", "incoming").CountAsync());
+
+            var nfsExternal = Path.Combine(nfs, "nfs-external.txt");
+            await File.WriteAllTextAsync(nfsExternal, "nfs");
+            await page.ClickAsync("#filesystem-right-refresh");
+            await Visible("right", "nfs-external.txt");
+
+            await page.ClickAsync("#filesystem-roots [data-root='offline']");
+            await page.Locator("#filesystem-left-status")
+                .GetByText("filesystem_root_unavailable", new() { Exact = false })
+                .WaitForAsync();
+            await page.Locator("#filesystem-right-status")
+                .GetByText("filesystem_root_unavailable", new() { Exact = false })
+                .WaitForAsync();
+            Assert.False(Directory.Exists(offline));
+
+            await page.ClickAsync("#filesystem-roots [data-root='nfs']");
+            await WaitBreadcrumb("left", "nfs");
+            await WaitBreadcrumb("right", "nfs");
+            await Visible("right", "nfs-external.txt");
         }
-        finally{if(!service.HasExited)service.Kill(entireProcessTree:true);try{Directory.Delete(temp,true);}catch{}}
+        finally
+        {
+            if (!service.HasExited)
+            {
+                service.Kill(entireProcessTree: true);
+            }
+
+            try
+            {
+                Directory.Delete(temp, recursive: true);
+            }
+            catch
+            {
+            }
+        }
     }
 
-    private static int FreePort(){using var l=new TcpListener(IPAddress.Loopback,0);l.Start();return((IPEndPoint)l.LocalEndpoint).Port;}
-    private static async Task WaitHealthy(string url){using var c=new HttpClient();for(var i=0;i<100;i++){try{if((await c.GetAsync(url+"/v1/health")).IsSuccessStatusCode)return;}catch{}await Task.Delay(100);}throw new TimeoutException("WebAssistant browser test server did not start.");}
-    private static string FindRoot(){for(var d=new DirectoryInfo(AppContext.BaseDirectory);d is not null;d=d.Parent)if(Directory.Exists(Path.Combine(d.FullName,"webassist"))&&Directory.Exists(Path.Combine(d.FullName,"tests")))return d.FullName;throw new DirectoryNotFoundException();}
+    private static int FreePort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        return ((IPEndPoint)listener.LocalEndpoint).Port;
+    }
+
+    private static async Task WaitHealthy(string url)
+    {
+        using var client = new HttpClient();
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            try
+            {
+                if ((await client.GetAsync(url + "/v1/health")).IsSuccessStatusCode)
+                {
+                    return;
+                }
+            }
+            catch
+            {
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new TimeoutException("WebAssistant browser test server did not start.");
+    }
+
+    private static string FindRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            if (Directory.Exists(Path.Combine(directory.FullName, "webassist")) &&
+                Directory.Exists(Path.Combine(directory.FullName, "tests")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new DirectoryNotFoundException();
+    }
 }

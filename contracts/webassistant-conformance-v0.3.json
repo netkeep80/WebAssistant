@@ -83,7 +83,16 @@
     "tests/core/ConfigurationOwnershipTests.cs",
     "tests/core/RootedPathResolverTests.cs",
     "tests/core/FileSystemCandidateContractTests.cs",
-    "tests/core/FileSystemPolicyTests.cs", "tests/core/LinuxRootedFileSystemTests.cs", "tests/core/WindowsRootedFileSystemTests.cs", "tests/core/HttpFileSystemContractTests.cs", "tests/core/FileSystemLifecycleTests.cs", "tests/core/FilePublicationTests.cs", "tests/core/FileSystemPageContractTests.cs", "tests/core/FileSystemBrowserTests.cs",
+    "tests/core/FileSystemRootRegistryTests.cs",
+    "tests/core/MultiRootFileSystemTests.cs",
+    "tests/core/FileSystemPolicyTests.cs",
+    "tests/core/LinuxRootedFileSystemTests.cs",
+    "tests/core/WindowsRootedFileSystemTests.cs",
+    "tests/core/HttpFileSystemContractTests.cs",
+    "tests/core/FileSystemLifecycleTests.cs",
+    "tests/core/FilePublicationTests.cs",
+    "tests/core/FileSystemPageContractTests.cs",
+    "tests/core/FileSystemBrowserTests.cs",
     "tests/core/DependencyOwnershipTests.cs",
     "webassist/vendor/naps2/README.md",
     "tests/core/DistributionContractCandidateTests.cs",
@@ -249,16 +258,16 @@
     {
       "id": "WA-C-ROOTED-FILESYSTEM-001",
       "kind": "negative",
-      "assertion": "Filesystem authority остаётся внутри configured RootDirectory: absolute/navigation escape, symlink/junction/reparse traversal, hard-link aliasing и concurrent parent replacement не могут вывести read/write/move/delete за root. Native Windows handle-relative и Linux descriptor-relative evidence обязаны fail-closed.",
-      "requirements": ["WA-FS-001", "WA-FS-007"],
-      "evidence": ["tests/core/RootedPathResolverTests.cs", "tests/core/FileSystemPolicyTests.cs", "tests/core/LinuxRootedFileSystemTests.cs", "tests/core/WindowsRootedFileSystemTests.cs"]
+      "assertion": "Multi-root filesystem authority остаётся внутри union(configured named roots): grammar logicalRootName проверяется до открытия physical root, case-only collisions запрещены, unknown logical root не выбирает fallback, а absolute/navigation escape, symlink/junction/reparse traversal, hard-link aliasing и concurrent parent replacement не могут вывести read/write/move/delete за выбранный root. Native Windows handle-relative и Linux descriptor-relative evidence обязаны fail-closed.",
+      "requirements": ["WA-FS-001", "WA-FS-007", "WA-FS-009"],
+      "evidence": ["tests/core/RootedPathResolverTests.cs", "tests/core/FileSystemRootRegistryTests.cs", "tests/core/MultiRootFileSystemTests.cs", "tests/core/FileSystemPolicyTests.cs", "tests/core/LinuxRootedFileSystemTests.cs", "tests/core/WindowsRootedFileSystemTests.cs"]
     },
     {
       "id": "WA-C-FILESYSTEM-API-001",
       "kind": "positive",
-      "assertion": "Candidate filesystem API публикует versioned list/file/directory/move routes с explicit root-relative paths, normalized application/problem+json codes, paged listing default 200/max 1000, streaming opaque downloads и stateless caller-owned navigation.",
-      "requirements": ["WA-FS-002", "WA-FS-005", "WA-FS-006", "WA-FS-007"],
-      "evidence": ["tests/core/HttpFileSystemContractTests.cs", "tests/core/CorsConfigurationTests.cs", "tests/core/FileSystemLifecycleTests.cs"]
+      "assertion": "Candidate multi-root filesystem API публикует /v1/filesystem/roots и versioned list/file/directory/move routes с explicit logical-root-prefixed paths. Unknown logical root, root unavailable, invalid path/configuration и not-configured имеют stable application/problem+json outcomes; cross-root move отклоняется до destination authority, а same-root move сохраняет atomic no-replace semantics. Listing остаётся paged default 200/max 1000, downloads — streaming opaque, navigation — stateless caller-owned.",
+      "requirements": ["WA-FS-002", "WA-FS-005", "WA-FS-006", "WA-FS-007", "WA-FS-009"],
+      "evidence": ["tests/core/FileSystemRootRegistryTests.cs", "tests/core/MultiRootFileSystemTests.cs", "tests/core/HttpFileSystemContractTests.cs", "tests/core/CorsConfigurationTests.cs", "tests/core/FileSystemLifecycleTests.cs"]
     },
     {
       "id": "WA-C-FILESYSTEM-ATOMIC-001",
@@ -270,8 +279,8 @@
     {
       "id": "WA-C-FILESYSTEM-BROWSER-001",
       "kind": "positive",
-      "assertion": "Repository-owned /filesystem.html является обычным public-API browser client: Playwright/Chromium acceptance проверяет Root breadcrumb navigation, все MVP operations и external mutation shared RootDirectory без private test endpoint или absolute host path disclosure.",
-      "requirements": ["WA-FS-008"],
+      "assertion": "Repository-owned /filesystem.html является two-panel public-API browser client для multi-root filesystem: root discovery выбирает active logical root, LEFT и RIGHT сохраняют независимые navigation/sort state, one-step upload и click-to-open/download работают без inline preview. Playwright/Chromium acceptance проверяет переключение roots, LEFT/RIGHT navigation, same-root arrows, внешний external mutation refresh и недоступный root без раскрытия physical host path.",
+      "requirements": ["WA-FS-008", "WA-FS-009"],
       "evidence": ["tests/core/FileSystemPageContractTests.cs", "tests/core/FileSystemBrowserTests.cs"]
     },
     {

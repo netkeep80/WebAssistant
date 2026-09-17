@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using WebAssistant.Runtime;
 using Xunit;
@@ -37,6 +38,19 @@ public sealed class ConfigurationOwnershipTests
         Assert.Contains("build/common/default-appsettings.json", linux, StringComparison.Ordinal);
         Assert.Contains("source-appsettings", linux, StringComparison.Ordinal);
         Assert.Contains("generated-default", linux, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SharedSafeDefault_DoesNotInventFileSystemAuthority()
+    {
+        using var document = JsonDocument.Parse(
+            ReadRequired("webassist/build/common/default-appsettings.json"));
+        var fileSystem = document.RootElement
+            .GetProperty("WebAssistant")
+            .GetProperty("FileSystem");
+
+        Assert.Equal(JsonValueKind.Object, fileSystem.ValueKind);
+        Assert.Empty(fileSystem.EnumerateObject());
     }
 
     [Fact]
@@ -92,7 +106,7 @@ public sealed class ConfigurationOwnershipTests
     }
 
     [Fact]
-    public void LinuxInstaller_DefaultStateDirectoriesMatchRuntimeDefaults()
+    public void LinuxInstaller_DefaultServiceDirectoriesRemainStable()
     {
         if (!OperatingSystem.IsLinux())
         {
@@ -101,7 +115,6 @@ public sealed class ConfigurationOwnershipTests
 
         var runtime = WebAssistantRuntimeOptions.Load(new ConfigurationBuilder().Build());
         Assert.Equal("/var/log/webassistant", runtime.LogDirectory);
-        Assert.Equal("/var/lib/webassistant", runtime.FileSystemRootDirectory);
 
         var install = ReadRequired("webassist/install/linux/install.sh");
         var uninstall = ReadRequired("webassist/install/linux/uninstall.sh");
