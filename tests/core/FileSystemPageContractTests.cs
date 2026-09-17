@@ -22,12 +22,13 @@ public sealed class FileSystemPageContractTests
         Assert.Contains("id=\"filesystem-roots\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"filesystem-left\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"filesystem-right\"", page, StringComparison.Ordinal);
+        Assert.Contains("id=\"filesystem-splitter\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"filesystem-left-breadcrumb\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"filesystem-right-breadcrumb\"", page, StringComparison.Ordinal);
         Assert.Contains("/v1/filesystem/roots", page, StringComparison.Ordinal);
         Assert.Contains("activeRoot", page, StringComparison.Ordinal);
-        Assert.Contains("left", page, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("right", page, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("currentSide", page, StringComparison.Ordinal);
+        Assert.Contains("selectedPath", page, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -47,9 +48,16 @@ public sealed class FileSystemPageContractTests
             Assert.Contains($"id=\"filesystem-{side}-upload\"", page, StringComparison.Ordinal);
             Assert.Contains($"id=\"filesystem-{side}-upload-input\"", page, StringComparison.Ordinal);
             Assert.Contains($"id=\"filesystem-{side}-refresh\"", page, StringComparison.Ordinal);
-            Assert.Contains($"id=\"filesystem-{side}-sort-key\"", page, StringComparison.Ordinal);
-            Assert.Contains($"id=\"filesystem-{side}-sort-direction\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-table-wrap\"", page, StringComparison.Ordinal);
         }
+
+        Assert.DoesNotContain("filesystem-left-sort-key", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("filesystem-right-sort-key", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("filesystem-left-sort-direction", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("filesystem-right-sort-direction", page, StringComparison.Ordinal);
+        Assert.Contains("data-sort-key=\"name\"", page, StringComparison.Ordinal);
+        Assert.Contains("data-sort-key=\"size\"", page, StringComparison.Ordinal);
+        Assert.Contains("aria-sort", page, StringComparison.Ordinal);
 
         Assert.Contains("data-action=\"move\"", page, StringComparison.Ordinal);
         Assert.Contains("data-action=\"rename\"", page, StringComparison.Ordinal);
@@ -89,7 +97,7 @@ public sealed class FileSystemPageContractTests
     }
 
     [Fact]
-    public void DedicatedFilesystemPage_ImplementsOneStepUploadSortingAndStaleResponseProtection()
+    public void DedicatedFilesystemPage_ImplementsOneStepUploadHeaderSortingAndStaleResponseProtection()
     {
         var page = ReadFilesystemPage();
 
@@ -99,8 +107,10 @@ public sealed class FileSystemPageContractTests
         Assert.Contains("fullPath", page, StringComparison.Ordinal);
         Assert.Contains("sortKey", page, StringComparison.Ordinal);
         Assert.Contains("sortDirection", page, StringComparison.Ordinal);
-        Assert.Contains("kind", page, StringComparison.Ordinal);
+        Assert.Contains("setSort", page, StringComparison.Ordinal);
+        Assert.Contains("createdAt", page, StringComparison.Ordinal);
         Assert.Contains("lastModifiedAt", page, StringComparison.Ordinal);
+        Assert.Contains("restrictionCode", page, StringComparison.Ordinal);
     }
 
     [Fact]
