@@ -4,7 +4,19 @@ internal sealed record FileSystemDirectoryRequest(string? Path);
 
 internal sealed record FileSystemMoveRequest(
     string? SourcePath,
+    string? DestinationPath,
+    IReadOnlyList<string>? FileNames);
+
+internal sealed record FileSystemDirectoryMoveRequest(
+    string? SourcePath,
     string? DestinationPath);
+
+internal sealed record FileSystemRenameRequest(
+    string? Path,
+    string? NewName);
+
+internal sealed record FileSystemFileNamesResponse(
+    IReadOnlyList<string> FileNames);
 
 internal sealed record FileSystemListingResponse(
     string Path,
