@@ -23,6 +23,15 @@ public sealed class FileSystemAdvancedUiContractTests
     }
 
     [Fact]
+    public void FilesystemPage_UsesCompactTableTypography()
+    {
+        var page = ReadFilesystemPage().Replace(" ", string.Empty);
+
+        Assert.Contains("--table-font-size:", page, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("font-size:var(--table-font-size)", page, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void FilesystemPage_SortsByColumnHeaderWithoutLegacySortControls()
     {
         var page = ReadFilesystemPage();
