@@ -188,9 +188,16 @@
         "webassist/src/WebAssistant/Program.cs",
         "webassist/src/WebAssistant/Http/ApiVersion.cs",
         "webassist/src/WebAssistant/Http/ScannerEndpointHandlers.cs",
+        "webassist/src/WebAssistant/Http/ScanCoordinator.cs"
+      ],
+      "must_change_any": [
+        "webassist/docs/api.md"
+      ]
+    },
+    {
+      "if_changed": [
         "webassist/src/WebAssistant/Http/ScannerSettingsEndpointHandlers.cs",
         "webassist/src/WebAssistant/Http/ScanRequest.cs",
-        "webassist/src/WebAssistant/Http/ScanCoordinator.cs",
         "webassist/src/WebAssistant/Http/FileSystemEndpointHandlers.cs",
         "webassist/src/WebAssistant/Http/FileSystemHttpModels.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemApplicationService.cs",
