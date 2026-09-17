@@ -111,7 +111,7 @@ public sealed class FileSystemAdvancedUiBrowserTests
                     """,
                     new { side, name, contents });
             }
-            async Task DragSplitterTo(double x)
+            async Task DragSplitterTo(float x)
             {
                 var box = await page.Locator("#filesystem-splitter").BoundingBoxAsync();
                 Assert.NotNull(box);
