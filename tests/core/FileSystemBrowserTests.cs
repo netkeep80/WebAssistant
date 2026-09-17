@@ -215,11 +215,17 @@ public sealed class FileSystemBrowserTests
             await Visible("left", "empty.txt");
             Assert.Equal(0, new FileInfo(Path.Combine(archive, "incoming", "empty.txt")).Length);
 
-            await page.SelectOptionAsync("#filesystem-left-sort-key", "size");
-            await page.ClickAsync("#filesystem-left-sort-direction");
+            await page.ClickAsync("#filesystem-left thead th[data-sort-key='size'] .sort-button");
             Assert.Equal(
-                "name",
-                await page.Locator("#filesystem-right-sort-key").InputValueAsync());
+                "ascending",
+                await page.Locator("#filesystem-left thead th[data-sort-key='size']").GetAttributeAsync("aria-sort"));
+            await page.ClickAsync("#filesystem-left thead th[data-sort-key='size'] .sort-button");
+            Assert.Equal(
+                "descending",
+                await page.Locator("#filesystem-left thead th[data-sort-key='size']").GetAttributeAsync("aria-sort"));
+            Assert.Equal(
+                "ascending",
+                await page.Locator("#filesystem-right thead th[data-sort-key='name']").GetAttributeAsync("aria-sort"));
 
             await page.ClickAsync("#filesystem-left-breadcrumb [data-path='archive/']");
             await WaitBreadcrumb("left", "archive");
