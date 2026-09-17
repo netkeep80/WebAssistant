@@ -121,7 +121,6 @@ public sealed class FileSystemCandidateContractTests
             "LEFT",
             "RIGHT",
             "/filesystem.html",
-            "external mutation",
             "tests/core/FileSystemRootRegistryTests.cs",
             "tests/core/MultiRootFileSystemTests.cs",
             "tests/core/HttpFileSystemContractTests.cs",
