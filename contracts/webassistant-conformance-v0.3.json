@@ -272,7 +272,7 @@
       "id": "WA-C-FILESYSTEM-API-001",
       "kind": "positive",
       "assertion": "Candidate multi-root filesystem API публикует GET /v1/filesystem/roots, GET /v1/filesystem/list, GET /v1/filesystem/file, GET /v1/filesystem/files, GET /v1/filesystem/find и только POST mutation routes /v1/filesystem/file, /v1/filesystem/file/delete, /v1/filesystem/directory, /v1/filesystem/directory/delete, /v1/filesystem/move, /v1/filesystem/directory/move, /v1/filesystem/rename. Wildcard фильтрует ordinary files до pagination, не скрывая каталоги; streaming ZIP использует тот же immediate-file filter. Batch ordinary-file move и directory move сохраняют actual source basename, а rename сохраняет parent directory; cross-root mutation, overwrite, copy-delete fallback, recursive delete/find/ZIP отсутствуют. Find использует repeated exact names и Ordinal matching. Stable application/problem+json outcomes и rooted security policy сохраняются.",
-      "requirements": ["WA-FS-002", "WA-FS-005", "WA-FS-006", "WA-FS-007", "WA-FS-009"],
+      "requirements": ["WA-FS-002", "WA-FS-005", "WA-FS-006", "WA-FS-007", "WA-FS-009", "WA-FS-010", "WA-FS-011"],
       "evidence": ["tests/core/FileSystemRootRegistryTests.cs", "tests/core/MultiRootFileSystemTests.cs", "tests/core/HttpFileSystemContractTests.cs", "tests/core/FileSystemApiV230ContractTests.cs", "tests/core/CorsConfigurationTests.cs", "tests/core/FileSystemLifecycleTests.cs", "webassist/src/WebAssistant/FileSystem/FileSystemApplicationService.cs", "webassist/src/WebAssistant/Http/FileSystemEndpointHandlers.cs", "webassist/docs/api.md"]
     },
     {
@@ -287,7 +287,7 @@
       "kind": "positive",
       "assertion": "Repository-owned /filesystem.html остаётся two-panel public-API browser client: LEFT и RIGHT имеют независимые navigation/sort/wildcard/selection state, desktop selection поддерживает click, Ctrl+click и Shift+click только для разрешённых ordinary files, find exact names добавляет найденные строки в selection, ZIP выгружает current directory по current wildcard, header batch arrows отправляют один POST /v1/filesystem/move, row file move использует ту же batch DTO, directory move использует /v1/filesystem/directory/move, а rename — отдельный /v1/filesystem/rename. Root/directory change сбрасывает selection, refresh/sort сохраняют surviving selection, one-step upload и click-to-open/download работают без inline preview.",
       "requirements": ["WA-FS-008", "WA-FS-009"],
-      "evidence": ["webassist/src/WebAssistant/wwwroot/filesystem.html", "tests/core/FileSystemPageContractTests.cs", "tests/core/FileSystemBrowserTests.cs"]
+      "evidence": ["tests/core/FileSystemPageContractTests.cs", "tests/core/FileSystemBrowserTests.cs"]
     },
     {
       "id": "WA-C-DEPENDENCY-OWNERSHIP-001",

@@ -68,11 +68,15 @@ public sealed class MultiRootHttpContractTests : IDisposable
         }
 
         using (var upload = new HttpRequestMessage(
-            HttpMethod.Put,
+            HttpMethod.Post,
             "/v1/filesystem/file?path=archive%2Fincoming%2Fa.bin")
         {
             Content = new ByteArrayContent("archive-payload"u8.ToArray())
         })
+        {
+            upload.Content.Headers.ContentType =
+                new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    "application/octet-stream");
         using (var response = await client.SendAsync(upload))
         {
             Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -195,8 +199,9 @@ public sealed class MultiRootHttpContractTests : IDisposable
             "/v1/filesystem/move",
             new
             {
-                sourcePath = "archive/a.txt",
-                destinationPath = "nfs/a.txt"
+                sourcePath = "archive/",
+                destinationPath = "nfs/",
+                fileNames = new[] { "a.txt" }
             });
 
         await AssertProblemCodeAsync(
@@ -223,8 +228,9 @@ public sealed class MultiRootHttpContractTests : IDisposable
             "/v1/filesystem/move",
             new
             {
-                sourcePath = "archive/a.txt",
-                destinationPath = "offline/a.txt"
+                sourcePath = "archive/",
+                destinationPath = "offline/",
+                fileNames = new[] { "a.txt" }
             });
 
         await AssertProblemCodeAsync(

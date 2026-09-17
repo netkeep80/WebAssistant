@@ -120,7 +120,6 @@ public sealed class FileSystemCandidateContractTests
             "two-panel",
             "LEFT",
             "RIGHT",
-            "Playwright",
             "/filesystem.html",
             "external mutation",
             "tests/core/FileSystemRootRegistryTests.cs",

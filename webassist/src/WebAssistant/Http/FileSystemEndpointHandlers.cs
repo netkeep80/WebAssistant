@@ -663,27 +663,34 @@ internal static class FileSystemEndpointHandlers
 
             try
             {
-                using var archive = new ZipArchive(
-                    httpContext.Response.Body,
+                using var responseStream =
+                    httpContext.Response.BodyWriter.AsStream(leaveOpen: true);
+                using (var archive = new ZipArchive(
+                    responseStream,
                     ZipArchiveMode.Create,
-                    leaveOpen: true);
-                foreach (var fileName in selection.FileNames)
+                    leaveOpen: true))
                 {
-                    httpContext.RequestAborted.ThrowIfCancellationRequested();
-                    await using var source = await selection.FileSystem.OpenReadAsync(
-                        FileSystemApplicationService.Join(
-                            selection.Path.RelativePath,
-                            fileName),
-                        httpContext.RequestAborted);
-                    var zipEntry = archive.CreateEntry(
-                        fileName,
-                        CompressionLevel.Fastest);
-                    await using var destination = zipEntry.Open();
-                    await source.CopyToAsync(
-                        destination,
-                        64 * 1024,
-                        httpContext.RequestAborted);
+                    foreach (var fileName in selection.FileNames)
+                    {
+                        httpContext.RequestAborted.ThrowIfCancellationRequested();
+                        await using var source = await selection.FileSystem.OpenReadAsync(
+                            FileSystemApplicationService.Join(
+                                selection.Path.RelativePath,
+                                fileName),
+                            httpContext.RequestAborted);
+                        var zipEntry = archive.CreateEntry(
+                            fileName,
+                            CompressionLevel.Fastest);
+                        await using var destination = zipEntry.Open();
+                        await source.CopyToAsync(
+                            destination,
+                            64 * 1024,
+                            httpContext.RequestAborted);
+                    }
                 }
+
+                await httpContext.Response.BodyWriter.FlushAsync(
+                    httpContext.RequestAborted);
             }
             catch when (httpContext.Response.HasStarted)
             {

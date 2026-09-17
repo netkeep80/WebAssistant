@@ -120,6 +120,13 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
             Assert.Contains(expected, apiAssertion, StringComparison.OrdinalIgnoreCase);
         }
 
+        var apiRequirements = apiVector["requirements"]!
+            .AsArray()
+            .Select(node => node!.GetValue<string>())
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Contains("WA-FS-010", apiRequirements);
+        Assert.Contains("WA-FS-011", apiRequirements);
+
         var apiEvidence = apiVector["evidence"]!
             .AsArray()
             .Select(node => node!.GetValue<string>())
@@ -146,7 +153,7 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
             .AsArray()
             .Select(node => node!.GetValue<string>())
             .ToHashSet(StringComparer.Ordinal);
-        Assert.Contains("webassist/src/WebAssistant/wwwroot/filesystem.html", browserEvidence);
+        Assert.Contains("tests/core/FileSystemPageContractTests.cs", browserEvidence);
         Assert.Contains("tests/core/FileSystemBrowserTests.cs", browserEvidence);
     }
 
