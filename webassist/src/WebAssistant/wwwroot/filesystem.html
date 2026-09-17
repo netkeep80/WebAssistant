@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>WebAssistant — файлы</title>
 <style>
-:root{color-scheme:light dark;font-family:system-ui,sans-serif;--splitter-width:10px;--panel-min:360px}
+:root{color-scheme:light dark;font-family:system-ui,sans-serif;--splitter-width:10px;--panel-min:360px;--table-font-size:.82rem}
 *{box-sizing:border-box}
 html,body{height:100%;overflow:hidden}
 body{margin:0;background:Canvas;color:CanvasText}
@@ -22,7 +22,7 @@ h1,h2{margin:.15em 0}p{margin:.3em 0}.muted{opacity:.72}button{font:inherit;curs
 .splitter::before{content:"";position:absolute;top:8px;bottom:8px;left:50%;width:2px;transform:translateX(-50%);background:color-mix(in srgb,CanvasText 30%,transparent);border-radius:2px}
 .splitter:hover::before,.splitter.dragging::before,.splitter:focus-visible::before{width:4px;background:LinkText}
 .panel-header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:0 0 auto}.breadcrumb{min-height:30px;padding:4px 0;display:block;flex:0 0 auto;overflow-wrap:anywhere}.breadcrumb button{display:inline;border:0;background:none;color:LinkText;text-decoration:underline;padding:2px 3px}.toolbar{margin:3px 0;flex:0 0 auto}.toolbar button{padding:5px 7px}.upload-input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}.panel-status{min-height:1.3em;margin:4px 0;flex:0 0 auto}
-.table-wrap{flex:1 1 auto;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
+.table-wrap{flex:1 1 auto;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;font-size:var(--table-font-size)}
 table{width:100%;border-collapse:collapse;table-layout:fixed}
 col.col-name{width:28%}col.col-size{width:10%}col.col-created{width:15%}col.col-modified{width:15%}col.col-restriction{width:14%}col.col-actions{width:18%}
 th,td{text-align:left;padding:6px 5px;border-bottom:1px solid color-mix(in srgb,CanvasText 16%,transparent);vertical-align:middle;white-space:normal;overflow-wrap:anywhere;min-width:0}
@@ -32,7 +32,7 @@ thead th{position:sticky;top:0;z-index:2;background:color-mix(in srgb,Canvas 94%
 tr.current-row{outline:2px solid color-mix(in srgb,LinkText 70%,transparent);outline-offset:-2px;background:color-mix(in srgb,LinkText 10%,transparent)}tr[draggable=true]{cursor:grab}tr.dragging-row{opacity:.45}
 .panel.drop-target{box-shadow:inset 0 0 0 3px color-mix(in srgb,LinkText 75%,transparent)}.panel.drop-forbidden{box-shadow:inset 0 0 0 3px color-mix(in srgb,Mark 75%,transparent)}
 .actions{justify-content:flex-end;gap:2px;flex-wrap:nowrap}.actions button{width:24px;height:24px;min-width:20px;padding:1px;border-radius:5px}.restriction{max-width:none}.load-more{margin-top:6px;flex:0 0 auto}.icon-sprite{position:absolute;width:0;height:0;overflow:hidden}
-@media(max-width:900px){main{padding:8px}.panel{padding:7px}th,td{font-size:.9rem;padding:5px 3px}.actions button{width:22px;height:22px}}
+@media(max-width:900px){main{padding:8px}.panel{padding:7px}.table-wrap{font-size:.78rem}th,td{padding:5px 3px}.actions button{width:22px;height:22px}}
 </style>
 </head>
 <body>
@@ -125,7 +125,7 @@ async function fetchListing(root,relative,cursor=null){const extra=`&limit=200${
 async function loadDirectory(side,target,{append=false,recoverCurrent=false}={}){const state=panels[side],root=activeRoot;if(!root)return false;const generation=++state.generation;state.loading=true;renderPanels();setPanelStatus(side,"Загрузка…");try{const payload=await fetchListing(root,target,append?state.nextCursor:null);if(generation!==state.generation||root!==activeRoot)return false;state.relativePath=target;state.entries=append?state.entries.concat(payload.entries||[]):payload.entries||[];state.nextCursor=payload.nextCursor||null;if(!append)state.selectedPath=null;state.loading=false;renderPanels();setPanelStatus(side,`Объектов: ${state.entries.length}`);return true}catch(error){if(generation!==state.generation||root!==activeRoot)return false;if(recoverCurrent&&error.code==="not_found"){let candidate=parentRelative(target);while(true){try{const payload=await fetchListing(root,candidate);if(generation!==state.generation||root!==activeRoot)return false;state.relativePath=candidate;state.entries=payload.entries||[];state.nextCursor=payload.nextCursor||null;state.selectedPath=null;state.loading=false;renderPanels();setPanelStatus(side,"Текущий каталог исчез; выполнен переход к доступному родителю",true);return true}catch(next){if(next.code!=="not_found"||!candidate)break;candidate=parentRelative(candidate)}}}state.loading=false;renderPanels();setPanelStatus(side,`Ошибка: ${friendly(error)}`,true);return false}}
 async function navigate(side,target){await loadDirectory(side,target)}
 async function refresh(side){const selected=panels[side].selectedPath,ok=await loadDirectory(side,panels[side].relativePath,{recoverCurrent:true});if(ok&&selected){panels[side].selectedPath=selected;ensureSelectionExists(side);renderCurrentState()}return ok}
-async function selectRoot(root){if(!configuredRoots.includes(root))return;activeRoot=root;currentSide="left";for(const state of Object.values(panels)){state.generation++;state.relativePath="";state.entries=[];state.nextCursor=null;state.selectedPath=null;state.loading=false}renderAll();setStatus(`Корень: ${root}`);await Promise.all([loadDirectory("left",""),loadDirectory("right","")]);renderRootButtons();byId("filesystem-left").focus({preventScroll:true})}
+async function selectRoot(root){if(!configuredRoots.includes(root))return;resetTransientDragState();activeRoot=root;currentSide="left";for(const state of Object.values(panels)){state.generation++;state.relativePath="";state.entries=[];state.nextCursor=null;state.selectedPath=null;state.loading=false}renderAll();setStatus(`Корень: ${root}`);await Promise.all([loadDirectory("left",""),loadDirectory("right","")]);renderRootButtons();byId("filesystem-left").focus({preventScroll:true})}
 async function refreshPanels(){await Promise.all([refresh("left"),refresh("right")])}
 async function mutate(operation,success){try{await operation();setStatus(success);await refreshPanels();return true}catch(error){setStatus(`Ошибка: ${friendly(error)}`,true);await refreshPanels();return false}}
 async function openEntry(side,entry){if(entry.kind==="directory")return navigate(side,joinRelative(panels[side].relativePath,entry.name));if(entry.kind!=="file"||entry.restrictionCode)return;const anchor=document.createElement("a");anchor.href=query(api.file,entry.fullPath);anchor.download=entry.name;document.body.append(anchor);anchor.click();anchor.remove()}
@@ -143,7 +143,8 @@ function selectedEntry(side){const state=panels[side];if(!state.selectedPath)ret
 async function handlePanelKey(event){if(!["ArrowUp","ArrowDown","Enter","Tab"].includes(event.key))return;if(event.target.closest("input,textarea,select"))return;event.preventDefault();if(event.key==="Tab"){currentSide=otherSide(currentSide);renderCurrentState();byId(`filesystem-${currentSide}`).focus({preventScroll:true});const selected=panels[currentSide].selectedPath;if(selected)selectRow(currentSide,selected,false);return}const side=currentSide,rows=selectionRows(side);if(event.key==="ArrowUp"||event.key==="ArrowDown"){if(!rows.length)return;let index=rows.findIndex(row=>row.dataset.selectionId===panels[side].selectedPath);if(index<0)index=event.key==="ArrowDown"?-1:rows.length;const next=Math.max(0,Math.min(rows.length-1,index+(event.key==="ArrowDown"?1:-1)));selectRow(side,rows[next].dataset.selectionId,false);return}const selected=selectedEntry(side);if(!selected)return;if(selected.parent)return navigate(side,parentRelative(panels[side].relativePath));return openEntry(side,selected)}
 function startInternalDrag(event,side,entry){internalDrag={root:activeRoot,sourceSide:side,entry};currentSide=side;panels[side].selectedPath=entry.fullPath;renderCurrentState();event.currentTarget.classList.add("dragging-row");event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("application/x-webassistant-path",entry.fullPath);event.dataTransfer.setData("text/plain",entry.fullPath)}
 function clearDropClasses(){for(const side of ["left","right"])byId(`filesystem-${side}`).classList.remove("drop-target","drop-forbidden")}
-function finishDrag(event){event?.currentTarget?.classList?.remove("dragging-row");internalDrag=null;clearDropClasses()}
+function resetTransientDragState(){internalDrag=null;clearDropClasses();for(const row of document.querySelectorAll(".dragging-row"))row.classList.remove("dragging-row")}
+function finishDrag(event){event?.currentTarget?.classList?.remove("dragging-row");resetTransientDragState()}
 function externalFiles(dataTransfer){return Array.from(dataTransfer?.files||[])}
 function canInternalDrop(targetSide){return Boolean(internalDrag&&internalDrag.root===activeRoot&&internalDrag.sourceSide!==targetSide&&panels[internalDrag.sourceSide].relativePath!==panels[targetSide].relativePath)}
 function dragHasFiles(event){return Array.from(event.dataTransfer?.types||[]).includes("Files")}
