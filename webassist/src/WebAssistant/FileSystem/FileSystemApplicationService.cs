@@ -311,6 +311,14 @@ internal sealed class FileSystemApplicationService
         }
         while (nativeCursor is not null);
 
+        foreach (var fileName in fileNames)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await using var preflight = await resolved.FileSystem.OpenReadAsync(
+                Join(resolved.Path.RelativePath, fileName),
+                cancellationToken);
+        }
+
         return new FileSystemZipSelection(
             resolved.Path,
             resolved.FileSystem,
