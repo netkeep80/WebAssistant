@@ -83,6 +83,10 @@ public sealed class ConfigurationOwnershipTests
 
         Assert.Contains("<MajorUpgrade", package, StringComparison.Ordinal);
         Assert.Contains("Schedule=\"afterInstallExecute\"", package, StringComparison.Ordinal);
+        Assert.Contains(
+            "DowngradeErrorMessage=\"!(loc.WixDowngradePreventedMessage)\"",
+            package,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("AllowDowngrades=\"yes\"", package, StringComparison.Ordinal);
     }
 
