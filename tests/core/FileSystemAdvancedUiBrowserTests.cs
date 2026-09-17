@@ -310,7 +310,7 @@ public sealed class FileSystemAdvancedUiBrowserTests
             {
                 await Row("left", "conflict.txt").DragToAsync(page.Locator("#filesystem-right"));
                 Assert.Equal(
-                    StatusCodes.Status200OK,
+                    (int)HttpStatusCode.OK,
                     await moveResponse.Task.WaitAsync(TimeSpan.FromSeconds(5)));
             }
             finally
