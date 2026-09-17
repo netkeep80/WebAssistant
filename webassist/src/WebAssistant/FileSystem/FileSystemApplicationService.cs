@@ -323,7 +323,7 @@ internal sealed class FileSystemApplicationService
     private static FileSystemLogicalPath ParseDirectoryPath(string? value)
     {
         if (value is not null &&
-            value.EndsWith('/', StringComparison.Ordinal) &&
+            value.EndsWith("/", StringComparison.Ordinal) &&
             value.Count(character => character == '/') > 1)
         {
             if (value.EndsWith("//", StringComparison.Ordinal))
