@@ -81,6 +81,7 @@ public sealed class MultiRootHttpContractTests : IDisposable
         {
             Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         }
+        }
 
         Assert.True(File.Exists(Path.Combine(archiveRoot, "incoming", "a.bin")));
         Assert.False(File.Exists(Path.Combine(nfsRoot, "incoming", "a.bin")));
