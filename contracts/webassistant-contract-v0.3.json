@@ -154,12 +154,12 @@
     {
       "id": "WA-FS-007",
       "kind": "required",
-      "statement": "Filesystem errors используют application/problem+json и stable code vocabulary: invalid_path, not_found, destination_exists, directory_not_empty, unsafe_link, hardlink_rejected, blocked_file_type, locked, filesystem_unavailable. Unsafe link/reparse и hard-link entries fail-closed; OS/share lock не имеет hidden retry и получает 423 locked."
+      "statement": "Filesystem errors используют application/problem+json и стабильные machine-readable codes: filesystem_not_configured, filesystem_configuration_invalid, filesystem_root_not_found, filesystem_root_unavailable, filesystem_path_invalid, not_found, destination_exists, directory_not_empty, unsafe_link, hardlink_rejected, blocked_file_type и locked. Unsafe link/reparse и hard-link entries fail-closed; OS/share lock не имеет hidden retry и получает 423 locked. HTTP-ошибки не раскрывают physicalRootPath."
     },
     {
       "id": "WA-FS-008",
       "kind": "required",
-      "statement": "Repository-owned /filesystem.html является visual browser client только public filesystem API: наглядно показывает Root-relative breadcrumb, В корень, На уровень вверх, Обновить, paged directory table и позволяет проверить все MVP file operations без отображения absolute host path или inline preview пользовательских файлов. Реальный Playwright/Chromium integration test проверяет page navigation, all MVP operations и external mutation RootDirectory сторонним host process."
+      "statement": "Repository-owned /filesystem.html является visual browser client только public filesystem API: selector logical root выбирает один active logical root для обеих панелей; LEFT и RIGHT имеют независимые breadcrumb, navigation, sorting, .., create file/directory, one-step upload и refresh. Клик по каталогу открывает его в той же панели, клик по обычному файлу скачивает attachment. В каждой обычной строке ровно три action icons: LEFT →, ✎, ×; RIGHT ←, ✎, ×; directional move disabled, когда обе панели показывают один каталог. Переключение logical root сбрасывает BOTH panels в верхний уровень. Physical host paths и inline preview/rendering пользовательских файлов запрещены. Реальный Playwright/Chromium integration test проверяет эти UI-семантики, filesystem operations и external mutation выбранного logical root сторонним host process."
     },
     {
       "id": "WA-FS-009",
