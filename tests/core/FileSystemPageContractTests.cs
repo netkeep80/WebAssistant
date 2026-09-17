@@ -113,9 +113,10 @@ public sealed class FileSystemPageContractTests
         Assert.Contains("renameEntry", page, StringComparison.Ordinal);
         Assert.Contains("api.directoryMove", page, StringComparison.Ordinal);
         Assert.Contains("api.rename", page, StringComparison.Ordinal);
-        Assert.Contains("data-action=\"move\"", page, StringComparison.Ordinal);
-        Assert.Contains("data-action=\"rename\"", page, StringComparison.Ordinal);
-        Assert.Contains("data-action=\"delete\"", page, StringComparison.Ordinal);
+        Assert.Contains("button.dataset.action=action", page, StringComparison.Ordinal);
+        Assert.Contains("\"Переместить\",\"move\"", page, StringComparison.Ordinal);
+        Assert.Contains("\"Переименовать\",\"rename\"", page, StringComparison.Ordinal);
+        Assert.Contains("\"Удалить\",\"delete\"", page, StringComparison.Ordinal);
         Assert.DoesNotContain("destinationPath:targetPath", page, StringComparison.Ordinal);
     }
 
