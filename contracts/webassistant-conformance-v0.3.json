@@ -37,6 +37,7 @@
     "webassist/install/windows/install.bat",
     "webassist/install/windows/install.ps1",
     "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg",
+    "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg",
     "tests/core/BaselineContractTests.cs",
     "tests/core/PackagingLayoutTests.cs",
     "tests/core/ProductAutonomyTests.cs",
@@ -89,10 +90,15 @@
     "tests/core/LinuxRootedFileSystemTests.cs",
     "tests/core/WindowsRootedFileSystemTests.cs",
     "tests/core/HttpFileSystemContractTests.cs",
+    "tests/core/FileSystemApiV230ContractTests.cs",
     "tests/core/FileSystemLifecycleTests.cs",
     "tests/core/FilePublicationTests.cs",
     "tests/core/FileSystemPageContractTests.cs",
     "tests/core/FileSystemBrowserTests.cs",
+    "webassist/src/WebAssistant/FileSystem/FileSystemApplicationService.cs",
+    "webassist/src/WebAssistant/Http/FileSystemEndpointHandlers.cs",
+    "webassist/src/WebAssistant/Http/FileSystemHttpModels.cs",
+    "webassist/src/WebAssistant/wwwroot/filesystem.html",
     "tests/core/DependencyOwnershipTests.cs",
     "webassist/vendor/naps2/README.md",
     "tests/core/DistributionContractCandidateTests.cs",
@@ -265,23 +271,23 @@
     {
       "id": "WA-C-FILESYSTEM-API-001",
       "kind": "positive",
-      "assertion": "Candidate multi-root filesystem API публикует /v1/filesystem/roots и versioned list/file/directory/move routes с explicit logical-root-prefixed paths. Unknown logical root, root unavailable, invalid path/configuration и not-configured имеют stable application/problem+json outcomes; cross-root move отклоняется до destination authority, а same-root move сохраняет atomic no-replace semantics. Listing остаётся paged default 200/max 1000, downloads — streaming opaque, navigation — stateless caller-owned.",
+      "assertion": "Candidate multi-root filesystem API публикует GET /v1/filesystem/roots, GET /v1/filesystem/list, GET /v1/filesystem/file, GET /v1/filesystem/files, GET /v1/filesystem/find и только POST mutation routes /v1/filesystem/file, /v1/filesystem/file/delete, /v1/filesystem/directory, /v1/filesystem/directory/delete, /v1/filesystem/move, /v1/filesystem/directory/move, /v1/filesystem/rename. Wildcard фильтрует ordinary files до pagination, не скрывая каталоги; streaming ZIP использует тот же immediate-file filter. Batch ordinary-file move и directory move сохраняют actual source basename, а rename сохраняет parent directory; cross-root mutation, overwrite, copy-delete fallback, recursive delete/find/ZIP отсутствуют. Find использует repeated exact names и Ordinal matching. Stable application/problem+json outcomes и rooted security policy сохраняются.",
       "requirements": ["WA-FS-002", "WA-FS-005", "WA-FS-006", "WA-FS-007", "WA-FS-009"],
-      "evidence": ["tests/core/FileSystemRootRegistryTests.cs", "tests/core/MultiRootFileSystemTests.cs", "tests/core/HttpFileSystemContractTests.cs", "tests/core/CorsConfigurationTests.cs", "tests/core/FileSystemLifecycleTests.cs"]
+      "evidence": ["tests/core/FileSystemRootRegistryTests.cs", "tests/core/MultiRootFileSystemTests.cs", "tests/core/HttpFileSystemContractTests.cs", "tests/core/FileSystemApiV230ContractTests.cs", "tests/core/CorsConfigurationTests.cs", "tests/core/FileSystemLifecycleTests.cs", "webassist/src/WebAssistant/FileSystem/FileSystemApplicationService.cs", "webassist/src/WebAssistant/Http/FileSystemEndpointHandlers.cs", "webassist/docs/api.md"]
     },
     {
       "id": "WA-C-FILESYSTEM-ATOMIC-001",
       "kind": "negative",
-      "assertion": "Upload publication и move используют atomic no-replace semantics: final upload name отсутствует до complete commit, existing destination bytes никогда не заменяются, staging namespace не public, recursive delete/append/implicit replace отсутствуют.",
+      "assertion": "Upload publication, batch file move, directory move и rename используют atomic no-replace namespace semantics: final upload name отсутствует до complete commit, existing destination bytes/entries никогда не заменяются, staging namespace не public, copy-delete fallback, recursive delete, append и implicit replace отсутствуют.",
       "requirements": ["WA-FS-003", "WA-FS-004"],
-      "evidence": ["tests/core/FilePublicationTests.cs", "tests/core/HttpFileSystemContractTests.cs"]
+      "evidence": ["tests/core/FilePublicationTests.cs", "tests/core/HttpFileSystemContractTests.cs", "tests/core/FileSystemApiV230ContractTests.cs", "webassist/src/WebAssistant/FileSystem/FileSystemApplicationService.cs"]
     },
     {
       "id": "WA-C-FILESYSTEM-BROWSER-001",
       "kind": "positive",
-      "assertion": "Repository-owned /filesystem.html является two-panel public-API browser client для multi-root filesystem: root discovery выбирает active logical root, LEFT и RIGHT сохраняют независимые navigation/sort state, one-step upload и click-to-open/download работают без inline preview. Playwright/Chromium acceptance проверяет переключение roots, LEFT/RIGHT navigation, same-root arrows, внешний external mutation refresh и недоступный root без раскрытия physical host path.",
+      "assertion": "Repository-owned /filesystem.html остаётся two-panel public-API browser client: LEFT и RIGHT имеют независимые navigation/sort/wildcard/selection state, desktop selection поддерживает click, Ctrl+click и Shift+click только для разрешённых ordinary files, find exact names добавляет найденные строки в selection, ZIP выгружает current directory по current wildcard, header batch arrows отправляют один POST /v1/filesystem/move, row file move использует ту же batch DTO, directory move использует /v1/filesystem/directory/move, а rename — отдельный /v1/filesystem/rename. Root/directory change сбрасывает selection, refresh/sort сохраняют surviving selection, one-step upload и click-to-open/download работают без inline preview.",
       "requirements": ["WA-FS-008", "WA-FS-009"],
-      "evidence": ["tests/core/FileSystemPageContractTests.cs", "tests/core/FileSystemBrowserTests.cs"]
+      "evidence": ["webassist/src/WebAssistant/wwwroot/filesystem.html", "tests/core/FileSystemPageContractTests.cs", "tests/core/FileSystemBrowserTests.cs"]
     },
     {
       "id": "WA-C-DEPENDENCY-OWNERSHIP-001",
