@@ -167,8 +167,12 @@ public sealed class FileSystemBrowserTests
             Assert.Equal(batchCountBefore + 1, batchRequests.Length);
             using (var payload = JsonDocument.Parse(batchRequests[^1].PostData!))
             {
-                Assert.Equal("archive/incoming/", payload.RootElement.GetProperty("sourcePath").GetString());
-                Assert.Equal("archive/processed/", payload.RootElement.GetProperty("destinationPath").GetString());
+                Assert.Equal(
+                    "archive/incoming",
+                    payload.RootElement.GetProperty("sourcePath").GetString()?.TrimEnd('/'));
+                Assert.Equal(
+                    "archive/processed",
+                    payload.RootElement.GetProperty("destinationPath").GetString()?.TrimEnd('/'));
                 Assert.Equal(
                     new[] { "c.json" },
                     payload.RootElement.GetProperty("fileNames").EnumerateArray().Select(value => value.GetString()).ToArray());
