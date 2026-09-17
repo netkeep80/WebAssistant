@@ -165,6 +165,7 @@ internal sealed class FileSystemApplicationService
                 await source.FileSystem.MoveNoReplaceAsync(
                     sourceRelativePath,
                     destinationRelativePath,
+                    RootedEntryKind.File,
                     cancellationToken);
                 moved.Add(entry.Name);
             }
@@ -234,6 +235,7 @@ internal sealed class FileSystemApplicationService
         await source.FileSystem.MoveNoReplaceAsync(
             actualSourceRelativePath,
             destinationRelativePath,
+            RootedEntryKind.Directory,
             cancellationToken);
     }
 
@@ -274,6 +276,7 @@ internal sealed class FileSystemApplicationService
         await source.FileSystem.MoveNoReplaceAsync(
             Join(source.Path.RelativePath, sourceEntry.Name),
             Join(source.Path.RelativePath, newName!),
+            sourceEntry.Kind,
             cancellationToken);
     }
 
