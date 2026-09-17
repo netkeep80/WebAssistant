@@ -348,6 +348,40 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
         Assert.All(names, name => Assert.DoesNotContain('/', name));
     }
 
+    [Fact]
+    public async Task Zip_PreflightsSelectedFilesBeforeStartingResponse()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var path = Path.Combine(root, "unreadable.bin");
+        await File.WriteAllTextAsync(path, "opaque");
+        var originalMode = File.GetUnixFileMode(path);
+        File.SetUnixFileMode(path, UnixFileMode.None);
+
+        try
+        {
+            using var response = await client.GetAsync(
+                "/v1/filesystem/files?path=archive%2F&wildcard=*.bin");
+
+            Assert.Equal((HttpStatusCode)423, response.StatusCode);
+            Assert.Equal(
+                "application/problem+json",
+                response.Content.Headers.ContentType?.MediaType);
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync());
+            Assert.Equal(
+                "locked",
+                document.RootElement.GetProperty("code").GetString());
+        }
+        finally
+        {
+            File.SetUnixFileMode(path, originalMode);
+        }
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(string rootDirectory) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
