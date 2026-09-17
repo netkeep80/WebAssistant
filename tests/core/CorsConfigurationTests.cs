@@ -42,10 +42,9 @@ public sealed class CorsConfigurationTests
     }
 
     [Theory]
-    [InlineData("PUT", "content-type")]
-    [InlineData("DELETE", null)]
+    [InlineData("GET", null)]
     [InlineData("POST", "content-type")]
-    public async Task Cors_FilesystemMutationPreflightAllowsRequiredMethodsAndHeaders(
+    public async Task Cors_PreflightAllowsOnlyCurrentApiMethodsAndRequiredHeaders(
         string method,
         string? requestedHeaders)
     {
@@ -76,6 +75,29 @@ public sealed class CorsConfigurationTests
         }
     }
 
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    public async Task Cors_LegacyFilesystemMutationMethodsAreNotGranted(string method)
+    {
+        using var factory = CreateCorsFactory();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Options, "/v1/filesystem/file");
+        request.Headers.Add("Origin", "https://example.test");
+        request.Headers.Add("Access-Control-Request-Method", method);
+        request.Headers.Add("Access-Control-Request-Headers", "content-type");
+
+        using var response = await client.SendAsync(request);
+
+        if (response.Headers.TryGetValues("Access-Control-Allow-Methods", out var values))
+        {
+            Assert.DoesNotContain(
+                method,
+                string.Join(",", values),
+                StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     [Fact]
     public async Task Cors_DisallowedOriginGetsNoFilesystemPreflightGrant()
     {
@@ -83,7 +105,7 @@ public sealed class CorsConfigurationTests
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Options, "/v1/filesystem/file");
         request.Headers.Add("Origin", "https://other.test");
-        request.Headers.Add("Access-Control-Request-Method", "PUT");
+        request.Headers.Add("Access-Control-Request-Method", "POST");
         request.Headers.Add("Access-Control-Request-Headers", "content-type");
 
         using var response = await client.SendAsync(request);
