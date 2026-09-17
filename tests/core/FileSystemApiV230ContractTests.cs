@@ -30,7 +30,7 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
     }
 
     [Fact]
-    public void CandidateV03_DeclaresApproved230SurfaceAndCurrentSdkInventory()
+    public void CandidateV03_DeclaresApproved230SurfaceAndCurrentExecutableEvidence()
     {
         var repository = FindRepositoryRoot();
         var contractPath = Path.Combine(
@@ -86,12 +86,68 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
             .AsArray()
             .Select(node => node!.GetValue<string>())
             .ToHashSet(StringComparer.Ordinal);
-        Assert.Contains(
+        foreach (var requiredPath in new[]
+        {
             "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg",
-            requiredPaths);
-        Assert.Contains(
             "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg",
-            requiredPaths);
+            "tests/core/FileSystemApiV230ContractTests.cs",
+            "webassist/src/WebAssistant/FileSystem/FileSystemApplicationService.cs",
+            "webassist/src/WebAssistant/Http/FileSystemEndpointHandlers.cs",
+            "webassist/src/WebAssistant/wwwroot/filesystem.html"
+        })
+        {
+            Assert.Contains(requiredPath, requiredPaths);
+        }
+
+        var vectors = conformance["vectors"]!
+            .AsArray()
+            .Select(node => node!.AsObject())
+            .ToArray();
+        var apiVector = vectors.Single(vector =>
+            vector["id"]?.GetValue<string>() == "WA-C-FILESYSTEM-API-001");
+        var apiAssertion = apiVector["assertion"]!.GetValue<string>();
+        foreach (var expected in new[]
+        {
+            "POST",
+            "/v1/filesystem/files",
+            "/v1/filesystem/find",
+            "wildcard",
+            "batch",
+            "directory move",
+            "rename"
+        })
+        {
+            Assert.Contains(expected, apiAssertion, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var apiEvidence = apiVector["evidence"]!
+            .AsArray()
+            .Select(node => node!.GetValue<string>())
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var evidencePath in new[]
+        {
+            "tests/core/FileSystemApiV230ContractTests.cs",
+            "tests/core/HttpFileSystemContractTests.cs",
+            "webassist/src/WebAssistant/FileSystem/FileSystemApplicationService.cs",
+            "webassist/src/WebAssistant/Http/FileSystemEndpointHandlers.cs"
+        })
+        {
+            Assert.Contains(evidencePath, apiEvidence);
+        }
+
+        var browserVector = vectors.Single(vector =>
+            vector["id"]?.GetValue<string>() == "WA-C-FILESYSTEM-BROWSER-001");
+        var browserAssertion = browserVector["assertion"]!.GetValue<string>();
+        foreach (var expected in new[] { "wildcard", "ZIP", "find", "selection", "batch" })
+        {
+            Assert.Contains(expected, browserAssertion, StringComparison.OrdinalIgnoreCase);
+        }
+        var browserEvidence = browserVector["evidence"]!
+            .AsArray()
+            .Select(node => node!.GetValue<string>())
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Contains("webassist/src/WebAssistant/wwwroot/filesystem.html", browserEvidence);
+        Assert.Contains("tests/core/FileSystemBrowserTests.cs", browserEvidence);
     }
 
     [Fact]
@@ -205,20 +261,40 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(root, "README"), "readme");
         await File.WriteAllTextAsync(Path.Combine(root, "z.txt"), "z");
 
-        using var filtered = await client.GetAsync(
-            "/v1/filesystem/list?path=archive%2F&wildcard=*.xml,*.json&limit=2");
-        Assert.Equal(HttpStatusCode.OK, filtered.StatusCode);
-        using var filteredDocument = JsonDocument.Parse(
-            await filtered.Content.ReadAsStringAsync());
-        var filteredNames = filteredDocument.RootElement
-            .GetProperty("entries")
-            .EnumerateArray()
-            .Select(entry => entry.GetProperty("name").GetString())
-            .ToArray();
-        Assert.Contains("folder", filteredNames);
-        Assert.Contains("A.XML", filteredNames);
-        Assert.DoesNotContain("README", filteredNames);
-        Assert.DoesNotContain("z.txt", filteredNames);
+        using (var onlyDirectory = await client.GetAsync(
+            "/v1/filesystem/list?path=archive%2F&wildcard=*.nomatch&limit=1"))
+        {
+            Assert.Equal(HttpStatusCode.OK, onlyDirectory.StatusCode);
+            using var document = JsonDocument.Parse(await onlyDirectory.Content.ReadAsStringAsync());
+            var entries = document.RootElement
+                .GetProperty("entries")
+                .EnumerateArray()
+                .Select(entry => entry.GetProperty("name").GetString())
+                .ToArray();
+            Assert.Equal(new[] { "folder" }, entries);
+            Assert.True(
+                !document.RootElement.TryGetProperty("nextCursor", out var nextCursor) ||
+                nextCursor.ValueKind is JsonValueKind.Null ||
+                (nextCursor.ValueKind is JsonValueKind.String &&
+                 string.IsNullOrEmpty(nextCursor.GetString())));
+        }
+
+        using (var filtered = await client.GetAsync(
+            "/v1/filesystem/list?path=archive%2F&wildcard=*.xml,*.json&limit=200"))
+        {
+            Assert.Equal(HttpStatusCode.OK, filtered.StatusCode);
+            using var document = JsonDocument.Parse(await filtered.Content.ReadAsStringAsync());
+            var filteredNames = document.RootElement
+                .GetProperty("entries")
+                .EnumerateArray()
+                .Select(entry => entry.GetProperty("name").GetString())
+                .ToArray();
+            Assert.Contains("folder", filteredNames);
+            Assert.Contains("A.XML", filteredNames);
+            Assert.Contains("b.json", filteredNames);
+            Assert.DoesNotContain("README", filteredNames);
+            Assert.DoesNotContain("z.txt", filteredNames);
+        }
 
         using var allFiles = await client.GetAsync(
             "/v1/filesystem/list?path=archive%2F&wildcard=*.*&limit=200");
