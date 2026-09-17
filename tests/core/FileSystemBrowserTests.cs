@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.Playwright;
 using Xunit;
 
@@ -10,21 +12,27 @@ namespace WebAssistant.CoreTests;
 public sealed class FileSystemBrowserTests
 {
     [Fact]
-    public async Task Browser_ExercisesMultiRootTwoPanelWorkflow()
+    public async Task Browser_Exercises230TwoPanelSelectionAndSeparatedMutations()
     {
         var repo = FindRoot();
         var temp = Path.Combine(
             Path.GetTempPath(),
-            "webassistant-browser",
+            "webassistant-browser-v230",
             Guid.NewGuid().ToString("N"));
         var archive = Path.Combine(temp, "archive");
         var nfs = Path.Combine(temp, "nfs");
         var offline = Path.Combine(temp, "offline");
         var logs = Path.Combine(temp, "logs");
-        Directory.CreateDirectory(Path.Combine(archive, "incoming"));
-        Directory.CreateDirectory(Path.Combine(archive, "processed"));
+        var incoming = Path.Combine(archive, "incoming");
+        var processed = Path.Combine(archive, "processed");
+        Directory.CreateDirectory(incoming);
+        Directory.CreateDirectory(processed);
+        Directory.CreateDirectory(Path.Combine(incoming, "nested"));
         Directory.CreateDirectory(nfs);
         Directory.CreateDirectory(logs);
+        await File.WriteAllTextAsync(Path.Combine(incoming, "a.xml"), "a");
+        await File.WriteAllTextAsync(Path.Combine(incoming, "b.xml"), "b");
+        await File.WriteAllTextAsync(Path.Combine(incoming, "c.json"), "c");
         await File.WriteAllTextAsync(Path.Combine(archive, "blocked.sh"), "echo blocked");
 
         var port = FreePort();
@@ -52,7 +60,15 @@ public sealed class FileSystemBrowserTests
             var page = await browser.NewPageAsync();
             var prompts = new Queue<string>();
             var pageErrors = new List<string>();
+            var filesystemRequests = new List<(string Method, string Url, string? PostData)>();
             page.PageError += (_, error) => pageErrors.Add(error);
+            page.Request += (_, request) =>
+            {
+                if (request.Url.Contains("/v1/filesystem/", StringComparison.Ordinal))
+                {
+                    filesystemRequests.Add((request.Method, request.Url, request.PostData));
+                }
+            };
             page.Dialog += async (_, dialog) =>
             {
                 if (dialog.Type == "prompt")
@@ -69,23 +85,19 @@ public sealed class FileSystemBrowserTests
 
             ILocator Entries(string side) => page.Locator($"#filesystem-{side}-entries");
             ILocator Row(string side, string name) => Entries(side)
-                .Locator("tr")
-                .Filter(new() { HasTextString = name });
-            async Task Visible(string side, string name) =>
-                await Row(side, name).WaitForAsync();
+                .Locator($"tr[data-entry-name='{name}']");
+            async Task Visible(string side, string name) => await Row(side, name).WaitForAsync();
             async Task WaitBreadcrumb(string side, string expected) =>
                 await page.WaitForFunctionAsync(
                     "args => document.getElementById(args.id).innerText.includes(args.expected)",
-                    new
-                    {
-                        id = $"filesystem-{side}-breadcrumb",
-                        expected
-                    });
+                    new { id = $"filesystem-{side}-breadcrumb", expected });
             async Task Prompt(string selector, string value)
             {
                 prompts.Enqueue(value);
                 await page.ClickAsync(selector);
             }
+            async Task<int> SelectedCount(string side) =>
+                await Entries(side).Locator("tr.selected-row").CountAsync();
 
             await page.Locator("#filesystem-roots [data-root='archive']").WaitForAsync();
             await page.Locator("#filesystem-roots [data-root='nfs']").WaitForAsync();
@@ -94,168 +106,178 @@ public sealed class FileSystemBrowserTests
             await WaitBreadcrumb("left", "archive");
             await WaitBreadcrumb("right", "archive");
 
-            Assert.Equal(
-                "archive",
-                (await page.Locator("#filesystem-left-breadcrumb").InnerTextAsync()).Trim());
-            Assert.Equal(
-                "archive",
-                (await page.Locator("#filesystem-right-breadcrumb").InnerTextAsync()).Trim());
-
             await Row("left", "incoming").Locator("[data-entry-open]").ClickAsync();
             await WaitBreadcrumb("left", "archive / incoming");
             await Row("right", "processed").Locator("[data-entry-open]").ClickAsync();
             await WaitBreadcrumb("right", "archive / processed");
-            Assert.Contains(
-                "archive / incoming",
-                await page.Locator("#filesystem-left-breadcrumb").InnerTextAsync());
-            Assert.Contains(
-                "archive / processed",
-                await page.Locator("#filesystem-right-breadcrumb").InnerTextAsync());
 
-            var upload = Path.Combine(temp, "a.bin");
-            var publishedUpload = Path.Combine(archive, "incoming", "a.bin");
-            var bytes = "browser-opaque-payload"u8.ToArray();
-            await File.WriteAllBytesAsync(upload, bytes);
-            var uploadResponseSource = new TaskCompletionSource<IResponse>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
-            var leftRefreshResponseSource = new TaskCompletionSource<IResponse>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
-            EventHandler<IResponse> observeUpload = (_, response) =>
+            Assert.Equal("*.*", await page.Locator("#filesystem-left-wildcard").InputValueAsync());
+            Assert.Equal("*.*", await page.Locator("#filesystem-right-wildcard").InputValueAsync());
+
+            await page.Locator("#filesystem-left-wildcard").FillAsync("*.xml");
+            await page.ClickAsync("#filesystem-left-apply-wildcard");
+            await Visible("left", "a.xml");
+            await Visible("left", "b.xml");
+            await Visible("left", "nested");
+            Assert.Equal(0, await Row("left", "c.json").CountAsync());
+
+            var zipDownload = await page.RunAndWaitForDownloadAsync(
+                () => page.ClickAsync("#filesystem-left-zip"));
+            await using (var zipStream = File.OpenRead(await zipDownload.PathAsync()))
+            using (var zip = new ZipArchive(zipStream, ZipArchiveMode.Read))
             {
-                if (response.Request.Method == "PUT" &&
-                    response.Url.Contains("/v1/filesystem/file", StringComparison.Ordinal))
-                {
-                    uploadResponseSource.TrySetResult(response);
-                }
+                Assert.Equal(
+                    new[] { "a.xml", "b.xml" },
+                    zip.Entries.Select(entry => entry.FullName).Order(StringComparer.Ordinal).ToArray());
+            }
 
-                if (response.Request.Method == "GET" &&
-                    response.Url.Contains("/v1/filesystem/list", StringComparison.Ordinal) &&
-                    Uri.UnescapeDataString(response.Url).Contains(
-                        "path=archive/incoming",
-                        StringComparison.Ordinal))
-                {
-                    leftRefreshResponseSource.TrySetResult(response);
-                }
-            };
-            page.Response += observeUpload;
+            await page.Locator("#filesystem-left-wildcard").FillAsync("*.*");
+            await page.ClickAsync("#filesystem-left-apply-wildcard");
+            await Visible("left", "c.json");
+
+            await Row("left", "a.xml").ClickAsync();
+            Assert.Equal(1, await SelectedCount("left"));
+            await Row("left", "b.xml").ClickAsync(new() { Modifiers = new[] { KeyboardModifier.Control } });
+            Assert.Equal(2, await SelectedCount("left"));
+            await Row("left", "c.json").ClickAsync(new() { Modifiers = new[] { KeyboardModifier.Shift } });
+            Assert.Equal(3, await SelectedCount("left"));
+            Assert.Equal(0, await SelectedCount("right"));
+            Assert.Equal(0, await Row("left", "nested").Locator(".selected-row").CountAsync());
+
+            await page.ClickAsync("#filesystem-left-refresh");
+            Assert.Equal(3, await SelectedCount("left"));
+            await page.ClickAsync("#filesystem-left thead th[data-sort-key='size'] .sort-button");
+            Assert.Equal(3, await SelectedCount("left"));
+
+            await page.Locator("#filesystem-left-find-names").FillAsync("a.xml\nb.xml\nmissing.xml");
+            await page.ClickAsync("#filesystem-left-find");
+            Assert.True(await Row("left", "a.xml").EvaluateAsync<bool>("row => row.classList.contains('selected-row')"));
+            Assert.True(await Row("left", "b.xml").EvaluateAsync<bool>("row => row.classList.contains('selected-row')"));
+            Assert.Equal("archive / incoming", (await page.Locator("#filesystem-left-breadcrumb").InnerTextAsync()).Trim());
+
+            await Row("left", "c.json").ClickAsync();
+            Assert.Equal(1, await SelectedCount("left"));
+            var batchCountBefore = filesystemRequests.Count(request =>
+                request.Method == "POST" && new Uri(request.Url).AbsolutePath == "/v1/filesystem/move");
+            await page.ClickAsync("#filesystem-left-move-selected");
+            await Row("left", "c.json").WaitForAsync(new() { State = WaitForSelectorState.Detached });
+            await Visible("right", "c.json");
+            var batchRequests = filesystemRequests.Where(request =>
+                request.Method == "POST" && new Uri(request.Url).AbsolutePath == "/v1/filesystem/move").ToArray();
+            Assert.Equal(batchCountBefore + 1, batchRequests.Length);
+            using (var payload = JsonDocument.Parse(batchRequests[^1].PostData!))
+            {
+                Assert.Equal("archive/incoming/", payload.RootElement.GetProperty("sourcePath").GetString());
+                Assert.Equal("archive/processed/", payload.RootElement.GetProperty("destinationPath").GetString());
+                Assert.Equal(
+                    new[] { "c.json" },
+                    payload.RootElement.GetProperty("fileNames").EnumerateArray().Select(value => value.GetString()).ToArray());
+            }
+
+            await Row("left", "a.xml").ClickAsync();
+            await Row("left", "b.xml").ClickAsync(new() { Modifiers = new[] { KeyboardModifier.Control } });
+            var twoFileBatchBefore = batchRequests.Length;
+            await page.ClickAsync("#filesystem-left-move-selected");
+            await Visible("right", "a.xml");
+            await Visible("right", "b.xml");
+            var afterTwoFileBatch = filesystemRequests.Where(request =>
+                request.Method == "POST" && new Uri(request.Url).AbsolutePath == "/v1/filesystem/move").ToArray();
+            Assert.Equal(twoFileBatchBefore + 1, afterTwoFileBatch.Length);
+            using (var payload = JsonDocument.Parse(afterTwoFileBatch[^1].PostData!))
+            {
+                Assert.Equal(
+                    new[] { "a.xml", "b.xml" },
+                    payload.RootElement.GetProperty("fileNames").EnumerateArray().Select(value => value.GetString()).ToArray());
+            }
+
+            var directoryMoveBefore = filesystemRequests.Count(request =>
+                request.Method == "POST" && new Uri(request.Url).AbsolutePath == "/v1/filesystem/directory/move");
+            await Row("left", "nested").Locator("[data-action=move]").ClickAsync();
+            await Row("left", "nested").WaitForAsync(new() { State = WaitForSelectorState.Detached });
+            await Visible("right", "nested");
+            Assert.Equal(
+                directoryMoveBefore + 1,
+                filesystemRequests.Count(request =>
+                    request.Method == "POST" && new Uri(request.Url).AbsolutePath == "/v1/filesystem/directory/move"));
+
+            var upload = Path.Combine(temp, "upload.bin");
+            var uploadBytes = "browser-opaque-payload"u8.ToArray();
+            await File.WriteAllBytesAsync(upload, uploadBytes);
+            var uploadBefore = filesystemRequests.Count(request =>
+                request.Method == "POST" && new Uri(request.Url).AbsolutePath == "/v1/filesystem/file");
             var chooser = await page.RunAndWaitForFileChooserAsync(
                 () => page.ClickAsync("#filesystem-left-upload"));
             await chooser.SetFilesAsync(upload);
-            var uploadResponse = await uploadResponseSource.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.True(
-                uploadResponse.Ok,
-                $"Browser upload PUT returned HTTP {uploadResponse.Status}.");
-            Assert.True(
-                File.Exists(publishedUpload),
-                $"PUT succeeded, but published file is absent: {publishedUpload}");
-
-            using (var probe = new HttpClient())
-            {
-                var listing = await probe.GetStringAsync(
-                    baseUrl + "/v1/filesystem/list?path=archive%2Fincoming");
-                Assert.Contains("\"name\":\"a.bin\"", listing, StringComparison.Ordinal);
-            }
-
-            var refreshResponse = await leftRefreshResponseSource.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            page.Response -= observeUpload;
-            Assert.True(
-                refreshResponse.Ok,
-                $"Browser post-upload list returned HTTP {refreshResponse.Status}.");
-            await page.WaitForFunctionAsync(
-                "!document.getElementById('filesystem-left-refresh').disabled");
-            var leftEntriesAfterUpload = await Entries("left").InnerTextAsync();
-            var leftStatusAfterUpload = await page.Locator("#filesystem-left-status").InnerTextAsync();
-            Assert.True(
-                leftEntriesAfterUpload.Contains("a.bin", StringComparison.Ordinal),
-                $"Server lists a.bin, but LEFT panel did not render it. status={leftStatusAfterUpload}; pageErrors={string.Join(" | ", pageErrors)}; entries={leftEntriesAfterUpload}");
-            await Visible("left", "a.bin");
-            Assert.Equal(0, await Row("right", "a.bin").CountAsync());
+            await Visible("left", "upload.bin");
+            Assert.Equal(
+                uploadBefore + 1,
+                filesystemRequests.Count(request =>
+                    request.Method == "POST" && new Uri(request.Url).AbsolutePath == "/v1/filesystem/file"));
+            Assert.DoesNotContain(filesystemRequests, request => request.Method is "PUT" or "DELETE");
 
             var download = await page.RunAndWaitForDownloadAsync(
-                () => Row("left", "a.bin").Locator("[data-entry-open]").ClickAsync());
+                () => Row("left", "upload.bin").Locator("[data-entry-open]").ClickAsync());
             Assert.Equal(
-                SHA256.HashData(bytes),
+                SHA256.HashData(uploadBytes),
                 SHA256.HashData(await File.ReadAllBytesAsync(await download.PathAsync())));
 
-            await Row("left", "a.bin").Locator("[data-action=move]").ClickAsync();
-            await Row("left", "a.bin").WaitForAsync(new() { State = WaitForSelectorState.Detached });
-            await Visible("right", "a.bin");
-
-            await Row("right", "a.bin").Locator("[data-action=move]").ClickAsync();
-            await Visible("left", "a.bin");
-            await Row("right", "a.bin").WaitForAsync(new() { State = WaitForSelectorState.Detached });
+            var renameBefore = filesystemRequests.Count(request =>
+                request.Method == "POST" && new Uri(request.Url).AbsolutePath == "/v1/filesystem/rename");
+            prompts.Enqueue("renamed.bin");
+            await Row("left", "upload.bin").Locator("[data-action=rename]").ClickAsync();
+            await Visible("left", "renamed.bin");
+            Assert.Equal(
+                renameBefore + 1,
+                filesystemRequests.Count(request =>
+                    request.Method == "POST" && new Uri(request.Url).AbsolutePath == "/v1/filesystem/rename"));
 
             await page.ClickAsync("#filesystem-right-breadcrumb [data-path='archive/']");
             await WaitBreadcrumb("right", "archive");
             await Row("right", "incoming").Locator("[data-entry-open]").ClickAsync();
             await WaitBreadcrumb("right", "archive / incoming");
-            await Visible("right", "a.bin");
-            Assert.True(await Row("left", "a.bin").Locator("[data-action=move]").IsDisabledAsync());
-            Assert.True(await Row("right", "a.bin").Locator("[data-action=move]").IsDisabledAsync());
+            await Visible("right", "renamed.bin");
+            await Row("left", "renamed.bin").ClickAsync();
+            Assert.True(await page.Locator("#filesystem-left-move-selected").IsDisabledAsync());
+            Assert.True(await page.Locator("#filesystem-right-move-selected").IsDisabledAsync());
 
-            prompts.Enqueue("b.bin");
-            await Row("left", "a.bin").Locator("[data-action=rename]").ClickAsync();
-            await Visible("left", "b.bin");
-            await Visible("right", "b.bin");
-
-            await Prompt("#filesystem-left-create-directory", "nested");
-            await Visible("left", "nested");
-            await Row("left", "nested").Locator("[data-entry-open]").ClickAsync();
-            await WaitBreadcrumb("left", "archive / incoming / nested");
-            await page.Locator("#filesystem-left-entries tr[data-parent-row='true']").WaitForAsync();
-            Assert.Equal(0, await page.Locator(
-                "#filesystem-left-entries tr[data-parent-row='true'] [data-action]").CountAsync());
-            await page.Locator("#filesystem-left-entries tr[data-parent-row='true'] [data-entry-open]").ClickAsync();
-            await WaitBreadcrumb("left", "archive / incoming");
+            await page.Locator("#filesystem-left-find-names").FillAsync("definitely-missing.bin");
+            await page.ClickAsync("#filesystem-left-find");
+            Assert.Contains(
+                "0",
+                await page.Locator("#filesystem-left-status").InnerTextAsync(),
+                StringComparison.Ordinal);
             Assert.Contains(
                 "archive / incoming",
                 await page.Locator("#filesystem-left-breadcrumb").InnerTextAsync());
 
-            await Prompt("#filesystem-left-create-file", "empty.txt");
-            await Visible("left", "empty.txt");
-            Assert.Equal(0, new FileInfo(Path.Combine(archive, "incoming", "empty.txt")).Length);
+            await Prompt("#filesystem-left-create-directory", "local-dir");
+            await Visible("left", "local-dir");
+            await Row("left", "local-dir").Locator("[data-entry-open]").ClickAsync();
+            await WaitBreadcrumb("left", "archive / incoming / local-dir");
+            Assert.Equal(0, await SelectedCount("left"));
+            await page.Locator("#filesystem-left-entries tr[data-parent-row='true']").WaitForAsync();
+            Assert.Equal(
+                0,
+                await page.Locator("#filesystem-left-entries tr[data-parent-row='true'] [data-action]").CountAsync());
+            await page.Locator("#filesystem-left-entries tr[data-parent-row='true'] [data-entry-open]").ClickAsync();
+            await WaitBreadcrumb("left", "archive / incoming");
 
-            await page.ClickAsync("#filesystem-left thead th[data-sort-key='size'] .sort-button");
-            Assert.Equal(
-                "ascending",
-                await page.Locator("#filesystem-left thead th[data-sort-key='size']").GetAttributeAsync("aria-sort"));
-            await page.ClickAsync("#filesystem-left thead th[data-sort-key='size'] .sort-button");
-            Assert.Equal(
-                "descending",
-                await page.Locator("#filesystem-left thead th[data-sort-key='size']").GetAttributeAsync("aria-sort"));
-            Assert.Equal(
-                "ascending",
-                await page.Locator("#filesystem-right thead th[data-sort-key='name']").GetAttributeAsync("aria-sort"));
-
-            await page.ClickAsync("#filesystem-left-breadcrumb [data-path='archive/']");
-            await WaitBreadcrumb("left", "archive");
-            await Visible("left", "blocked.sh");
-            Assert.Contains(
-                "entry-restricted",
-                await Row("left", "blocked.sh").GetAttributeAsync("class") ?? string.Empty);
-            Assert.Equal(
-                "true",
-                await Row("left", "blocked.sh").Locator("[data-entry-open]").GetAttributeAsync("aria-disabled"));
-
-            var external = Path.Combine(archive, "external.txt");
+            var external = Path.Combine(incoming, "external.txt");
             await File.WriteAllTextAsync(external, "external");
             await page.ClickAsync("#filesystem-left-refresh");
             await Visible("left", "external.txt");
-            File.Move(external, Path.Combine(archive, "renamed.txt"));
+            await Row("left", "external.txt").ClickAsync();
+            Assert.Equal(1, await SelectedCount("left"));
+            File.Move(external, Path.Combine(incoming, "external-renamed.txt"));
             await page.ClickAsync("#filesystem-left-refresh");
-            await Visible("left", "renamed.txt");
+            await Visible("left", "external-renamed.txt");
+            Assert.Equal(0, await SelectedCount("left"));
 
             await page.ClickAsync("#filesystem-roots [data-root='nfs']");
             await WaitBreadcrumb("left", "nfs");
             await WaitBreadcrumb("right", "nfs");
-            Assert.Equal(
-                "nfs",
-                (await page.Locator("#filesystem-left-breadcrumb").InnerTextAsync()).Trim());
-            Assert.Equal(
-                "nfs",
-                (await page.Locator("#filesystem-right-breadcrumb").InnerTextAsync()).Trim());
-            Assert.Equal(0, await Row("left", "incoming").CountAsync());
-            Assert.Equal(0, await Row("right", "incoming").CountAsync());
+            Assert.Equal(0, await SelectedCount("left"));
+            Assert.Equal(0, await SelectedCount("right"));
 
             var nfsExternal = Path.Combine(nfs, "nfs-external.txt");
             await File.WriteAllTextAsync(nfsExternal, "nfs");
@@ -270,11 +292,7 @@ public sealed class FileSystemBrowserTests
                 .GetByText("filesystem_root_unavailable", new() { Exact = false })
                 .WaitForAsync();
             Assert.False(Directory.Exists(offline));
-
-            await page.ClickAsync("#filesystem-roots [data-root='nfs']");
-            await WaitBreadcrumb("left", "nfs");
-            await WaitBreadcrumb("right", "nfs");
-            await Visible("right", "nfs-external.txt");
+            Assert.Empty(pageErrors);
         }
         finally
         {

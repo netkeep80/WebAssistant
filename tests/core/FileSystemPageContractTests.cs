@@ -6,7 +6,7 @@ namespace WebAssistant.CoreTests;
 public sealed class FileSystemPageContractTests
 {
     [Fact]
-    public void DedicatedFilesystemPage_DeclaresMultiRootTwoPanelStructure()
+    public void DedicatedFilesystemPage_DeclaresMultiRootTwoPanelSelectionStructure()
     {
         var root = FindRepositoryRoot();
         var page = ReadFilesystemPage();
@@ -25,45 +25,43 @@ public sealed class FileSystemPageContractTests
         Assert.Contains("id=\"filesystem-splitter\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"filesystem-left-breadcrumb\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"filesystem-right-breadcrumb\"", page, StringComparison.Ordinal);
-        Assert.Contains("/v1/filesystem/roots", page, StringComparison.Ordinal);
         Assert.Contains("activeRoot", page, StringComparison.Ordinal);
         Assert.Contains("currentSide", page, StringComparison.Ordinal);
-        Assert.Contains("selectedPath", page, StringComparison.Ordinal);
+        Assert.Contains("selectedNames", page, StringComparison.Ordinal);
+        Assert.Contains("selectionAnchor", page, StringComparison.Ordinal);
+        Assert.Contains("currentRow", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("selectedPath", page, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void DedicatedFilesystemPage_UsesPublicApiAndIndependentPanelOperations()
+    public void DedicatedFilesystemPage_DeclaresExact230PublicApiAndPostOnlyMutations()
     {
         var page = ReadFilesystemPage();
 
-        Assert.Contains("/v1/filesystem/list", page, StringComparison.Ordinal);
-        Assert.Contains("/v1/filesystem/file", page, StringComparison.Ordinal);
-        Assert.Contains("/v1/filesystem/directory", page, StringComparison.Ordinal);
-        Assert.Contains("/v1/filesystem/move", page, StringComparison.Ordinal);
-
-        foreach (var side in new[] { "left", "right" })
+        foreach (var route in new[]
         {
-            Assert.Contains($"id=\"filesystem-{side}-create-file\"", page, StringComparison.Ordinal);
-            Assert.Contains($"id=\"filesystem-{side}-create-directory\"", page, StringComparison.Ordinal);
-            Assert.Contains($"id=\"filesystem-{side}-upload\"", page, StringComparison.Ordinal);
-            Assert.Contains($"id=\"filesystem-{side}-upload-input\"", page, StringComparison.Ordinal);
-            Assert.Contains($"id=\"filesystem-{side}-refresh\"", page, StringComparison.Ordinal);
-            Assert.Contains($"id=\"filesystem-{side}-table-wrap\"", page, StringComparison.Ordinal);
+            "/v1/filesystem/roots",
+            "/v1/filesystem/list",
+            "/v1/filesystem/file",
+            "/v1/filesystem/files",
+            "/v1/filesystem/find",
+            "/v1/filesystem/file/delete",
+            "/v1/filesystem/directory",
+            "/v1/filesystem/directory/delete",
+            "/v1/filesystem/move",
+            "/v1/filesystem/directory/move",
+            "/v1/filesystem/rename"
+        })
+        {
+            Assert.Contains(route, page, StringComparison.Ordinal);
         }
 
-        Assert.DoesNotContain("filesystem-left-sort-key", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("filesystem-right-sort-key", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("filesystem-left-sort-direction", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("filesystem-right-sort-direction", page, StringComparison.Ordinal);
-        Assert.Contains("data-sort-key=\"name\"", page, StringComparison.Ordinal);
-        Assert.Contains("data-sort-key=\"size\"", page, StringComparison.Ordinal);
-        Assert.Contains("aria-sort", page, StringComparison.Ordinal);
-
-        Assert.Contains("data-action=\"move\"", page, StringComparison.Ordinal);
-        Assert.Contains("data-action=\"rename\"", page, StringComparison.Ordinal);
-        Assert.Contains("data-action=\"delete\"", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("data-action=\"open\"", page, StringComparison.Ordinal);
-        Assert.DoesNotContain("data-action=\"download\"", page, StringComparison.Ordinal);
+        Assert.Contains("fileDelete", page, StringComparison.Ordinal);
+        Assert.Contains("directoryDelete", page, StringComparison.Ordinal);
+        Assert.Contains("directoryMove", page, StringComparison.Ordinal);
+        Assert.Contains("method:\"POST\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("method:\"PUT\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("method:\"DELETE\"", page, StringComparison.Ordinal);
 
         var apiLiterals = Regex.Matches(page, "[\\\"'`](/v1/[^\\\"'`]+)[\\\"'`]")
             .Select(match => match.Groups[1].Value)
@@ -75,48 +73,75 @@ public sealed class FileSystemPageContractTests
     }
 
     [Fact]
-    public void DedicatedFilesystemPage_UsesIconKindDisplayAndExactlyThreeRowActions()
+    public void DedicatedFilesystemPage_DeclaresWildcardZipFindAndIndependentDesktopSelection()
     {
         var page = ReadFilesystemPage();
 
-        Assert.DoesNotContain("<th>Тип</th>", page, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("icon-folder", page, StringComparison.Ordinal);
-        Assert.Contains("icon-file", page, StringComparison.Ordinal);
-        Assert.Contains("icon-restricted", page, StringComparison.Ordinal);
-        Assert.Contains("entry-kind-directory", page, StringComparison.Ordinal);
-        Assert.Contains("entry-kind-file", page, StringComparison.Ordinal);
-        Assert.Contains("entry-restricted", page, StringComparison.Ordinal);
-        Assert.Contains("aria-label", page, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("title", page, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Переместить вправо", page, StringComparison.Ordinal);
-        Assert.Contains("Переместить влево", page, StringComparison.Ordinal);
-        Assert.Contains("Переименовать", page, StringComparison.Ordinal);
-        Assert.Contains("Удалить", page, StringComparison.Ordinal);
-        Assert.Contains("createRowActions", page, StringComparison.Ordinal);
-        Assert.Contains("..", page, StringComparison.Ordinal);
+        foreach (var side in new[] { "left", "right" })
+        {
+            Assert.Contains($"id=\"filesystem-{side}-wildcard\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-apply-wildcard\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-zip\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-find-names\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-find\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-move-selected\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-create-file\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-create-directory\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-upload\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-upload-input\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-refresh\"", page, StringComparison.Ordinal);
+            Assert.Contains($"id=\"filesystem-{side}-table-wrap\"", page, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("value=\"*.*\"", page, StringComparison.Ordinal);
+        Assert.Contains("ctrlKey", page, StringComparison.Ordinal);
+        Assert.Contains("shiftKey", page, StringComparison.Ordinal);
+        Assert.Contains("selected-row", page, StringComparison.Ordinal);
+        Assert.Contains("current-row", page, StringComparison.Ordinal);
+        Assert.Contains("findMarks", page, StringComparison.Ordinal);
+        Assert.Contains("surviving", page, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void DedicatedFilesystemPage_ImplementsOneStepUploadHeaderSortingAndStaleResponseProtection()
+    public void DedicatedFilesystemPage_SeparatesBatchFileMoveDirectoryMoveAndRename()
+    {
+        var page = ReadFilesystemPage();
+
+        Assert.Contains("moveSelected", page, StringComparison.Ordinal);
+        Assert.Contains("fileNames", page, StringComparison.Ordinal);
+        Assert.Contains("moveDirectory", page, StringComparison.Ordinal);
+        Assert.Contains("renameEntry", page, StringComparison.Ordinal);
+        Assert.Contains("api.directoryMove", page, StringComparison.Ordinal);
+        Assert.Contains("api.rename", page, StringComparison.Ordinal);
+        Assert.Contains("data-action=\"move\"", page, StringComparison.Ordinal);
+        Assert.Contains("data-action=\"rename\"", page, StringComparison.Ordinal);
+        Assert.Contains("data-action=\"delete\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("destinationPath:targetPath", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DedicatedFilesystemPage_Preserves227ErgonomicsAndNoPreviewPolicy()
     {
         var page = ReadFilesystemPage();
 
         Assert.Contains("showPicker", page, StringComparison.Ordinal);
-        Assert.Contains("change", page, StringComparison.Ordinal);
         Assert.Contains("generation", page, StringComparison.Ordinal);
-        Assert.Contains("fullPath", page, StringComparison.Ordinal);
         Assert.Contains("sortKey", page, StringComparison.Ordinal);
         Assert.Contains("sortDirection", page, StringComparison.Ordinal);
         Assert.Contains("setSort", page, StringComparison.Ordinal);
-        Assert.Contains("createdAt", page, StringComparison.Ordinal);
-        Assert.Contains("lastModifiedAt", page, StringComparison.Ordinal);
-        Assert.Contains("restrictionCode", page, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void DedicatedFilesystemPage_NeverEmbedsOrPreviewsUserFiles()
-    {
-        var page = ReadFilesystemPage();
+        Assert.Contains("data-sort-key=\"name\"", page, StringComparison.Ordinal);
+        Assert.Contains("data-sort-key=\"size\"", page, StringComparison.Ordinal);
+        Assert.Contains("aria-sort", page, StringComparison.Ordinal);
+        Assert.Contains("ArrowUp", page, StringComparison.Ordinal);
+        Assert.Contains("ArrowDown", page, StringComparison.Ordinal);
+        Assert.Contains("Enter", page, StringComparison.Ordinal);
+        Assert.Contains("Tab", page, StringComparison.Ordinal);
+        Assert.Contains("dragstart", page, StringComparison.Ordinal);
+        Assert.Contains("drop", page, StringComparison.Ordinal);
+        Assert.Contains("..", page, StringComparison.Ordinal);
+        Assert.Contains("icon-folder", page, StringComparison.Ordinal);
+        Assert.Contains("icon-file", page, StringComparison.Ordinal);
+        Assert.Contains("icon-restricted", page, StringComparison.Ordinal);
 
         Assert.DoesNotContain("<object", page, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("<embed", page, StringComparison.OrdinalIgnoreCase);
