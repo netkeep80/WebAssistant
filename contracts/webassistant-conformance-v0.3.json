@@ -264,9 +264,9 @@
     {
       "id": "WA-C-ROOTED-FILESYSTEM-001",
       "kind": "negative",
-      "assertion": "Multi-root filesystem authority остаётся внутри union(configured named roots): grammar logicalRootName проверяется до открытия physical root, case-only collisions запрещены, unknown logical root не выбирает fallback, а absolute/navigation escape, symlink/junction/reparse traversal, hard-link aliasing и concurrent parent replacement не могут вывести read/write/move/delete за выбранный root. Native Windows handle-relative и Linux descriptor-relative evidence обязаны fail-closed.",
+      "assertion": "Multi-root filesystem authority остаётся внутри union(configured named roots): grammar logicalRootName проверяется до открытия physical root, case-only collisions запрещены, unknown logical root не выбирает fallback, недоступный configured root получает stable code filesystem_root_unavailable и не отключает другие roots, scanner или health, а absolute/navigation escape, symlink/junction/reparse traversal, hard-link aliasing и concurrent parent replacement не могут вывести read/write/move/delete за выбранный root. Native Windows handle-relative и Linux descriptor-relative evidence обязаны fail-closed.",
       "requirements": ["WA-FS-001", "WA-FS-007", "WA-FS-009"],
-      "evidence": ["tests/core/RootedPathResolverTests.cs", "tests/core/FileSystemRootRegistryTests.cs", "tests/core/MultiRootFileSystemTests.cs", "tests/core/FileSystemPolicyTests.cs", "tests/core/LinuxRootedFileSystemTests.cs", "tests/core/WindowsRootedFileSystemTests.cs"]
+      "evidence": ["tests/core/RootedPathResolverTests.cs", "tests/core/FileSystemRootRegistryTests.cs", "tests/core/MultiRootFileSystemTests.cs", "tests/core/FileSystemPolicyTests.cs", "tests/core/LinuxRootedFileSystemTests.cs", "tests/core/WindowsRootedFileSystemTests.cs", "tests/core/FileSystemLifecycleTests.cs"]
     },
     {
       "id": "WA-C-FILESYSTEM-API-001",

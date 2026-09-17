@@ -22,7 +22,7 @@ internal sealed class FileSystemApplicationService
     private const int MaximumMoveNames = 1000;
     private readonly FileSystemRootRegistry registry;
 
-    internal FileSystemApplicationService(FileSystemRootRegistry registry)
+    public FileSystemApplicationService(FileSystemRootRegistry registry)
     {
         this.registry = registry;
     }
