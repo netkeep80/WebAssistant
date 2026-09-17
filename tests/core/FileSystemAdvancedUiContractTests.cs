@@ -56,6 +56,17 @@ public sealed class FileSystemAdvancedUiContractTests
         Assert.Contains("draggable", page, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void FilesystemPage_RootSwitchExplicitlyClearsTransientDragState()
+    {
+        var page = ReadFilesystemPage();
+
+        Assert.Contains("function resetTransientDragState", page, StringComparison.Ordinal);
+        Assert.Contains("internalDrag=null", page.Replace(" ", string.Empty), StringComparison.Ordinal);
+        Assert.Contains("clearDropClasses()", page, StringComparison.Ordinal);
+        Assert.Contains("resetTransientDragState();", page, StringComparison.Ordinal);
+    }
+
     private static string ReadFilesystemPage()
     {
         var root = FindRepositoryRoot();
