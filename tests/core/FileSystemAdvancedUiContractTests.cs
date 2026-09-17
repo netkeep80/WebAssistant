@@ -12,6 +12,9 @@ public sealed class FileSystemAdvancedUiContractTests
         Assert.Contains("id=\"filesystem-splitter\"", page, StringComparison.Ordinal);
         Assert.Contains("role=\"separator\"", page, StringComparison.Ordinal);
         Assert.Contains("aria-orientation=\"vertical\"", page, StringComparison.Ordinal);
+        Assert.Contains("aria-valuemin=\"20\"", page, StringComparison.Ordinal);
+        Assert.Contains("aria-valuemax=\"80\"", page, StringComparison.Ordinal);
+        Assert.Contains("aria-valuenow=\"50\"", page, StringComparison.Ordinal);
         Assert.Contains("col-resize", page, StringComparison.Ordinal);
         Assert.Contains("pointermove", page, StringComparison.Ordinal);
         Assert.Contains("setPointerCapture", page, StringComparison.Ordinal);
