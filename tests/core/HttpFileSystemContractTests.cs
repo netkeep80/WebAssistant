@@ -31,16 +31,17 @@ public sealed class HttpFileSystemContractTests : IDisposable
     [Fact]
     public async Task FileSystemApi_HappyPathUsesOnlyLogicalPublicSurface()
     {
-        using (var createDirectory = await client.PostAsJsonAsync(
-            "/v1/filesystem/directory",
-            new { path = "archive/incoming" }))
+        foreach (var path in new[] { "archive/incoming", "archive/processed" })
         {
+            using var createDirectory = await client.PostAsJsonAsync(
+                "/v1/filesystem/directory",
+                new { path });
             Assert.Equal(HttpStatusCode.NoContent, createDirectory.StatusCode);
         }
 
         var payload = "opaque-payload"u8.ToArray();
         using (var upload = new HttpRequestMessage(
-            HttpMethod.Put,
+            HttpMethod.Post,
             "/v1/filesystem/file?path=archive%2Fincoming%2Fa.bin"))
         {
             upload.Content = new ByteArrayContent(payload);
@@ -80,22 +81,37 @@ public sealed class HttpFileSystemContractTests : IDisposable
             "/v1/filesystem/move",
             new
             {
-                sourcePath = "archive/incoming/a.bin",
-                destinationPath = "archive/incoming/b.bin"
+                sourcePath = "archive/incoming/",
+                destinationPath = "archive/processed/",
+                fileNames = new[] { "a.bin" }
             }))
         {
-            Assert.Equal(HttpStatusCode.NoContent, move.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, move.StatusCode);
+            using var document = JsonDocument.Parse(await move.Content.ReadAsStringAsync());
+            Assert.Equal(
+                new[] { "a.bin" },
+                document.RootElement
+                    .GetProperty("fileNames")
+                    .EnumerateArray()
+                    .Select(value => value.GetString())
+                    .ToArray());
         }
 
-        using (var deleteFile = await client.DeleteAsync(
-            "/v1/filesystem/file?path=archive%2Fincoming%2Fb.bin"))
+        Assert.False(File.Exists(Path.Combine(root, "incoming", "a.bin")));
+        Assert.True(File.Exists(Path.Combine(root, "processed", "a.bin")));
+
+        using (var deleteFile = await client.PostAsync(
+            "/v1/filesystem/file/delete?path=archive%2Fprocessed%2Fa.bin",
+            content: null))
         {
             Assert.Equal(HttpStatusCode.NoContent, deleteFile.StatusCode);
         }
 
-        using (var deleteDirectory = await client.DeleteAsync(
-            "/v1/filesystem/directory?path=archive%2Fincoming"))
+        foreach (var path in new[] { "archive/incoming", "archive/processed" })
         {
+            using var deleteDirectory = await client.PostAsync(
+                $"/v1/filesystem/directory/delete?path={Uri.EscapeDataString(path)}",
+                content: null);
             Assert.Equal(HttpStatusCode.NoContent, deleteDirectory.StatusCode);
         }
 
@@ -108,10 +124,10 @@ public sealed class HttpFileSystemContractTests : IDisposable
     }
 
     [Fact]
-    public async Task Put_ZeroByteBodyCreatesEmptyFile()
+    public async Task Post_ZeroByteBodyCreatesEmptyFile()
     {
         using var request = new HttpRequestMessage(
-            HttpMethod.Put,
+            HttpMethod.Post,
             "/v1/filesystem/file?path=archive%2Fempty.bin")
         {
             Content = new ByteArrayContent(Array.Empty<byte>())
@@ -131,7 +147,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(root, "exists.bin"), "ORIGINAL");
 
         using (var upload = new HttpRequestMessage(
-            HttpMethod.Put,
+            HttpMethod.Post,
             "/v1/filesystem/file?path=archive%2Fexists.bin")
         {
             Content = new ByteArrayContent("replacement"u8.ToArray())
@@ -147,8 +163,9 @@ public sealed class HttpFileSystemContractTests : IDisposable
 
         Directory.CreateDirectory(Path.Combine(root, "non-empty"));
         await File.WriteAllTextAsync(Path.Combine(root, "non-empty", "child.txt"), "child");
-        using (var response = await client.DeleteAsync(
-            "/v1/filesystem/directory?path=archive%2Fnon-empty"))
+        using (var response = await client.PostAsync(
+            "/v1/filesystem/directory/delete?path=archive%2Fnon-empty",
+            content: null))
         {
             await AssertProblemCodeAsync(
                 response,
@@ -170,7 +187,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
     public async Task FileSystemApi_BlocksActiveExtensionsAndNeverServesExternalRestrictedFile()
     {
         using (var upload = new HttpRequestMessage(
-            HttpMethod.Put,
+            HttpMethod.Post,
             "/v1/filesystem/file?path=archive%2Fpayload.sh")
         {
             Content = new ByteArrayContent("echo unsafe"u8.ToArray())
@@ -184,6 +201,7 @@ public sealed class HttpFileSystemContractTests : IDisposable
         }
 
         await File.WriteAllTextAsync(Path.Combine(root, "external.sh"), "echo external");
+        Directory.CreateDirectory(Path.Combine(root, "processed"));
 
         using (var listing = await client.GetAsync("/v1/filesystem/list?path=archive%2F"))
         {
@@ -210,8 +228,9 @@ public sealed class HttpFileSystemContractTests : IDisposable
             "/v1/filesystem/move",
             new
             {
-                sourcePath = "archive/external.sh",
-                destinationPath = "archive/external.txt"
+                sourcePath = "archive/",
+                destinationPath = "archive/processed/",
+                fileNames = new[] { "external.sh" }
             }))
         {
             await AssertProblemCodeAsync(
@@ -220,8 +239,9 @@ public sealed class HttpFileSystemContractTests : IDisposable
                 "blocked_file_type");
         }
 
-        using (var delete = await client.DeleteAsync(
-            "/v1/filesystem/file?path=archive%2Fexternal.sh"))
+        using (var delete = await client.PostAsync(
+            "/v1/filesystem/file/delete?path=archive%2Fexternal.sh",
+            content: null))
         {
             Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
         }
