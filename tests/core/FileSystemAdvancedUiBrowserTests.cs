@@ -75,8 +75,7 @@ public sealed class FileSystemAdvancedUiBrowserTests
                 "() => document.querySelectorAll('#filesystem-left-entries tr').length >= 80");
 
             ILocator Row(string side, string name) => page
-                .Locator($"#filesystem-{side}-entries tr")
-                .Filter(new() { HasTextString = name });
+                .Locator($"#filesystem-{side}-entries tr[data-selection-id$='/{name}']");
             async Task WaitBreadcrumb(string side, string expected) =>
                 await page.WaitForFunctionAsync(
                     "args => document.getElementById(args.id).innerText.includes(args.expected)",
@@ -126,6 +125,13 @@ public sealed class FileSystemAdvancedUiBrowserTests
                     "() => document.documentElement.scrollHeight <= document.documentElement.clientHeight + 1"),
                 "Страница filesystem.html не должна иметь общего вертикального scroll документа.");
             await AssertNoHorizontalScroll();
+            var bodyFontSize = await page.EvaluateAsync<double>(
+                "() => parseFloat(getComputedStyle(document.body).fontSize)");
+            var tableFontSize = await page.EvaluateAsync<double>(
+                "() => parseFloat(getComputedStyle(document.querySelector('#filesystem-left-table-wrap')).fontSize)");
+            Assert.True(
+                tableFontSize < bodyFontSize,
+                "Табличная часть должна использовать более компактный шрифт, чем общий интерфейс страницы.");
 
             var initialLeft = await page.Locator("#filesystem-left").BoundingBoxAsync();
             var initialRight = await page.Locator("#filesystem-right").BoundingBoxAsync();
