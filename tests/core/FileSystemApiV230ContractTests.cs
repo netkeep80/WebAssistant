@@ -227,6 +227,82 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
     }
 
     [Fact]
+    public async Task RenameAndDirectoryMove_RejectSemanticViolations()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "incoming", "folder", "child"));
+        Directory.CreateDirectory(Path.Combine(root, "processed", "folder"));
+        await File.WriteAllTextAsync(Path.Combine(root, "incoming", "a.txt"), "a");
+        await File.WriteAllTextAsync(Path.Combine(root, "incoming", "b.txt"), "b");
+
+        using (var renameConflict = await client.PostAsJsonAsync(
+            "/v1/filesystem/rename",
+            new { path = "archive/incoming/a.txt", newName = "b.txt" }))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, renameConflict.StatusCode);
+            using var document = JsonDocument.Parse(await renameConflict.Content.ReadAsStringAsync());
+            Assert.Equal(
+                "destination_exists",
+                document.RootElement.GetProperty("code").GetString());
+        }
+
+        using (var blockedRename = await client.PostAsJsonAsync(
+            "/v1/filesystem/rename",
+            new { path = "archive/incoming/a.txt", newName = "a.sh" }))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, blockedRename.StatusCode);
+            using var document = JsonDocument.Parse(await blockedRename.Content.ReadAsStringAsync());
+            Assert.Equal(
+                "blocked_file_type",
+                document.RootElement.GetProperty("code").GetString());
+        }
+
+        using (var pathRename = await client.PostAsJsonAsync(
+            "/v1/filesystem/rename",
+            new { path = "archive/incoming/a.txt", newName = "../moved.txt" }))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, pathRename.StatusCode);
+        }
+
+        using (var rootRename = await client.PostAsJsonAsync(
+            "/v1/filesystem/rename",
+            new { path = "archive/", newName = "other" }))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, rootRename.StatusCode);
+        }
+
+        using (var descendantMove = await client.PostAsJsonAsync(
+            "/v1/filesystem/directory/move",
+            new
+            {
+                sourcePath = "archive/incoming/folder",
+                destinationPath = "archive/incoming/folder/child/"
+            }))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, descendantMove.StatusCode);
+        }
+
+        using (var destinationConflict = await client.PostAsJsonAsync(
+            "/v1/filesystem/directory/move",
+            new
+            {
+                sourcePath = "archive/incoming/folder",
+                destinationPath = "archive/processed/"
+            }))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, destinationConflict.StatusCode);
+            using var document = JsonDocument.Parse(await destinationConflict.Content.ReadAsStringAsync());
+            Assert.Equal(
+                "destination_exists",
+                document.RootElement.GetProperty("code").GetString());
+        }
+
+        Assert.True(File.Exists(Path.Combine(root, "incoming", "a.txt")));
+        Assert.True(File.Exists(Path.Combine(root, "incoming", "b.txt")));
+        Assert.True(Directory.Exists(Path.Combine(root, "incoming", "folder")));
+        Assert.True(Directory.Exists(Path.Combine(root, "processed", "folder")));
+    }
+
+    [Fact]
     public async Task BatchMove_PreservesNamesAndSkipsConflictAndMissingSource()
     {
         Directory.CreateDirectory(Path.Combine(root, "incoming"));
