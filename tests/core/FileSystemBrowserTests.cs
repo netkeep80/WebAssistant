@@ -161,6 +161,12 @@ public sealed class FileSystemBrowserTests
 
             await page.Locator("#filesystem-left-find-names").FillAsync("a.xml\nb.xml\nmissing.xml");
             await page.ClickAsync("#filesystem-left-find");
+            await Entries("left")
+                .Locator("tr[data-entry-name='a.xml'].selected-row")
+                .WaitForAsync();
+            await Entries("left")
+                .Locator("tr[data-entry-name='b.xml'].selected-row")
+                .WaitForAsync();
             Assert.True(await Row("left", "a.xml").EvaluateAsync<bool>("row => row.classList.contains('selected-row')"));
             Assert.True(await Row("left", "b.xml").EvaluateAsync<bool>("row => row.classList.contains('selected-row')"));
             Assert.Equal(2, await SelectedCount("left"));
