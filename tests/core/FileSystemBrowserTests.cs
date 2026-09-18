@@ -143,7 +143,9 @@ public sealed class FileSystemBrowserTests
             await Row("left", "c.json").ClickAsync(new() { Modifiers = new[] { KeyboardModifier.Shift } });
             Assert.Equal(3, await SelectedCount("left"));
             Assert.Equal(0, await SelectedCount("right"));
-            Assert.Equal(0, await Row("left", "nested").Locator(".selected-row").CountAsync());
+            Assert.False(
+                await Row("left", "nested")
+                    .EvaluateAsync<bool>("row => row.classList.contains('selected-row')"));
 
             await page.ClickAsync("#filesystem-left-refresh");
             Assert.Equal(3, await SelectedCount("left"));
