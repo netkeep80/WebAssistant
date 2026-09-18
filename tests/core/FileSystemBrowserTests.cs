@@ -33,6 +33,7 @@ public sealed class FileSystemBrowserTests
         await File.WriteAllTextAsync(Path.Combine(incoming, "a.xml"), "a");
         await File.WriteAllTextAsync(Path.Combine(incoming, "b.xml"), "b");
         await File.WriteAllTextAsync(Path.Combine(incoming, "c.json"), "c");
+        await File.WriteAllTextAsync(Path.Combine(processed, "b.xml"), "existing");
         await File.WriteAllTextAsync(Path.Combine(archive, "blocked.sh"), "echo blocked");
 
         var port = FreePort();
@@ -149,22 +150,34 @@ public sealed class FileSystemBrowserTests
             await page.ClickAsync("#filesystem-left thead th[data-sort-key='size'] .sort-button");
             Assert.Equal(3, await SelectedCount("left"));
 
+            foreach (var name in new[] { "a.xml", "b.xml", "c.json" })
+            {
+                await Row("left", name).ClickAsync(
+                    new() { Modifiers = new[] { KeyboardModifier.Control } });
+            }
+            Assert.Equal(0, await SelectedCount("left"));
+
             await page.Locator("#filesystem-left-find-names").FillAsync("a.xml\nb.xml\nmissing.xml");
             await page.ClickAsync("#filesystem-left-find");
             Assert.True(await Row("left", "a.xml").EvaluateAsync<bool>("row => row.classList.contains('selected-row')"));
             Assert.True(await Row("left", "b.xml").EvaluateAsync<bool>("row => row.classList.contains('selected-row')"));
+            Assert.Equal(2, await SelectedCount("left"));
             Assert.Equal("archive / incoming", (await page.Locator("#filesystem-left-breadcrumb").InnerTextAsync()).Trim());
 
-            await Row("left", "c.json").ClickAsync();
-            Assert.Equal(1, await SelectedCount("left"));
-            var batchCountBefore = filesystemRequests.Count(request =>
+            var partialBatchBefore = filesystemRequests.Count(request =>
                 request.Method == "POST" && new Uri(request.Url).AbsolutePath == "/v1/filesystem/move");
             await page.ClickAsync("#filesystem-left-move-selected");
-            await Row("left", "c.json").WaitForAsync(new() { State = WaitForSelectorState.Detached });
-            await Visible("right", "c.json");
+            await Row("left", "a.xml").WaitForAsync(new() { State = WaitForSelectorState.Detached });
+            await Visible("right", "a.xml");
+            await Visible("left", "b.xml");
+            Assert.True(await Row("left", "b.xml").EvaluateAsync<bool>("row => row.classList.contains('selected-row')"));
+            Assert.Equal(1, await SelectedCount("left"));
+            Assert.Equal("existing", await File.ReadAllTextAsync(Path.Combine(processed, "b.xml")));
+            Assert.Equal("b", await File.ReadAllTextAsync(Path.Combine(incoming, "b.xml")));
+
             var batchRequests = filesystemRequests.Where(request =>
                 request.Method == "POST" && new Uri(request.Url).AbsolutePath == "/v1/filesystem/move").ToArray();
-            Assert.Equal(batchCountBefore + 1, batchRequests.Length);
+            Assert.Equal(partialBatchBefore + 1, batchRequests.Length);
             using (var payload = JsonDocument.Parse(batchRequests[^1].PostData!))
             {
                 Assert.Equal(
@@ -174,23 +187,39 @@ public sealed class FileSystemBrowserTests
                     "archive/processed",
                     payload.RootElement.GetProperty("destinationPath").GetString()?.TrimEnd('/'));
                 Assert.Equal(
-                    new[] { "c.json" },
+                    new[] { "a.xml", "b.xml" },
                     payload.RootElement.GetProperty("fileNames").EnumerateArray().Select(value => value.GetString()).ToArray());
             }
 
-            await Row("left", "a.xml").ClickAsync();
-            await Row("left", "b.xml").ClickAsync(new() { Modifiers = new[] { KeyboardModifier.Control } });
-            var twoFileBatchBefore = batchRequests.Length;
-            await page.ClickAsync("#filesystem-left-move-selected");
-            await Visible("right", "a.xml");
+            File.Delete(Path.Combine(processed, "b.xml"));
+            var rowMoveBefore = batchRequests.Length;
+            await Row("left", "b.xml").Locator("[data-action=move]").ClickAsync();
+            await Row("left", "b.xml").WaitForAsync(new() { State = WaitForSelectorState.Detached });
             await Visible("right", "b.xml");
-            var afterTwoFileBatch = filesystemRequests.Where(request =>
+            batchRequests = filesystemRequests.Where(request =>
                 request.Method == "POST" && new Uri(request.Url).AbsolutePath == "/v1/filesystem/move").ToArray();
-            Assert.Equal(twoFileBatchBefore + 1, afterTwoFileBatch.Length);
-            using (var payload = JsonDocument.Parse(afterTwoFileBatch[^1].PostData!))
+            Assert.Equal(rowMoveBefore + 1, batchRequests.Length);
+            using (var payload = JsonDocument.Parse(batchRequests[^1].PostData!))
             {
                 Assert.Equal(
-                    new[] { "a.xml", "b.xml" },
+                    new[] { "b.xml" },
+                    payload.RootElement.GetProperty("fileNames").EnumerateArray().Select(value => value.GetString()).ToArray());
+            }
+            Assert.Equal("b", await File.ReadAllTextAsync(Path.Combine(processed, "b.xml")));
+
+            await Row("left", "c.json").ClickAsync();
+            Assert.Equal(1, await SelectedCount("left"));
+            var batchCountBefore = batchRequests.Length;
+            await page.ClickAsync("#filesystem-left-move-selected");
+            await Row("left", "c.json").WaitForAsync(new() { State = WaitForSelectorState.Detached });
+            await Visible("right", "c.json");
+            batchRequests = filesystemRequests.Where(request =>
+                request.Method == "POST" && new Uri(request.Url).AbsolutePath == "/v1/filesystem/move").ToArray();
+            Assert.Equal(batchCountBefore + 1, batchRequests.Length);
+            using (var payload = JsonDocument.Parse(batchRequests[^1].PostData!))
+            {
+                Assert.Equal(
+                    new[] { "c.json" },
                     payload.RootElement.GetProperty("fileNames").EnumerateArray().Select(value => value.GetString()).ToArray());
             }
 
