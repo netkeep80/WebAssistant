@@ -349,6 +349,21 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
     }
 
     [Fact]
+    public async Task Zip_ZeroMatches_ReturnsValidEmptyArchive()
+    {
+        using var response = await client.GetAsync(
+            "/v1/filesystem/files?path=archive%2F&wildcard=*.nomatch");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/zip", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("attachment", response.Content.Headers.ContentDisposition?.DispositionType);
+
+        await using var zipBytes = await response.Content.ReadAsStreamAsync();
+        using var archive = new ZipArchive(zipBytes, ZipArchiveMode.Read, leaveOpen: false);
+        Assert.Empty(archive.Entries);
+    }
+
+    [Fact]
     public async Task Zip_PreflightsSelectedFilesBeforeStartingResponse()
     {
         if (!OperatingSystem.IsLinux())
