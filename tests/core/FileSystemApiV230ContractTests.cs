@@ -349,6 +349,135 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
     }
 
     [Fact]
+    public async Task BoundsDuplicatesAndCursorIdentity_AreRejectedDeterministically()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "incoming"));
+        Directory.CreateDirectory(Path.Combine(root, "processed"));
+        await File.WriteAllTextAsync(Path.Combine(root, "incoming", "a.txt"), "a");
+        await File.WriteAllTextAsync(Path.Combine(root, "one.xml"), "1");
+        await File.WriteAllTextAsync(Path.Combine(root, "two.xml"), "2");
+        await File.WriteAllTextAsync(Path.Combine(root, "three.json"), "3");
+
+        string cursor;
+        using (var firstPage = await client.GetAsync(
+            "/v1/filesystem/list?path=archive%2F&wildcard=*.xml&limit=1"))
+        {
+            Assert.Equal(HttpStatusCode.OK, firstPage.StatusCode);
+            using var document = JsonDocument.Parse(await firstPage.Content.ReadAsStringAsync());
+            cursor = document.RootElement.GetProperty("nextCursor").GetString()!;
+            Assert.False(string.IsNullOrEmpty(cursor));
+        }
+
+        using (var wrongWildcard = await client.GetAsync(
+            $"/v1/filesystem/list?path=archive%2F&wildcard=*.json&limit=1&cursor={Uri.EscapeDataString(cursor)}"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, wrongWildcard.StatusCode);
+            using var document = JsonDocument.Parse(await wrongWildcard.Content.ReadAsStringAsync());
+            Assert.Equal(
+                "filesystem_path_invalid",
+                document.RootElement.GetProperty("code").GetString());
+        }
+
+        var tooManyMasks = string.Join(
+            ",",
+            Enumerable.Range(0, 33).Select(index => $"m{index}*"));
+        using (var wildcardOverflow = await client.GetAsync(
+            $"/v1/filesystem/list?path=archive%2F&wildcard={Uri.EscapeDataString(tooManyMasks)}"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, wildcardOverflow.StatusCode);
+        }
+
+        using (var emptyWildcard = await client.GetAsync(
+            "/v1/filesystem/list?path=archive%2F&wildcard=%20,%20"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, emptyWildcard.StatusCode);
+        }
+
+        using (var duplicateMove = await client.PostAsJsonAsync(
+            "/v1/filesystem/move",
+            new
+            {
+                sourcePath = "archive/incoming/",
+                destinationPath = "archive/processed/",
+                fileNames = new[] { "a.txt", "a.txt" }
+            }))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, duplicateMove.StatusCode);
+        }
+        Assert.True(File.Exists(Path.Combine(root, "incoming", "a.txt")));
+
+        using (var oversizedMove = await client.PostAsJsonAsync(
+            "/v1/filesystem/move",
+            new
+            {
+                sourcePath = "archive/incoming/",
+                destinationPath = "archive/processed/",
+                fileNames = Enumerable.Range(0, 1001)
+                    .Select(index => $"f{index}.txt")
+                    .ToArray()
+            }))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, oversizedMove.StatusCode);
+        }
+
+        using (var duplicateFind = await client.GetAsync(
+            "/v1/filesystem/find?path=archive%2F&name=a.txt&name=a.txt"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, duplicateFind.StatusCode);
+        }
+
+        var oversizedFindQuery = string.Join(
+            "&",
+            Enumerable.Range(0, 101)
+                .Select(index => $"name={Uri.EscapeDataString($"f{index}.txt")}"));
+        using (var oversizedFind = await client.GetAsync(
+            $"/v1/filesystem/find?path=archive%2F&{oversizedFindQuery}"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, oversizedFind.StatusCode);
+        }
+
+        using (var noneFound = await client.GetAsync(
+            "/v1/filesystem/find?path=archive%2F&name=missing-a.txt&name=missing-b.txt"))
+        {
+            Assert.Equal(HttpStatusCode.OK, noneFound.StatusCode);
+            using var document = JsonDocument.Parse(await noneFound.Content.ReadAsStringAsync());
+            Assert.Empty(document.RootElement.GetProperty("fileNames").EnumerateArray());
+        }
+    }
+
+    [Fact]
+    public async Task BatchMove_FatalObjectKindErrorStopsWithoutRollback()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "incoming"));
+        Directory.CreateDirectory(Path.Combine(root, "processed"));
+        await File.WriteAllTextAsync(Path.Combine(root, "incoming", "a.txt"), "a");
+        Directory.CreateDirectory(Path.Combine(root, "incoming", "b.txt"));
+        await File.WriteAllTextAsync(Path.Combine(root, "incoming", "after.txt"), "after");
+
+        using var response = await client.PostAsJsonAsync(
+            "/v1/filesystem/move",
+            new
+            {
+                sourcePath = "archive/incoming/",
+                destinationPath = "archive/processed/",
+                fileNames = new[] { "a.txt", "b.txt", "after.txt" }
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "filesystem_path_invalid",
+            document.RootElement.GetProperty("code").GetString());
+
+        Assert.False(File.Exists(Path.Combine(root, "incoming", "a.txt")));
+        Assert.True(File.Exists(Path.Combine(root, "processed", "a.txt")));
+        Assert.True(Directory.Exists(Path.Combine(root, "incoming", "b.txt")));
+        Assert.False(Directory.Exists(Path.Combine(root, "processed", "b.txt")));
+        Assert.True(File.Exists(Path.Combine(root, "incoming", "after.txt")));
+        Assert.False(File.Exists(Path.Combine(root, "processed", "after.txt")));
+    }
+
+    [Fact]
     public async Task Zip_ZeroMatches_ReturnsValidEmptyArchive()
     {
         using var response = await client.GetAsync(
