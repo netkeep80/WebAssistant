@@ -69,6 +69,31 @@ public sealed class CurrentStateDocumentationTests
     }
 
     [Fact]
+    public void ApiDocumentation_DescribesCurrentFilesystemUiAndIdentityBoundaries()
+    {
+        var api = ReadRepositoryFile("webassist/docs/api.md");
+
+        Assert.Contains(
+            "Выбранный логический корень общий для обеих панелей",
+            api,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "У каждой панели собственные логический корень",
+            api,
+            StringComparison.Ordinal);
+        Assert.Contains("Действия →", api, StringComparison.Ordinal);
+        Assert.Contains("Действия ←", api, StringComparison.Ordinal);
+        Assert.Contains(
+            "требуют `Content-Type: application/json`",
+            api,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "`scannerId` остаётся тем же, пока неизменны `backend` и точный `nativeId`",
+            api,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ServiceDocumentation_UsesEffectiveInstallerBasenamePatterns()
     {
         var windows = ReadRepositoryFile("webassist/docs/windows-service.md");
