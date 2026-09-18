@@ -99,25 +99,31 @@ public sealed class DiagnosticsContractTests
         var source = $"archive/{marker}";
         var destination = $"archive/{moved}";
 
-        using (var put = new HttpRequestMessage(
-            HttpMethod.Put,
+        using (var upload = new HttpRequestMessage(
+            HttpMethod.Post,
             $"/v1/filesystem/file?path={Uri.EscapeDataString(source)}")
         {
             Content = new ByteArrayContent(bytes)
         })
         {
-            Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(put)).StatusCode);
+            upload.Content.Headers.ContentType =
+                new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    "application/octet-stream");
+            Assert.Equal(
+                HttpStatusCode.NoContent,
+                (await client.SendAsync(upload)).StatusCode);
         }
 
         Assert.Equal(
             HttpStatusCode.NoContent,
             (await client.PostAsJsonAsync(
-                "/v1/filesystem/move",
-                new { sourcePath = source, destinationPath = destination })).StatusCode);
+                "/v1/filesystem/rename",
+                new { path = source, newName = moved })).StatusCode);
         Assert.Equal(
             HttpStatusCode.NoContent,
-            (await client.DeleteAsync(
-                $"/v1/filesystem/file?path={Uri.EscapeDataString(destination)}")).StatusCode);
+            (await client.PostAsync(
+                $"/v1/filesystem/file/delete?path={Uri.EscapeDataString(destination)}",
+                content: null)).StatusCode);
 
         var log = await ReadTodayLogAsync(fixture.LogDirectory);
         Assert.Contains("logicalRoot=archive", log);

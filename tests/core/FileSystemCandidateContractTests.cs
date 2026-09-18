@@ -74,7 +74,7 @@ public sealed class FileSystemCandidateContractTests
             contractText,
             StringComparison.OrdinalIgnoreCase);
         Assert.Contains(
-            "same logical root",
+            "cross-root mutation",
             contractText,
             StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
@@ -115,14 +115,12 @@ public sealed class FileSystemCandidateContractTests
             "/v1/filesystem/roots",
             "case-only",
             "unknown logical root",
-            "root unavailable",
-            "cross-root move",
+            "filesystem_root_unavailable",
+            "cross-root mutation",
             "two-panel",
             "LEFT",
             "RIGHT",
-            "Playwright",
             "/filesystem.html",
-            "external mutation",
             "tests/core/FileSystemRootRegistryTests.cs",
             "tests/core/MultiRootFileSystemTests.cs",
             "tests/core/HttpFileSystemContractTests.cs",

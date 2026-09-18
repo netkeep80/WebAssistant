@@ -30,6 +30,7 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton(serviceProvider =>
     FileSystemRootRegistry.Load(
         serviceProvider.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton<FileSystemApplicationService>();
 builder.Services.AddSingleton(_ => new AgentRuntimeInfo());
 builder.Services.AddSingleton(serviceProvider =>
     new DailyLogReader(
@@ -66,11 +67,7 @@ if (runtimeOptions.CorsEnabled)
     app.UseCors(policy =>
     {
         policy.SetIsOriginAllowed(runtimeOptions.AllowedOrigins.Contains);
-        policy.WithMethods(
-            HttpMethods.Get,
-            HttpMethods.Post,
-            HttpMethods.Put,
-            HttpMethods.Delete);
+        policy.WithMethods(HttpMethods.Get, HttpMethods.Post);
         policy.WithHeaders("Content-Type");
     });
 }

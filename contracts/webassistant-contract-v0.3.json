@@ -119,7 +119,7 @@
     {
       "id": "WA-CORS-001",
       "kind": "required",
-      "statement": "CORS по умолчанию выключен. При включении разрешены только явно заданные exact HTTP/HTTPS origins; wildcard запрещён. Environment-specific exact origins могут поставляться downstream consumer/deployment через package appsettings.json, и installer обязан сохранять уже присутствующий package config без подмены default CORS configuration."
+      "statement": "CORS по умолчанию выключен. При включении разрешены только явно заданные exact HTTP/HTTPS origins; wildcard запрещён. Для current public API CORS разрешает только GET и POST и header Content-Type. Environment-specific exact origins могут поставляться downstream consumer/deployment через package appsettings.json, и installer обязан сохранять уже присутствующий package config без подмены default CORS configuration."
     },
     {
       "id": "WA-FS-001",
@@ -129,27 +129,27 @@
     {
       "id": "WA-FS-002",
       "kind": "required",
-      "statement": "Candidate v0.3 публикует GET /v1/filesystem/roots, GET /v1/filesystem/list, GET/PUT/DELETE /v1/filesystem/file, POST/DELETE /v1/filesystem/directory и POST /v1/filesystem/move. Browser filesystem API stateless: caller владеет текущей директорией и каждый запрос несёт explicit logical-root-prefixed path. Move/rename разрешён только внутри same logical root; cross-root move отклоняется до acquisition destination authority и copy+delete fallback запрещён."
+      "statement": "Candidate v0.3 публикует GET /v1/filesystem/roots, GET /v1/filesystem/list, GET /v1/filesystem/file, GET /v1/filesystem/files, GET /v1/filesystem/find, POST /v1/filesystem/file, POST /v1/filesystem/file/delete, POST /v1/filesystem/directory, POST /v1/filesystem/directory/delete, POST /v1/filesystem/move, POST /v1/filesystem/directory/move и POST /v1/filesystem/rename. Browser filesystem API stateless: caller владеет текущей директорией и каждый запрос несёт explicit logical-root-prefixed path. Batch file move сохраняет имя каждого исходного файла; directory move сохраняет имя исходного каталога; rename сохраняет parent directory. Move не принимает destination filename, rename не принимает destination directory; случайный rename во время move запрещён. Cross-root mutation и copy+delete fallback запрещены."
     },
     {
       "id": "WA-FS-003",
       "kind": "required",
-      "statement": "Filesystem destructive semantics fail-closed: create/upload при существующем destination получает 409 destination_exists; move/rename является atomic no-replace и при существующем destination получает 409 destination_exists; directory delete разрешён только для пустого каталога и иначе получает 409 directory_not_empty; append, recursive delete и implicit replace не публикуются."
+      "statement": "Filesystem destructive semantics fail-closed: create/upload при существующем destination получает 409 destination_exists; rename и каждый individual move являются atomic no-replace namespace operations; directory delete разрешён только для пустого каталога и иначе получает 409 directory_not_empty; append, recursive delete и implicit replace не публикуются. Batch file move является best effort: source not_found и destination_exists для отдельного имени пропускаются, остальные имена продолжаются; security/native fatal error прекращает request без обещания rollback уже выполненных moves."
     },
     {
       "id": "WA-FS-004",
       "kind": "required",
-      "statement": "PUT /v1/filesystem/file принимает opaque streaming body и публикует final name атомарно через same-filesystem internal staging + complete write/close + atomic no-replace commit; final name отсутствует до commit и после commit содержит полный byte sequence. Staging namespace не является public API namespace."
+      "statement": "POST /v1/filesystem/file принимает opaque streaming body и публикует final name атомарно через same-filesystem internal staging + complete write/close + atomic no-replace commit; final name отсутствует до commit и после commit содержит полный byte sequence. Staging namespace не является public API namespace."
     },
     {
       "id": "WA-FS-005",
       "kind": "required",
-      "statement": "GET /v1/filesystem/file возвращает opaque application/octet-stream attachment с X-Content-Type-Options=nosniff и не рендерит пользовательские файлы как web resources. Standalone active extensions блокируются extension policy с 422 blocked_file_type; externally-created restricted entries могут быть видимы в listing, но не скачиваются/не переименовываются через API."
+      "statement": "GET /v1/filesystem/file возвращает opaque application/octet-stream attachment с X-Content-Type-Options=nosniff и не рендерит пользовательские файлы как web resources. Standalone active extensions блокируются extension policy с 422 blocked_file_type; externally-created restricted entries могут быть видимы в listing, но не скачиваются/не переименовываются/не перемещаются через API."
     },
     {
       "id": "WA-FS-006",
       "kind": "required",
-      "statement": "Directory listing возвращает name, kind, size, createdAt, lastModifiedAt и restrictionCode; default page limit=200, maximum limit=1000, cursor opaque. External mutation другими локальными приложениями является штатным сценарием и listing не обещает snapshot между страницами."
+      "statement": "Directory listing возвращает name, kind, size, createdAt, lastModifiedAt и restrictionCode; default page limit=200, maximum limit=1000, cursor opaque. Optional wildcard фильтрует ordinary files текущего каталога до pagination, directories остаются видимыми; comma-separated masks объединяются OR, matching выполняется OrdinalIgnoreCase одинаково на Windows/Linux, *.* означает все ordinary files включая имена без точки. Cursor связан с logical root, directory и effective canonical wildcard. External mutation другими локальными приложениями является штатным сценарием и listing не обещает snapshot между страницами."
     },
     {
       "id": "WA-FS-007",
@@ -159,12 +159,22 @@
     {
       "id": "WA-FS-008",
       "kind": "required",
-      "statement": "Repository-owned /filesystem.html является visual browser client только public filesystem API: selector logical root выбирает один active logical root для обеих панелей; LEFT и RIGHT имеют независимые breadcrumb, navigation, sorting, .., create file/directory, one-step upload и refresh. Клик по каталогу открывает его в той же панели, клик по обычному файлу скачивает attachment. В каждой обычной строке ровно три action icons: LEFT →, ✎, ×; RIGHT ←, ✎, ×; directional move disabled, когда обе панели показывают один каталог. Переключение logical root сбрасывает BOTH panels в верхний уровень. Physical host paths и inline preview/rendering пользовательских файлов запрещены. Реальный Playwright/Chromium integration test проверяет эти UI-семантики, filesystem operations и external mutation выбранного logical root сторонним host process."
+      "statement": "Repository-owned /filesystem.html является visual two-panel browser client только public filesystem API. Selector logical root выбирает один active logical root для обеих панелей; LEFT и RIGHT имеют независимые breadcrumb/navigation/sorting/current-row/wildcard/selection/find state. Wildcard default *.*. Click выбирает один ordinary file, Ctrl+click переключает выбор, Shift+click выбирает диапазон; selection панелей независим, directories/../restricted entries в batch file selection не входят. Header LEFT [→] и RIGHT [←] отправляют один batch POST /v1/filesystem/move; row file arrow использует тот же route с array length 1; directory drag/drop использует /filesystem/directory/move; ✎ использует /filesystem/rename. Find добавляет exact-name результаты в selection без смены directory/listing/wildcard. ZIP скачивается для current directory + current wildcard. Physical host paths и inline preview/rendering пользовательских файлов запрещены."
     },
     {
       "id": "WA-FS-009",
       "kind": "required",
-      "statement": "Multi-root filesystem использует stable application/problem+json codes filesystem_not_configured, filesystem_configuration_invalid, filesystem_root_not_found, filesystem_root_unavailable и filesystem_path_invalid поверх существующих destination_exists, directory_not_empty, unsafe_link, hardlink_rejected, blocked_file_type и locked. Пустая карта WebAssistant:FileSystem означает not configured; недоступность одного root не ломает другие roots, scanner или health. /filesystem.html является two-panel browser client: LEFT и RIGHT имеют независимые navigation/sort state внутри одного active logical root, one-step upload, click-to-open/download и external mutation refresh; inline preview отсутствует."
+      "statement": "Multi-root filesystem использует stable application/problem+json codes filesystem_not_configured, filesystem_configuration_invalid, filesystem_root_not_found, filesystem_root_unavailable и filesystem_path_invalid поверх existing mutation/security codes. Пустая карта WebAssistant:FileSystem означает not configured; недоступность одного root не ломает другие roots, scanner или health. /filesystem.html сбрасывает transient selection при смене directory/root и по возможности сохраняет surviving selection после sorting/refresh."
+    },
+    {
+      "id": "WA-FS-010",
+      "kind": "required",
+      "statement": "POST /v1/filesystem/move принимает только sourcePath directory, destinationPath directory и непустой fileNames array до 1000 single entry names. Wildcard, recursion и destination filename отсутствуют. GET /v1/filesystem/find принимает repeated name parameters до 100, выполняет exact StringComparison.Ordinal matching по фактическому имени directory entry, возвращает только existing unrestricted ordinary files в request order и для отсутствующих имён возвращает normal 200 без ошибки."
+    },
+    {
+      "id": "WA-FS-011",
+      "kind": "required",
+      "statement": "GET /v1/filesystem/files возвращает application/zip attachment из immediate ordinary files текущего directory, отобранных тем же wildcard policy, без directories и recursion. Zero matches возвращает корректный пустой ZIP. Archive не буферизует произвольные file bytes целиком в RAM; entry names являются basename без physical/logical parent paths. Restricted/link/hardlink policy нельзя обойти через ZIP; late read/native failure после начала response прерывает stream вместо ложного complete success."
     },
     {
       "id": "WA-DEPS-001",

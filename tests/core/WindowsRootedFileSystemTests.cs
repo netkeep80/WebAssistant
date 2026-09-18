@@ -101,7 +101,8 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
 
         await fileSystem.MoveNoReplaceAsync(
             "incoming/a.bin",
-            "incoming/b.bin");
+            "incoming/b.bin",
+            RootedEntryKind.File);
         Assert.False(File.Exists(originalPath));
         Assert.True(File.Exists(Path.Combine(root, "incoming", "b.bin")));
 
@@ -111,7 +112,8 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
         var conflict = await Assert.ThrowsAsync<FileSystemOperationException>(async () =>
             await fileSystem.MoveNoReplaceAsync(
                 "incoming/b.bin",
-                "incoming/occupied.bin"));
+                "incoming/occupied.bin",
+                RootedEntryKind.File));
         Assert.Equal(FileSystemErrorCodes.DestinationExists, conflict.Code);
         Assert.Equal(
             "original",
@@ -121,6 +123,37 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
         await fileSystem.DeleteFileAsync("incoming/occupied.bin");
         await fileSystem.DeleteEmptyDirectoryAsync("incoming");
         Assert.False(Directory.Exists(Path.Combine(root, "incoming")));
+    }
+
+    [Fact]
+    public async Task WindowsRootedFileSystem_MoveFailsClosedOnExpectedKindMismatch()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(Path.Combine(root, "folder"));
+        await File.WriteAllTextAsync(Path.Combine(root, "file.bin"), "payload");
+        using var fileSystem = new WindowsRootedFileSystem(root);
+
+        var directoryAsFile = await Assert.ThrowsAsync<FileSystemOperationException>(
+            async () => await fileSystem.MoveNoReplaceAsync(
+                "folder",
+                "folder-moved",
+                RootedEntryKind.File));
+        Assert.Equal(FileSystemErrorCodes.InvalidPath, directoryAsFile.Code);
+        Assert.True(Directory.Exists(Path.Combine(root, "folder")));
+        Assert.False(Directory.Exists(Path.Combine(root, "folder-moved")));
+
+        var fileAsDirectory = await Assert.ThrowsAsync<FileSystemOperationException>(
+            async () => await fileSystem.MoveNoReplaceAsync(
+                "file.bin",
+                "file-moved.bin",
+                RootedEntryKind.Directory));
+        Assert.Equal(FileSystemErrorCodes.InvalidPath, fileAsDirectory.Code);
+        Assert.True(File.Exists(Path.Combine(root, "file.bin")));
+        Assert.False(File.Exists(Path.Combine(root, "file-moved.bin")));
     }
 
     [Fact]

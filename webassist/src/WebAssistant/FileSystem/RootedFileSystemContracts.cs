@@ -95,6 +95,7 @@ internal interface IRootedFileSystem
     ValueTask MoveNoReplaceAsync(
         string sourceRelativePath,
         string destinationRelativePath,
+        RootedEntryKind expectedKind,
         CancellationToken cancellationToken = default);
 
     ValueTask DeleteFileAsync(

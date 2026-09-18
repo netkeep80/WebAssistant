@@ -16,6 +16,7 @@ public sealed class DistributionContractCandidateTests
     [
         "WA-SCAN-001",
         "WA-SCAN-002",
+        "WA-CORS-001",
         "WA-FS-001",
         "WA-FS-002"
     ];

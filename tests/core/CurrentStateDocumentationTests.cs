@@ -65,7 +65,7 @@ public sealed class CurrentStateDocumentationTests
         var api = ReadRepositoryFile("webassist/docs/api.md");
 
         Assert.Contains("/filesystem.html", api, StringComparison.Ordinal);
-        Assert.Contains("публичного API файлового обмена", api, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("## Файловый обмен", api, StringComparison.Ordinal);
     }
 
     [Fact]

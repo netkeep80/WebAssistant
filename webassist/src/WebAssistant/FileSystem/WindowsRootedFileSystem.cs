@@ -292,6 +292,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
     public ValueTask MoveNoReplaceAsync(
         string sourceRelativePath,
         string destinationRelativePath,
+        RootedEntryKind expectedKind,
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -309,11 +310,29 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
 
         EnsureNotReparse(sourceHandle, "Перемещение reparse point запрещено.");
         var standard = ReadStandardInfo(sourceHandle);
-        if (!standard.Directory)
+        if (expectedKind == RootedEntryKind.File)
         {
+            if (standard.Directory)
+            {
+                throw InvalidPath(
+                    "Тип исходного объекта изменился до atomic move: ожидался файл.");
+            }
+
             FileSystemPathPolicy.EnsureFileTypeAllowed(sourceName);
             FileSystemPathPolicy.EnsureFileTypeAllowed(destinationName);
             EnsureSingleLink(standard);
+        }
+        else if (expectedKind == RootedEntryKind.Directory)
+        {
+            if (!standard.Directory)
+            {
+                throw InvalidPath(
+                    "Тип исходного объекта изменился до atomic move: ожидался каталог.");
+            }
+        }
+        else
+        {
+            throw InvalidPath("Atomic move поддерживает только файл или каталог.");
         }
 
         RenameRelativeNoReplace(

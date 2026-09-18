@@ -266,6 +266,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
     public ValueTask MoveNoReplaceAsync(
         string sourceRelativePath,
         string destinationRelativePath,
+        RootedEntryKind expectedKind,
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -288,15 +289,29 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
             throw UnsafeLink("Перемещение ссылок через API запрещено.");
         }
 
-        if (sourceKind == S_IFREG)
+        if (expectedKind == RootedEntryKind.File)
         {
+            if (sourceKind != S_IFREG)
+            {
+                throw InvalidPath(
+                    "Тип исходного объекта изменился до atomic move: ожидался файл.");
+            }
+
             FileSystemPathPolicy.EnsureFileTypeAllowed(sourceName);
             FileSystemPathPolicy.EnsureFileTypeAllowed(destinationName);
             EnsureSingleLink(sourceStat);
         }
-        else if (sourceKind != S_IFDIR)
+        else if (expectedKind == RootedEntryKind.Directory)
         {
-            throw InvalidPath("Поддерживается перемещение только файла или каталога.");
+            if (sourceKind != S_IFDIR)
+            {
+                throw InvalidPath(
+                    "Тип исходного объекта изменился до atomic move: ожидался каталог.");
+            }
+        }
+        else
+        {
+            throw InvalidPath("Atomic move поддерживает только файл или каталог.");
         }
 
         if (RenameAt2(

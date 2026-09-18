@@ -193,6 +193,19 @@
       "must_change_any": [
         "webassist/docs/api.md"
       ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Http/ScannerSettingsEndpointHandlers.cs",
+        "webassist/src/WebAssistant/Http/ScanRequest.cs",
+        "webassist/src/WebAssistant/Http/FileSystemEndpointHandlers.cs",
+        "webassist/src/WebAssistant/Http/FileSystemHttpModels.cs",
+        "webassist/src/WebAssistant/FileSystem/FileSystemApplicationService.cs",
+        "webassist/docs/scanner-settings.schema.json"
+      ],
+      "must_change_any": [
+        "webassist/docs/api.md"
+      ]
     }
   ]
 }

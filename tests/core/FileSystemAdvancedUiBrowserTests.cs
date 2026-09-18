@@ -296,10 +296,27 @@ public sealed class FileSystemAdvancedUiBrowserTests
             await page.ClickAsync("#filesystem-right-breadcrumb [data-path='archive/']");
             await Row("right", "right").Locator("[data-entry-open]").ClickAsync();
             await WaitBreadcrumb("right", "archive / right");
-            await Row("left", "conflict.txt").DragToAsync(page.Locator("#filesystem-right"));
-            await page.Locator("#filesystem-status")
-                .GetByText("destination_exists", new() { Exact = false })
-                .WaitForAsync();
+            var moveResponse = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+            void CaptureMoveResponse(object? _, IResponse response)
+            {
+                if (response.Request.Method == "POST" &&
+                    new Uri(response.Url).AbsolutePath == "/v1/filesystem/move")
+                {
+                    moveResponse.TrySetResult(response.Status);
+                }
+            }
+            page.Response += CaptureMoveResponse;
+            try
+            {
+                await Row("left", "conflict.txt").DragToAsync(page.Locator("#filesystem-right"));
+                Assert.Equal(
+                    (int)HttpStatusCode.OK,
+                    await moveResponse.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+            }
+            finally
+            {
+                page.Response -= CaptureMoveResponse;
+            }
             Assert.Equal("left-conflict", await File.ReadAllTextAsync(Path.Combine(leftDirectory, "conflict.txt")));
             Assert.Equal("right-conflict", await File.ReadAllTextAsync(Path.Combine(rightDirectory, "conflict.txt")));
 

@@ -53,7 +53,9 @@ public sealed class FileSystemAdvancedUiContractTests
         var page = ReadFilesystemPage();
 
         Assert.Contains("currentSide", page, StringComparison.Ordinal);
-        Assert.Contains("selectedPath", page, StringComparison.Ordinal);
+        Assert.Contains("currentRow", page, StringComparison.Ordinal);
+        Assert.Contains("selectedNames", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("selectedPath", page, StringComparison.Ordinal);
         Assert.Contains("ArrowUp", page, StringComparison.Ordinal);
         Assert.Contains("ArrowDown", page, StringComparison.Ordinal);
         Assert.Contains("Enter", page, StringComparison.Ordinal);

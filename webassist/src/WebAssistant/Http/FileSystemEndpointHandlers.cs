@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
-using System.Text;
+using System.IO.Compression;
 using System.Text.Json;
 using WebAssistant.FileSystem;
 
@@ -16,11 +16,15 @@ internal static class FileSystemEndpointHandlers
         api.MapGet("/filesystem/roots", Roots);
         api.MapGet("/filesystem/list", ListAsync);
         api.MapGet("/filesystem/file", DownloadAsync);
-        api.MapPut("/filesystem/file", UploadAsync);
-        api.MapDelete("/filesystem/file", DeleteFileAsync);
+        api.MapGet("/filesystem/files", DownloadZipAsync);
+        api.MapGet("/filesystem/find", FindAsync);
+        api.MapPost("/filesystem/file", UploadAsync);
+        api.MapPost("/filesystem/file/delete", DeleteFileAsync);
         api.MapPost("/filesystem/directory", CreateDirectoryAsync);
-        api.MapDelete("/filesystem/directory", DeleteDirectoryAsync);
+        api.MapPost("/filesystem/directory/delete", DeleteDirectoryAsync);
         api.MapPost("/filesystem/move", MoveAsync);
+        api.MapPost("/filesystem/directory/move", MoveDirectoryAsync);
+        api.MapPost("/filesystem/rename", RenameAsync);
     }
 
     private static IResult Roots(
@@ -46,13 +50,15 @@ internal static class FileSystemEndpointHandlers
 
     private static async Task<IResult> ListAsync(
         HttpRequest request,
-        FileSystemRootRegistry registry,
+        FileSystemApplicationService service,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
         var started = Stopwatch.GetTimestamp();
-        ResolvedFileSystemPath? resolved = null;
         var path = QueryValue(request, "path");
+        var wildcard = request.Query.ContainsKey("wildcard")
+            ? QueryValue(request, "wildcard")
+            : null;
         var cursor = QueryValue(request, "cursor");
         var rawLimit = QueryValue(request, "limit");
         var limit = DefaultListLimit;
@@ -69,26 +75,28 @@ internal static class FileSystemEndpointHandlers
                 "Некорректный limit каталога");
         }
 
+        FileSystemLogicalPath? logicalPath = null;
         try
         {
-            resolved = registry.Resolve(path, allowRoot: true);
-            var page = await resolved.FileSystem.ListAsync(
-                resolved.Path.RelativePath,
+            var page = await service.ListAsync(
+                path,
+                wildcard,
                 limit,
-                UnwrapCursor(resolved.Path.RootName, cursor),
+                cursor,
                 cancellationToken);
-            LogSuccess(loggerFactory, "list", resolved.Path, started);
+            logicalPath = page.Path;
+            LogSuccess(loggerFactory, "list", page.Path, started);
             return Results.Ok(new FileSystemListingResponse(
-                resolved.Path.Value,
+                page.Path.Value,
                 page.Entries.Select(MapEntry).ToArray(),
-                WrapCursor(resolved.Path.RootName, page.NextCursor)));
+                page.NextCursor));
         }
         catch (FileSystemOperationException exception)
         {
             LogFailure(
                 loggerFactory,
                 "list",
-                resolved?.Path ?? TryParsePath(path, allowRoot: true),
+                logicalPath ?? TryParsePath(path, allowRoot: true),
                 exception,
                 started);
             return MapError(exception);
@@ -126,6 +134,74 @@ internal static class FileSystemEndpointHandlers
                 loggerFactory,
                 "download",
                 resolved?.Path ?? TryParsePath(rawPath, allowRoot: false),
+                exception,
+                started);
+            return MapError(exception);
+        }
+    }
+
+    private static async Task<IResult> DownloadZipAsync(
+        HttpRequest request,
+        FileSystemApplicationService service,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var rawPath = QueryValue(request, "path");
+        var wildcard = request.Query.ContainsKey("wildcard")
+            ? QueryValue(request, "wildcard")
+            : null;
+        try
+        {
+            var selection = await service.SelectZipFilesAsync(
+                rawPath,
+                wildcard,
+                cancellationToken);
+            LogSuccess(loggerFactory, "zip", selection.Path, started);
+            return new FileSystemZipResult(selection);
+        }
+        catch (FileSystemOperationException exception)
+        {
+            LogFailure(
+                loggerFactory,
+                "zip",
+                TryParsePath(rawPath, allowRoot: true),
+                exception,
+                started);
+            return MapError(exception);
+        }
+    }
+
+    private static async Task<IResult> FindAsync(
+        HttpRequest request,
+        FileSystemApplicationService service,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var rawPath = QueryValue(request, "path");
+        var names = request.Query.TryGetValue("name", out var values)
+            ? values.ToArray()
+            : Array.Empty<string>();
+        try
+        {
+            var found = await service.FindAsync(
+                rawPath,
+                names,
+                cancellationToken);
+            var path = TryParsePath(rawPath, allowRoot: true);
+            if (path is not null)
+            {
+                LogSuccess(loggerFactory, "find", path, started);
+            }
+            return Results.Ok(new FileSystemFileNamesResponse(found));
+        }
+        catch (FileSystemOperationException exception)
+        {
+            LogFailure(
+                loggerFactory,
+                "find",
+                TryParsePath(rawPath, allowRoot: true),
                 exception,
                 started);
             return MapError(exception);
@@ -199,9 +275,7 @@ internal static class FileSystemEndpointHandlers
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
-        var parsed = await ReadJsonAsync<FileSystemDirectoryRequest>(
-            request,
-            cancellationToken);
+        var parsed = await ReadJsonAsync<FileSystemDirectoryRequest>(request, cancellationToken);
         if (parsed.Error is not null)
         {
             return parsed.Error;
@@ -262,65 +336,115 @@ internal static class FileSystemEndpointHandlers
 
     private static async Task<IResult> MoveAsync(
         HttpRequest request,
-        FileSystemRootRegistry registry,
+        FileSystemApplicationService service,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
-        var parsed = await ReadJsonAsync<FileSystemMoveRequest>(
-            request,
-            cancellationToken);
+        var parsed = await ReadJsonAsync<FileSystemMoveRequest>(request, cancellationToken);
         if (parsed.Error is not null)
         {
             return parsed.Error;
         }
 
         var started = Stopwatch.GetTimestamp();
-        ResolvedFileSystemPath? source = null;
-        ResolvedFileSystemPath? destination = null;
         try
         {
-            registry.EnsureConfigured();
-            var sourcePath = FileSystemLogicalPath.Parse(
+            var moved = await service.MoveFilesAsync(
                 parsed.Value!.SourcePath,
-                allowRoot: false);
-            var destinationPath = FileSystemLogicalPath.Parse(
                 parsed.Value.DestinationPath,
-                allowRoot: false);
-            if (!string.Equals(
-                    sourcePath.RootName,
-                    destinationPath.RootName,
-                    StringComparison.Ordinal))
-            {
-                throw new FileSystemOperationException(
-                    FileSystemErrorCodes.FileSystemPathInvalid,
-                    "Перемещение между логическими корнями запрещено.");
-            }
-
-            source = registry.Resolve(sourcePath.Value, allowRoot: false);
-            destination = new ResolvedFileSystemPath(
-                destinationPath,
-                source.FileSystem);
-            await source.FileSystem.MoveNoReplaceAsync(
-                source.Path.RelativePath,
-                destination.Path.RelativePath,
+                parsed.Value.FileNames ?? Array.Empty<string>(),
                 cancellationToken);
-            LogSuccess(loggerFactory, "move", source.Path, started);
-            LogSuccess(loggerFactory, "move", destination.Path, started);
+            var source = TryParsePath(parsed.Value.SourcePath, allowRoot: true);
+            if (source is not null)
+            {
+                LogSuccess(loggerFactory, "move-files", source, started);
+            }
+            return Results.Ok(new FileSystemFileNamesResponse(moved));
+        }
+        catch (FileSystemOperationException exception)
+        {
+            LogFailure(
+                loggerFactory,
+                "move-files",
+                TryParsePath(parsed.Value!.SourcePath, allowRoot: true),
+                exception,
+                started);
+            return MapError(exception);
+        }
+    }
+
+    private static async Task<IResult> MoveDirectoryAsync(
+        HttpRequest request,
+        FileSystemApplicationService service,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
+    {
+        var parsed = await ReadJsonAsync<FileSystemDirectoryMoveRequest>(request, cancellationToken);
+        if (parsed.Error is not null)
+        {
+            return parsed.Error;
+        }
+
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            await service.MoveDirectoryAsync(
+                parsed.Value!.SourcePath,
+                parsed.Value.DestinationPath,
+                cancellationToken);
+            var source = TryParsePath(parsed.Value.SourcePath, allowRoot: false);
+            if (source is not null)
+            {
+                LogSuccess(loggerFactory, "move-directory", source, started);
+            }
             return Results.NoContent();
         }
         catch (FileSystemOperationException exception)
         {
             LogFailure(
                 loggerFactory,
-                "move",
-                source?.Path ?? TryParsePath(parsed.Value!.SourcePath, allowRoot: false),
+                "move-directory",
+                TryParsePath(parsed.Value!.SourcePath, allowRoot: false),
                 exception,
                 started);
-            if (destination?.Path is not null)
-            {
-                LogFailure(loggerFactory, "move", destination.Path, exception, started);
-            }
+            return MapError(exception);
+        }
+    }
 
+    private static async Task<IResult> RenameAsync(
+        HttpRequest request,
+        FileSystemApplicationService service,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
+    {
+        var parsed = await ReadJsonAsync<FileSystemRenameRequest>(request, cancellationToken);
+        if (parsed.Error is not null)
+        {
+            return parsed.Error;
+        }
+
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            await service.RenameAsync(
+                parsed.Value!.Path,
+                parsed.Value.NewName,
+                cancellationToken);
+            var path = TryParsePath(parsed.Value.Path, allowRoot: false);
+            if (path is not null)
+            {
+                LogSuccess(loggerFactory, "rename", path, started);
+            }
+            return Results.NoContent();
+        }
+        catch (FileSystemOperationException exception)
+        {
+            LogFailure(
+                loggerFactory,
+                "rename",
+                TryParsePath(parsed.Value!.Path, allowRoot: false),
+                exception,
+                started);
             return MapError(exception);
         }
     }
@@ -354,51 +478,6 @@ internal static class FileSystemEndpointHandlers
         request.Query.TryGetValue(name, out var values)
             ? values.ToString()
             : null;
-
-    private static string? WrapCursor(string rootName, string? nativeCursor)
-    {
-        if (nativeCursor is null)
-        {
-            return null;
-        }
-
-        return Convert.ToBase64String(Encoding.UTF8.GetBytes(
-            string.Concat(rootName, "\0", nativeCursor)));
-    }
-
-    private static string? UnwrapCursor(string rootName, string? publicCursor)
-    {
-        if (string.IsNullOrEmpty(publicCursor))
-        {
-            return null;
-        }
-
-        try
-        {
-            var value = Encoding.UTF8.GetString(Convert.FromBase64String(publicCursor));
-            var separator = value.IndexOf('\0');
-            if (separator <= 0 ||
-                !string.Equals(value[..separator], rootName, StringComparison.Ordinal) ||
-                separator == value.Length - 1)
-            {
-                throw InvalidCursor();
-            }
-
-            return value[(separator + 1)..];
-        }
-        catch (FormatException exception)
-        {
-            throw new FileSystemOperationException(
-                FileSystemErrorCodes.FileSystemPathInvalid,
-                "Cursor каталога имеет недопустимый формат.",
-                exception);
-        }
-    }
-
-    private static FileSystemOperationException InvalidCursor() =>
-        new(
-            FileSystemErrorCodes.FileSystemPathInvalid,
-            "Cursor не принадлежит выбранному логическому корню.");
 
     private static async Task<(T? Value, IResult? Error)> ReadJsonAsync<T>(
         HttpRequest request,
@@ -565,4 +644,59 @@ internal static class FileSystemEndpointHandlers
             {
                 ["code"] = code
             });
+
+    private sealed class FileSystemZipResult : IResult
+    {
+        private readonly FileSystemZipSelection selection;
+
+        internal FileSystemZipResult(FileSystemZipSelection selection)
+        {
+            this.selection = selection;
+        }
+
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status200OK;
+            httpContext.Response.ContentType = "application/zip";
+            httpContext.Response.Headers.ContentDisposition = "attachment; filename=files.zip";
+            httpContext.Response.Headers["X-Content-Type-Options"] = "nosniff";
+
+            try
+            {
+                using var responseStream =
+                    httpContext.Response.BodyWriter.AsStream(leaveOpen: true);
+                using (var archive = new ZipArchive(
+                    responseStream,
+                    ZipArchiveMode.Create,
+                    leaveOpen: true))
+                {
+                    foreach (var fileName in selection.FileNames)
+                    {
+                        httpContext.RequestAborted.ThrowIfCancellationRequested();
+                        await using var source = await selection.FileSystem.OpenReadAsync(
+                            FileSystemApplicationService.Join(
+                                selection.Path.RelativePath,
+                                fileName),
+                            httpContext.RequestAborted);
+                        var zipEntry = archive.CreateEntry(
+                            fileName,
+                            CompressionLevel.Fastest);
+                        await using var destination = zipEntry.Open();
+                        await source.CopyToAsync(
+                            destination,
+                            64 * 1024,
+                            httpContext.RequestAborted);
+                    }
+                }
+
+                await httpContext.Response.BodyWriter.FlushAsync(
+                    httpContext.RequestAborted);
+            }
+            catch when (httpContext.Response.HasStarted)
+            {
+                httpContext.Abort();
+                throw;
+            }
+        }
+    }
 }
