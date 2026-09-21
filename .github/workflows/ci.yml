@@ -113,6 +113,8 @@ jobs:
 
   source-aligned-worker-bootstrap:
     name: Source-aligned Win32 worker bootstrap
+    permissions:
+      contents: write
     needs: requirements
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == true }}
     runs-on: ubuntu-24.04
@@ -164,6 +166,32 @@ jobs:
           path: webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.Worker.Win32.1.3.0-webassistant.1.450cba65.nupkg
           if-no-files-found: error
           retention-days: 1
+
+      - name: Commit immutable source-aligned worker package
+        shell: bash
+        env:
+          SOURCE_REF: ${{ needs.requirements.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+
+          branch='test/163-source-aligned-win32-worker-red'
+          package='webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.Worker.Win32.1.3.0-webassistant.1.450cba65.nupkg'
+          expected_sha='18993608e478661100df88f2ea80fcd87c88719d05b0b8f6230da18b582ed691'
+
+          test "$(sha256sum "$package" | awk '{print $1}')" = "$expected_sha"
+          remote_head="$(git ls-remote origin "refs/heads/$branch" | awk '{print $1}')"
+          test "$remote_head" = "$SOURCE_REF"
+
+          git add -- "$package"
+          if git diff --cached --quiet; then
+            echo 'Source-aligned worker package already committed.'
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m '#163: vendor immutable source-aligned Win32 worker package'
+          git push origin HEAD:"refs/heads/$branch"
 
   core:
     name: core
