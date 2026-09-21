@@ -1,4 +1,6 @@
-using System.Diagnostics;\nusing System.IO.Compression;\nusing System.Reflection;
+using System.Diagnostics;
+using System.IO.Compression;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Xml.Linq;
 using NAPS2.Scan;
@@ -13,9 +15,12 @@ public sealed class DependencyOwnershipTests
     private const string PackageId = "WebAssistant.NAPS2.Sdk";
     private const string PackageVersion = "1.3.0-webassistant.4.450cba65";
     private const string PackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.4.450cba65.nupkg";
-    private const string PreviousPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg";\n    private const string OlderPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg";
+    private const string PreviousPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg";
+    private const string OlderPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg";
     private const string UpstreamCommit = "450cba65aaffe6387041050a573051a64cd80fe9";
-    private const string PreviousPackageSha256 = "e8abde3b7bd7e756eea714883c6e6ed79c6bb5f5052cd630b3dc763e45a50915";\n    private const string OlderPackageSha256 = "2dbc6e96cf0d46a554318f3224561861e669dd09b60fc618319c53fed10dcc9f";\n    private const string CurrentPackageSha256 = "34bf8c94b851dcabad12f6cb50abc504a14010b44b3d6db592efec6ad310e0fc";
+    private const string PreviousPackageSha256 = "e8abde3b7bd7e756eea714883c6e6ed79c6bb5f5052cd630b3dc763e45a50915";
+    private const string OlderPackageSha256 = "2dbc6e96cf0d46a554318f3224561861e669dd09b60fc618319c53fed10dcc9f";
+    private const string CurrentPackageSha256 = "34bf8c94b851dcabad12f6cb50abc504a14010b44b3d6db592efec6ad310e0fc";
     private const long MaxPackageBytes = 1024L * 1024L;
 
     [Fact]
@@ -133,7 +138,11 @@ public sealed class DependencyOwnershipTests
         Assert.Contains($"`{PackageVersion}`", provenance, StringComparison.Ordinal);
         Assert.Contains($"`../nuget/{PackageFile}`", provenance, StringComparison.Ordinal);
         Assert.Contains($"`{UpstreamCommit}`", provenance, StringComparison.Ordinal);
-        Assert.Contains($"`{CurrentPackageSha256}`", provenance, StringComparison.Ordinal);\n        Assert.Contains($"`{PreviousPackageSha256}`", provenance, StringComparison.Ordinal);\n        Assert.Contains($"`{OlderPackageSha256}`", provenance, StringComparison.Ordinal);\n        Assert.Contains("FileVersion=8.3.0.4", provenance, StringComparison.Ordinal);\n        Assert.Contains("AssemblyVersion=8.3.0.0", provenance, StringComparison.Ordinal);
+        Assert.Contains($"`{CurrentPackageSha256}`", provenance, StringComparison.Ordinal);
+        Assert.Contains($"`{PreviousPackageSha256}`", provenance, StringComparison.Ordinal);
+        Assert.Contains($"`{OlderPackageSha256}`", provenance, StringComparison.Ordinal);
+        Assert.Contains("FileVersion=8.3.0.4", provenance, StringComparison.Ordinal);
+        Assert.Contains("AssemblyVersion=8.3.0.0", provenance, StringComparison.Ordinal);
         Assert.Contains("остаётся неизменяемым", provenance, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -144,7 +153,9 @@ public sealed class DependencyOwnershipTests
         var rebuildPath = Path.Combine(root, "webassist", "vendor", "naps2", "rebuild-fixed-sdk.sh");
         var rebuild = File.ReadAllText(rebuildPath);
 
-        Assert.Contains(PackageVersion, rebuild, StringComparison.Ordinal);\n        Assert.Contains("8.3.0.4</FileVersion>", rebuild, StringComparison.Ordinal);\n        Assert.Contains("8.3.0.0</AssemblyVersion>", rebuild, StringComparison.Ordinal);
+        Assert.Contains(PackageVersion, rebuild, StringComparison.Ordinal);
+        Assert.Contains("8.3.0.4</FileVersion>", rebuild, StringComparison.Ordinal);
+        Assert.Contains("8.3.0.0</AssemblyVersion>", rebuild, StringComparison.Ordinal);
         Assert.Contains("NAPS2.Sdk/Remoting/Worker/WorkerContext.cs", rebuild, StringComparison.Ordinal);
         Assert.Contains("NAPS2.Sdk/Remoting/Worker/WorkerFactory.cs", rebuild, StringComparison.Ordinal);
         Assert.Contains("NAPS2.Sdk/Remoting/Worker/IWorkerFactory.cs", rebuild, StringComparison.Ordinal);
