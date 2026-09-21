@@ -384,6 +384,29 @@ function Write-Naps2MsiLogEvidence {
     }
 }
 
+function Write-BundleFailureEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$PrimaryLog,
+        [Parameter(Mandatory = $true)][string]$Stage
+    )
+
+    $directory = Split-Path -Parent $PrimaryLog
+    $prefix = [IO.Path]::GetFileNameWithoutExtension($PrimaryLog)
+    $logs = @(Get-ChildItem -LiteralPath $directory -Filter "$prefix*.log" -File -ErrorAction SilentlyContinue)
+
+    foreach ($log in $logs) {
+        Write-Host "bundle_failure_log stage=$Stage file=$($log.Name)"
+        $matches = @(Select-String `
+            -LiteralPath $log.FullName `
+            -Pattern 'error|failed|0x8[0-9A-Fa-f]{7}|FilesInUse|MsiRMFilesInUse|Apply complete|execute package|NAPS2\.Sdk\.dll' `
+            -CaseSensitive:$false `
+            -ErrorAction SilentlyContinue | Select-Object -Last 120)
+        foreach ($match in $matches) {
+            Write-Host "bundle_failure_evidence=$($match.LineNumber):$($match.Line.Trim())"
+        }
+    }
+}
+
 function Assert-InstalledConfigPreserved {
     param(
         [Parameter(Mandatory = $true)][string]$ExpectedSha256,
@@ -629,10 +652,15 @@ try {
     if (Test-Path -LiteralPath $repairLog) {
         Remove-Item -LiteralPath $repairLog -Force
     }
-    Invoke-Bundle `
+    $repairExitCode = Invoke-Bundle `
         -Executable $candidate.Path `
         -Arguments @('/repair', '/quiet', '/norestart', '/log', $repairLog) `
-        -Operation "same-version repair $($candidate.Version)" | Out-Null
+        -Operation "same-version repair $($candidate.Version)" `
+        -AllowFailure
+    if ($repairExitCode -ne 0) {
+        Write-BundleFailureEvidence -PrimaryLog $repairLog -Stage 'same-version repair'
+        throw "WebAssistant bundle same-version repair $($candidate.Version) failed with exit code $repairExitCode."
+    }
     Assert-NoFilesInUseEvidence -PrimaryLog $repairLog
     Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
     Assert-InstalledNaps2SdkMatchesCandidate `
