@@ -39,7 +39,7 @@ on:
       - '.github/workflows/virtual-scanner.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   resolve-inputs:
@@ -179,6 +179,30 @@ jobs:
           path: webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.4.450cba65.nupkg
           if-no-files-found: error
           retention-days: 1
+
+      - name: Commit immutable NAPS2 .4 bootstrap package
+        if: ${{ needs.resolve-inputs.outputs.mode == 'smoke' }}
+        shell: bash
+        env:
+          SOURCE_REF: ${{ needs.resolve-inputs.outputs.source_ref }}
+        run: |
+          set -euo pipefail
+
+          package='webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.4.450cba65.nupkg'
+          branch='test/191-naps2-runtime-integrity-red'
+          remote_head="$(git ls-remote origin "refs/heads/$branch" | awk '{print $1}')"
+          test "$remote_head" = "$SOURCE_REF"
+
+          git add -- "$package"
+          if git diff --cached --quiet; then
+            echo 'NAPS2 .4 package already committed.'
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m '#191: vendor immutable NAPS2 SDK .4 package'
+          git push origin HEAD:"refs/heads/$branch"
 
       - name: Prepare isolated SANE configuration
         shell: bash
