@@ -15,6 +15,9 @@ public sealed class DependencyOwnershipTests
     private const string PackageId = "WebAssistant.NAPS2.Sdk";
     private const string PackageVersion = "1.3.0-webassistant.4.450cba65";
     private const string PackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.4.450cba65.nupkg";
+    private const string WorkerPackageId = "WebAssistant.NAPS2.Sdk.Worker.Win32";
+    private const string WorkerPackageVersion = "1.3.0-webassistant.1.450cba65";
+    private const string WorkerPackageFile = "WebAssistant.NAPS2.Sdk.Worker.Win32.1.3.0-webassistant.1.450cba65.nupkg";
     private const string PreviousPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg";
     private const string OlderPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg";
     private const string UpstreamCommit = "450cba65aaffe6387041050a573051a64cd80fe9";
@@ -77,6 +80,87 @@ public sealed class DependencyOwnershipTests
         {
             File.Delete(temporaryPath);
         }
+    }
+
+    [Fact]
+    public void SourceAlignedWin32WorkerPackage_IsRepositoryOwnedAndContainsWorker()
+    {
+        var packagePath = GetPackagePath(WorkerPackageFile);
+        Assert.True(File.Exists(packagePath), $"Не найден repository-owned Win32 worker package: {packagePath}");
+
+        using var archive = ZipFile.OpenRead(packagePath);
+        var nuspecEntry = Assert.Single(archive.Entries, entry =>
+            entry.FullName.EndsWith(".nuspec", StringComparison.OrdinalIgnoreCase));
+        using var nuspecStream = nuspecEntry.Open();
+        var nuspec = XDocument.Load(nuspecStream);
+        var metadata = Assert.Single(nuspec.Descendants(), element => element.Name.LocalName == "metadata");
+        var id = Assert.Single(metadata.Elements(), element => element.Name.LocalName == "id");
+        var version = Assert.Single(metadata.Elements(), element => element.Name.LocalName == "version");
+
+        Assert.Equal(WorkerPackageId, id.Value);
+        Assert.Equal(WorkerPackageVersion, version.Value);
+        Assert.Single(archive.Entries, entry =>
+            string.Equals(entry.FullName, "contentFiles/NAPS2.Worker.exe", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SourceAlignedWin32Worker_HasMonotonicFileVersion()
+    {
+        using var archive = ZipFile.OpenRead(GetPackagePath(WorkerPackageFile));
+        var workerEntry = Assert.Single(archive.Entries, entry =>
+            string.Equals(entry.FullName, "contentFiles/NAPS2.Worker.exe", StringComparison.Ordinal));
+
+        var temporaryPath = Path.Combine(Path.GetTempPath(), $"webassistant-naps2-worker-{Guid.NewGuid():N}.exe");
+        try
+        {
+            workerEntry.ExtractToFile(temporaryPath);
+            var fileVersion = FileVersionInfo.GetVersionInfo(temporaryPath).FileVersion;
+            Assert.Equal("8.3.0.1", fileVersion);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
+    }
+
+    [Fact]
+    public void ProductReference_UsesRepositoryOwnedSourceAlignedWorker()
+    {
+        var root = FindRepositoryRoot();
+        var projectPath = Path.Combine(root, "webassist", "src", "WebAssistant", "WebAssistant.csproj");
+        var project = XDocument.Load(projectPath);
+        var packageReferences = project
+            .Descendants()
+            .Where(element => element.Name.LocalName == "PackageReference")
+            .ToList();
+
+        var workerReference = Assert.Single(packageReferences, reference =>
+            string.Equals(reference.Attribute("Include")?.Value, WorkerPackageId, StringComparison.Ordinal));
+
+        Assert.Equal(WorkerPackageVersion, workerReference.Attribute("Version")?.Value);
+        Assert.DoesNotContain(packageReferences, reference =>
+            string.Equals(reference.Attribute("Include")?.Value, "NAPS2.Sdk.Worker.Win32", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RebuildRecipe_ProducesSourceAlignedWin32WorkerFromSamePinnedTree()
+    {
+        var root = FindRepositoryRoot();
+        var rebuildPath = Path.Combine(root, "webassist", "vendor", "naps2", "rebuild-fixed-sdk.sh");
+        var rebuild = File.ReadAllText(rebuildPath);
+        var provenancePath = Path.Combine(root, "webassist", "vendor", "naps2", "README.md");
+        var provenance = File.ReadAllText(provenancePath);
+
+        Assert.Contains(WorkerPackageVersion, rebuild, StringComparison.Ordinal);
+        Assert.Contains("NAPS2.Sdk.Worker.Build/NAPS2.Sdk.Worker.Build.csproj", rebuild, StringComparison.Ordinal);
+        Assert.Contains("NAPS2.Sdk.Worker.Win32/NAPS2.Sdk.Worker.Win32.csproj", rebuild, StringComparison.Ordinal);
+        Assert.Contains("8.3.0.1</FileVersion>", rebuild, StringComparison.Ordinal);
+
+        Assert.Contains(WorkerPackageId, provenance, StringComparison.Ordinal);
+        Assert.Contains(WorkerPackageVersion, provenance, StringComparison.Ordinal);
+        Assert.Contains(WorkerPackageFile, provenance, StringComparison.Ordinal);
+        Assert.Contains(UpstreamCommit, provenance, StringComparison.Ordinal);
+        Assert.Contains("source-aligned", provenance, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
