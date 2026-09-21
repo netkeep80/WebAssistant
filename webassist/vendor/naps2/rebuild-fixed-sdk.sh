@@ -6,6 +6,9 @@ UPSTREAM_COMMIT="450cba65aaffe6387041050a573051a64cd80fe9"
 PACKAGE_ID="WebAssistant.NAPS2.Sdk"
 PACKAGE_VERSION="1.3.0-webassistant.4.450cba65"
 PACKAGE_FILE="$PACKAGE_ID.$PACKAGE_VERSION.nupkg"
+WORKER_PACKAGE_ID="WebAssistant.NAPS2.Sdk.Worker.Win32"
+WORKER_PACKAGE_VERSION="1.3.0-webassistant.1.450cba65"
+WORKER_PACKAGE_FILE="$WORKER_PACKAGE_ID.$WORKER_PACKAGE_VERSION.nupkg"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 product_root="$(cd -- "$script_dir/../.." && pwd)"
@@ -53,7 +56,18 @@ replace_exact(
     "        <PackageId Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
     "WebAssistant.NAPS2.Sdk</PackageId>\n"
     "        <PackageVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
-    "1.3.0-webassistant.4.450cba65</PackageVersion>",
+    "1.3.0-webassistant.4.450cba65</PackageVersion>\n"
+    "        <PackageId Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Win32'\">"
+    "WebAssistant.NAPS2.Sdk.Worker.Win32</PackageId>\n"
+    "        <PackageVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Win32'\">"
+    "1.3.0-webassistant.1.450cba65</PackageVersion>",
+)
+
+worker_package_project = root / "NAPS2.Sdk.Worker.Win32/NAPS2.Sdk.Worker.Win32.csproj"
+replace_exact(
+    worker_package_project,
+    'PackagePath="build/NAPS2.Sdk.Worker.Win32.targets"',
+    'PackagePath="build/WebAssistant.NAPS2.Sdk.Worker.Win32.targets"',
 )
 
 version_targets = root / "NAPS2.Setup/targets/VersionTargets.targets"
@@ -62,7 +76,9 @@ replace_exact(
     "        <VersionName>8.3.0</VersionName>",
     "        <VersionName>8.3.0</VersionName>\n"
     "        <AssemblyVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.0</AssemblyVersion>\n"
-    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.4</FileVersion>",
+    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.4</FileVersion>\n"
+    "        <AssemblyVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Build'\">8.3.0.0</AssemblyVersion>\n"
+    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Build'\">8.3.0.1</FileVersion>",
 )
 
 paper_source_caps = root / "NAPS2.Sdk/Scan/PaperSourceCaps.cs"
@@ -224,9 +240,12 @@ PY
 
 project="$work_dir/NAPS2.Sdk/NAPS2.Sdk.csproj"
 package_path="$output_dir/$PACKAGE_FILE"
+worker_project="$work_dir/NAPS2.Sdk.Worker.Build/NAPS2.Sdk.Worker.Build.csproj"
+worker_package_project="$work_dir/NAPS2.Sdk.Worker.Win32/NAPS2.Sdk.Worker.Win32.csproj"
+worker_package_path="$output_dir/$WORKER_PACKAGE_FILE"
 path_map="$work_dir=/src/naps2"
 mkdir -p -- "$output_dir"
-rm -f -- "$package_path"
+rm -f -- "$package_path" "$worker_package_path"
 
 dotnet build "$project" \
     --configuration Release \
@@ -246,6 +265,34 @@ dotnet pack "$project" \
 
 [[ -f "$package_path" ]] || {
     echo "Expected package was not produced: $package_path" >&2
+    exit 1
+}
+
+dotnet publish "$worker_project" \
+    --configuration Release \
+    --property:PathMap="$path_map" \
+    --property:ContinuousIntegrationBuild=true \
+    --property:Deterministic=true \
+    --property:DebugType=None \
+    --property:DebugSymbols=false \
+    --property:GeneratePackageOnBuild=false
+
+worker_exe="$work_dir/NAPS2.Sdk.Worker.Build/bin/Release/net10.0/win-x86/publish/NAPS2.Worker.exe"
+[[ -f "$worker_exe" ]] || {
+    echo "Expected source-aligned worker was not produced: $worker_exe" >&2
+    exit 1
+}
+
+dotnet pack "$worker_package_project" \
+    --configuration Release \
+    --property:TargetFrameworks=net10.0 \
+    --property:GeneratePackageOnBuild=false \
+    --property:DebugType=None \
+    --property:DebugSymbols=false \
+    --property:PackageOutputPath="$output_dir"
+
+[[ -f "$worker_package_path" ]] || {
+    echo "Expected worker package was not produced: $worker_package_path" >&2
     exit 1
 }
 
@@ -301,4 +348,57 @@ finally:
     temporary.unlink(missing_ok=True)
 PY
 
-echo "Rebuilt: $package_path"
+python3 - "$worker_package_path" <<'PY'
+import hashlib
+import os
+import pathlib
+import sys
+import zipfile
+
+package = pathlib.Path(sys.argv[1])
+temporary = package.with_name(package.name + ".canonical.tmp")
+fixed_timestamp = (1980, 1, 1, 0, 0, 0)
+
+with zipfile.ZipFile(package, "r") as source:
+    entries = [(entry.filename, entry.is_dir(), source.read(entry)) for entry in source.infolist()]
+
+names = [name for name, _, _ in entries]
+if len(names) != len(set(names)):
+    raise SystemExit("refusing to canonicalize package with duplicate ZIP entry names")
+
+for name, is_directory, data in sorted(entries, key=lambda item: item[0]):
+    kind = "dir" if is_directory else "file"
+    digest = hashlib.sha256(data).hexdigest()
+    print(f"ENTRY_SHA256 {digest} {len(data)} {kind} {name}")
+
+try:
+    with zipfile.ZipFile(
+        temporary,
+        "w",
+        compression=zipfile.ZIP_STORED,
+        allowZip64=False,
+    ) as target:
+        target.comment = b""
+        for name, is_directory, data in sorted(entries, key=lambda item: item[0]):
+            info = zipfile.ZipInfo(name, date_time=fixed_timestamp)
+            info.compress_type = zipfile.ZIP_STORED
+            info.create_system = 3
+            info.create_version = 20
+            info.extract_version = 20
+            info.internal_attr = 0
+            info.external_attr = (
+                ((0o40755 << 16) | 0x10)
+                if is_directory
+                else (0o100644 << 16)
+            )
+            info.extra = b""
+            info.comment = b""
+            target.writestr(info, data)
+
+    os.replace(temporary, package)
+finally:
+    temporary.unlink(missing_ok=True)
+PY
+
+echo "Rebuilt SDK: $package_path"
+echo "Rebuilt Win32 worker: $worker_package_path"
