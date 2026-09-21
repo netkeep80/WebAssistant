@@ -64,7 +64,8 @@
             <a id="pdf-download" download="scan.pdf">Сохранить PDF</a>
             <a id="pdf-open" target="_blank" rel="noopener">Открыть PDF</a>
           </div>
-          <object id="pdf-preview" type="application/pdf"></object>
+          <p id="pdf-preview-status" class="muted" hidden>Встроенный просмотр PDF недоступен в этом браузере. Используйте «Открыть PDF» или «Сохранить PDF».</p>
+          <object id="pdf-preview" type="application/pdf" hidden></object>
         </div>
       </section>
 
@@ -101,6 +102,7 @@
     const logOutput=document.getElementById("log-output");
     const pdfResult=document.getElementById("pdf-result");
     const pdfPreview=document.getElementById("pdf-preview");
+    const pdfPreviewStatus=document.getElementById("pdf-preview-status");
     const pdfDownload=document.getElementById("pdf-download");
     const pdfOpen=document.getElementById("pdf-open");
 
@@ -113,8 +115,8 @@
 
     function today(){const now=new Date(),local=new Date(now.getTime()-now.getTimezoneOffset()*60000);return local.toISOString().slice(0,10)}
     function releasePdfUrl(){if(pdfObjectUrl){URL.revokeObjectURL(pdfObjectUrl);pdfObjectUrl=null}}
-    function clearScanResult(){releasePdfUrl();pdfPreview.removeAttribute("data");pdfDownload.removeAttribute("href");pdfOpen.removeAttribute("href");pdfResult.hidden=true;scanStatus.textContent=""}
-    function showPdf(pdf){releasePdfUrl();pdfObjectUrl=URL.createObjectURL(pdf);pdfPreview.data=pdfObjectUrl;pdfDownload.href=pdfObjectUrl;pdfOpen.href=pdfObjectUrl;pdfResult.hidden=false}
+    function clearScanResult(){releasePdfUrl();pdfPreview.removeAttribute("data");pdfPreview.hidden=true;pdfPreviewStatus.hidden=true;pdfDownload.removeAttribute("href");pdfOpen.removeAttribute("href");pdfResult.hidden=true;scanStatus.textContent=""}
+    function showPdf(pdf){releasePdfUrl();pdfObjectUrl=URL.createObjectURL(pdf);pdfDownload.href=pdfObjectUrl;pdfOpen.href=pdfObjectUrl;const canPreview=navigator.pdfViewerEnabled===true;if(canPreview){pdfPreview.data=pdfObjectUrl;pdfPreview.hidden=false;pdfPreviewStatus.hidden=true}else{pdfPreview.removeAttribute("data");pdfPreview.hidden=true;pdfPreviewStatus.hidden=false}pdfResult.hidden=false}
     async function errorText(response){try{const problem=await response.clone().json();return problem.detail||problem.title||`HTTP ${response.status}`}catch{return `HTTP ${response.status}`}}
     function settingControlId(fieldName){return `scanner-${fieldName.replace(/[A-Z]/g,letter=>`-${letter.toLowerCase()}`)}`}
     function selectedMode(){return scannerProjection?.modes?.find(mode=>mode.mode===scannerMode.value)??null}
@@ -279,8 +281,9 @@
         });
         if(requestGeneration!==scanGeneration)return;
         if(!response.ok)throw new Error(await errorText(response));
-        const pdf=await response.blob();
+        const pdfBytes=await response.arrayBuffer();
         if(requestGeneration!==scanGeneration)return;
+        const pdf=new Blob([pdfBytes],{type:"application/pdf"});
         showPdf(pdf);
         scanStatus.textContent=`PDF получен: ${pdf.size} байт.`;
       }catch(error){
