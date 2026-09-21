@@ -111,6 +111,60 @@ jobs:
           set -euo pipefail
           ci/change-plan.sh --base "$BASE_SHA" --head "$HEAD_SHA" | tee -a "$GITHUB_OUTPUT"
 
+  source-aligned-worker-bootstrap:
+    name: Source-aligned Win32 worker bootstrap
+    needs: requirements
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.requirements.outputs.head_sha }}
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Rebuild worker package twice reproducibly
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd webassist
+
+          sdk='vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.4.450cba65.nupkg'
+          sdk_sha='34bf8c94b851dcabad12f6cb50abc504a14010b44b3d6db592efec6ad310e0fc'
+          worker='vendor/nuget/WebAssistant.NAPS2.Sdk.Worker.Win32.1.3.0-webassistant.1.450cba65.nupkg'
+          first="$RUNNER_TEMP/WebAssistant.NAPS2.Sdk.Worker.Win32.first.nupkg"
+
+          ./vendor/naps2/rebuild-fixed-sdk.sh
+          test "$(sha256sum "$sdk" | awk '{print $1}')" = "$sdk_sha"
+          first_sha="$(sha256sum "$worker" | awk '{print $1}')"
+          first_size="$(stat -c '%s' "$worker")"
+          cp -- "$worker" "$first"
+
+          ./vendor/naps2/rebuild-fixed-sdk.sh
+          test "$(sha256sum "$sdk" | awk '{print $1}')" = "$sdk_sha"
+          second_sha="$(sha256sum "$worker" | awk '{print $1}')"
+          second_size="$(stat -c '%s' "$worker")"
+
+          echo "worker_package_sha256=$second_sha"
+          echo "worker_package_size=$second_size"
+          test "$first_sha" = "$second_sha"
+          test "$first_size" = "$second_size"
+          cmp --silent "$first" "$worker"
+          unzip -l "$worker" | grep -F 'contentFiles/NAPS2.Worker.exe'
+
+      - name: Upload source-aligned worker package
+        uses: actions/upload-artifact@v4
+        with:
+          name: webassistant-naps2-worker-${{ needs.requirements.outputs.head_sha }}
+          path: webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.Worker.Win32.1.3.0-webassistant.1.450cba65.nupkg
+          if-no-files-found: error
+          retention-days: 1
+
   core:
     name: core
     needs: requirements
