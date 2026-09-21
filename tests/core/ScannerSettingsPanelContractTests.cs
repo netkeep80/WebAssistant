@@ -153,6 +153,81 @@ public sealed class ScannerSettingsPanelContractTests
     }
 
     [Fact]
+    public async Task Browser_DoesNotEmbedPdfWhenInlineViewerIsUnavailable()
+    {
+        await RunPanelScenarioAsync(async (page, baseUrl) =>
+        {
+            await page.AddInitScriptAsync("""
+                Object.defineProperty(Navigator.prototype, "pdfViewerEnabled", {
+                  configurable: true,
+                  get: () => false
+                });
+                """);
+
+            await page.RouteAsync("**/v1/**", async route =>
+            {
+                var path = new Uri(route.Request.Url).AbsolutePath;
+                switch (path)
+                {
+                    case "/v1/diag/info":
+                        await FulfillJsonAsync(route, """
+                            {"version":"test","os":"test","listenUrl":"http://127.0.0.1","apiVersion":"v1","scanState":"idle"}
+                            """);
+                        return;
+                    case "/v1/scanner-settings/schema":
+                        await FulfillJsonAsync(route, """
+                            {"fields":{"dpi":{"title":"DPI","type":"integer"}}}
+                            """);
+                        return;
+                    case "/v1/scanners":
+                        await FulfillJsonAsync(route, """
+                            {"scanners":[{"scannerId":"scanner-a","name":"Scanner A","backend":"wia"}],"warnings":[]}
+                            """);
+                        return;
+                    case "/v1/scanners/scanner-a/settings":
+                        await FulfillJsonAsync(route, Projection("scanner-a", "flatbed", "flatbed"));
+                        return;
+                    case "/v1/scan":
+                        await route.FulfillAsync(new RouteFulfillOptions
+                        {
+                            Status = 200,
+                            ContentType = "application/pdf",
+                            Body = "%PDF-1.7\n%%EOF"
+                        });
+                        return;
+                    default:
+                        await route.AbortAsync();
+                        return;
+                }
+            });
+
+            await page.GotoAsync(baseUrl + "/");
+            await page.WaitForFunctionAsync("!document.getElementById('scanner-select').disabled");
+
+            await page.SelectOptionAsync("#scanner-select", "scanner-a");
+            await page.WaitForFunctionAsync("!document.getElementById('scan-button').disabled");
+            await page.ClickAsync("#scan-button");
+            await page.Locator("#pdf-result").WaitForAsync(new() { State = WaitForSelectorState.Visible });
+
+            Assert.StartsWith(
+                "blob:",
+                await page.Locator("#pdf-download").GetAttributeAsync("href") ?? string.Empty,
+                StringComparison.Ordinal);
+            Assert.StartsWith(
+                "blob:",
+                await page.Locator("#pdf-open").GetAttributeAsync("href") ?? string.Empty,
+                StringComparison.Ordinal);
+            Assert.True(await page.Locator("#pdf-preview").IsHiddenAsync());
+            Assert.True(string.IsNullOrEmpty(
+                await page.Locator("#pdf-preview").GetAttributeAsync("data")));
+            Assert.Contains(
+                "Встроенный просмотр PDF недоступен",
+                await page.Locator("#pdf-preview-status").InnerTextAsync(),
+                StringComparison.Ordinal);
+        });
+    }
+
+    [Fact]
     public async Task Browser_IgnoresLateCapabilitiesResponseForPreviouslySelectedScanner()
     {
         await RunPanelScenarioAsync(async (page, baseUrl) =>
