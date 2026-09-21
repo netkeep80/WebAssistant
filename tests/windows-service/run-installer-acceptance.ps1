@@ -18,7 +18,9 @@ param(
 $ErrorActionPreference = "Stop"
 $serviceName = "WebAssistant"
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $scriptDirectory "../.."))
 $serviceAcceptance = Join-Path $scriptDirectory "run-service-acceptance.ps1"
+$runtimeIntegrity = Join-Path $scriptDirectory "naps2-runtime-integrity.ps1"
 
 function Get-WebAssistantBundleEntries {
     $registryPaths = @(
@@ -81,11 +83,14 @@ function Invoke-ExactBundle {
     }
 }
 
-foreach ($requiredPath in @($ArtifactPath, $Sha256Path, $ProvenancePath, $serviceAcceptance)) {
+foreach ($requiredPath in @($ArtifactPath, $Sha256Path, $ProvenancePath, $serviceAcceptance, $runtimeIntegrity)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "Отсутствует обязательный Windows installer evidence/input: $requiredPath"
     }
 }
+
+. $runtimeIntegrity
+$candidateSdk = Get-CandidateNaps2SdkEvidence -RepositoryRoot $repositoryRoot
 
 $artifactPathFull = [IO.Path]::GetFullPath($ArtifactPath)
 $sha256PathFull = [IO.Path]::GetFullPath($Sha256Path)
@@ -197,6 +202,11 @@ try {
         -Arguments @('/quiet', '/norestart') `
         -Operation "install"
     $installed = $true
+
+    Assert-InstalledNaps2SdkMatchesCandidate `
+        -InstallDirectory $installDirectoryFull `
+        -ExpectedSha256 $candidateSdk.Sha256 `
+        -Stage 'clean install'
 
     $installedConfig = Join-Path $installDirectoryFull "appsettings.json"
     if (-not (Test-Path -LiteralPath $installedConfig -PathType Leaf)) {
