@@ -33,3 +33,26 @@ WebAssistant хранит принадлежащий репозиторию па
 Сценарий пересборки получает точный commit upstream, применяет изменения исходников с закрытием при несовпадении ожидаемой структуры, выполняет только сборку проекта `net10.0` с отключённым созданием пакета, а затем запускает `dotnet pack --no-build`. Сборка и упаковка используют стабильное отображение путей компилятора и исключают отладочные пути, чтобы случайные временные каталоги checkout не меняли сборку SDK.
 
 После `dotnet pack` сценарий канонически переписывает `.nupkg`: записи сортируются, временные метки и атрибуты ZIP фиксируются, дополнительные поля и комментарии удаляются, для записей используется `ZIP_STORED`. Полученный пакет воспроизводится байт-в-байт при повторных сборках из тех же точных входных данных. Канонический пакет `.4` имеет размер 986644 байта и SHA-256 `34bf8c94b851dcabad12f6cb50abc504a14010b44b3d6db592efec6ad310e0fc`.
+
+## Source-aligned Win32 worker
+
+Для 32-битного TWAIN worker WebAssistant больше не использует stock-пакет `NAPS2.Sdk.Worker.Win32 1.3.0`. Repository-owned worker собирается из **того же exact checkout и той же patched source tree**, что и текущий `WebAssistant.NAPS2.Sdk`.
+
+Текущий пакет worker:
+
+- идентификатор: `WebAssistant.NAPS2.Sdk.Worker.Win32`;
+- версия: `1.3.0-webassistant.1.450cba65`;
+- файл: `../nuget/WebAssistant.NAPS2.Sdk.Worker.Win32.1.3.0-webassistant.1.450cba65.nupkg`;
+- SHA-256: `18993608e478661100df88f2ea80fcd87c88719d05b0b8f6230da18b582ed691`;
+- исходный commit: `450cba65aaffe6387041050a573051a64cd80fe9`;
+- источник executable: `NAPS2.Sdk.Worker.Build/NAPS2.Sdk.Worker.Build.csproj`;
+- package wrapper: `NAPS2.Sdk.Worker.Win32/NAPS2.Sdk.Worker.Win32.csproj`;
+- публикуемый файл: `contentFiles/NAPS2.Worker.exe`;
+- `FileVersion=8.3.0.1`.
+
+Сначала к одному pinned checkout применяются изменения WebAssistant для SDK/TWAIN и жизненного цикла worker, затем из этой же source tree собираются и SDK, и x86 worker. Поэтому код `LocalTwainController` внутри `NAPS2.Worker.exe` source-aligned с repository-owned SDK, а не взят из отдельного stock NuGet build.
+
+Имя файла targets внутри NuGet также принадлежит repository-owned package: `build/WebAssistant.NAPS2.Sdk.Worker.Win32.targets`. Это сохраняет автоматический NuGet import после изменения PackageId.
+
+Это изменение устраняет source/runtime skew. Оно само по себе не считается доказательством исправления физического Canon TWAIN crash `0xc0000005`; для него остаётся отдельный физический DSM/capability acceptance.
+
