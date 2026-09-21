@@ -45,6 +45,17 @@ def replace_exact(path: pathlib.Path, expected: str, replacement: str) -> None:
     path.write_text(text.replace(expected, replacement), encoding="utf-8")
 
 
+version_targets = root / "NAPS2.Setup/targets/VersionTargets.targets"
+replace_exact(
+    version_targets,
+    "        <Version>8.3.0</Version>\n"
+    "        <VersionName>8.3.0</VersionName>",
+    "        <Version>8.3.0</Version>\n"
+    "        <VersionName>8.3.0</VersionName>\n"
+    "        <AssemblyVersion>8.3.0.0</AssemblyVersion>\n"
+    "        <FileVersion>8.3.0.4</FileVersion>",
+)
+
 targets = root / "NAPS2.Setup/targets/SdkPackageTargets.targets"
 replace_exact(
     targets,
