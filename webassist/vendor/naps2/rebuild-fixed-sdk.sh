@@ -63,6 +63,13 @@ replace_exact(
     "1.3.0-webassistant.1.450cba65</PackageVersion>",
 )
 
+worker_package_project = root / "NAPS2.Sdk.Worker.Win32/NAPS2.Sdk.Worker.Win32.csproj"
+replace_exact(
+    worker_package_project,
+    'PackagePath="build/NAPS2.Sdk.Worker.Win32.targets"',
+    'PackagePath="build/WebAssistant.NAPS2.Sdk.Worker.Win32.targets"',
+)
+
 version_targets = root / "NAPS2.Setup/targets/VersionTargets.targets"
 replace_exact(
     version_targets,
@@ -264,6 +271,8 @@ dotnet pack "$project" \
 dotnet publish "$worker_project" \
     --configuration Release \
     --property:PathMap="$path_map" \
+    --property:ContinuousIntegrationBuild=true \
+    --property:Deterministic=true \
     --property:DebugType=None \
     --property:DebugSymbols=false \
     --property:GeneratePackageOnBuild=false
