@@ -121,6 +121,9 @@ jobs:
 
   scanner-smoke:
     name: scanner smoke
+    permissions:
+      contents: write
+      actions: read
     needs: requirements
     if: ${{ needs.requirements.outputs.smoke_linux == 'true' || needs.requirements.outputs.smoke_windows == 'true' }}
     uses: ./.github/workflows/virtual-scanner.yml
