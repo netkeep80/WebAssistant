@@ -223,6 +223,27 @@ public sealed class WindowsScanAdapterTests
 
     [Fact]
     [Trait("Category", "WindowsVirtualScanner")]
+    public void SourceAlignedWin32Worker_HasRepositoryOwnedFileVersion()
+    {
+        if (!OperatingSystem.IsWindows() ||
+            Environment.GetEnvironmentVariable("WEBASSISTANT_WINDOWS_VIRTUAL") != "1")
+        {
+            return;
+        }
+
+        var candidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "NAPS2.Worker.exe"),
+            Path.Combine(AppContext.BaseDirectory, "lib", "NAPS2.Worker.exe")
+        };
+        var workerPath = Assert.Single(candidates.Where(File.Exists));
+        var fileVersion = FileVersionInfo.GetVersionInfo(workerPath).FileVersion;
+
+        Assert.Equal("8.3.0.1", fileVersion);
+    }
+
+    [Fact]
+    [Trait("Category", "WindowsVirtualScanner")]
     public void ProductionCompositionRoot_ResolvesWindowsAdapter()
     {
         if (!OperatingSystem.IsWindows() ||
