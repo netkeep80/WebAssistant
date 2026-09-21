@@ -70,7 +70,7 @@ function Assert-InstalledNaps2SdkMatchesCandidate {
 
     $installedSdk = Join-Path $InstallDirectory "NAPS2.Sdk.dll"
     if (-not (Test-Path -LiteralPath $installedSdk -PathType Leaf)) {
-        throw "Installed NAPS2.Sdk.dll отсутствует после $Stage: $installedSdk"
+        throw "Installed NAPS2.Sdk.dll отсутствует после ${Stage}: $installedSdk"
     }
 
     $actualSha256 = (Get-FileHash -LiteralPath $installedSdk -Algorithm SHA256).Hash.ToLowerInvariant()
