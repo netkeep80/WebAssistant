@@ -236,7 +236,7 @@ public sealed class WindowsScanAdapterTests
             Path.Combine(AppContext.BaseDirectory, "NAPS2.Worker.exe"),
             Path.Combine(AppContext.BaseDirectory, "lib", "NAPS2.Worker.exe")
         };
-        var workerPath = Assert.Single(candidates.Where(File.Exists));
+        var workerPath = Assert.Single(candidates, File.Exists);
         var fileVersion = FileVersionInfo.GetVersionInfo(workerPath).FileVersion;
 
         Assert.Equal("8.3.0.1", fileVersion);
