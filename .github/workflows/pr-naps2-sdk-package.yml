@@ -1,0 +1,39 @@
+name: pr-naps2-sdk-package
+
+on:
+  pull_request:
+    paths:
+      - "webassist/vendor/naps2/rebuild-fixed-sdk.sh"
+      - ".github/workflows/pr-naps2-sdk-package.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Rebuild repository-owned NAPS2 SDK
+        shell: bash
+        run: |
+          chmod +x webassist/vendor/naps2/rebuild-fixed-sdk.sh
+          cd webassist
+          ./vendor/naps2/rebuild-fixed-sdk.sh
+          sha256sum vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.4.450cba65.nupkg
+
+      - name: Upload exact package
+        uses: actions/upload-artifact@v4
+        with:
+          name: webassistant-naps2-sdk-4-${{ github.event.pull_request.head.sha }}
+          path: webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.4.450cba65.nupkg
+          if-no-files-found: error
