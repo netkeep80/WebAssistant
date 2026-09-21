@@ -202,6 +202,23 @@ public sealed class InstallerArtifactContractTests
     }
 
     [Fact]
+    public void WindowsInstallerAcceptance_RequiresNaps2SdkByteIdentityAcrossLifecycle()
+    {
+        var cleanInstall = ReadRequired("tests/windows-service/run-installer-acceptance.ps1");
+        var upgrade = ReadRequired("tests/windows-service/run-upgrade-acceptance.ps1");
+        var helper = ReadRequired("tests/windows-service/naps2-runtime-integrity.ps1");
+
+        Assert.Contains("WebAssistant.NAPS2.Sdk", helper, StringComparison.Ordinal);
+        Assert.Contains("lib/net10.0/NAPS2.Sdk.dll", helper, StringComparison.Ordinal);
+        Assert.Contains("Get-FileHash", helper, StringComparison.Ordinal);
+        Assert.Contains("Assert-InstalledNaps2SdkMatchesCandidate", cleanInstall, StringComparison.Ordinal);
+        Assert.Contains("Stage 'clean install'", cleanInstall, StringComparison.Ordinal);
+        Assert.Contains("Assert-InstalledNaps2SdkMatchesCandidate", upgrade, StringComparison.Ordinal);
+        Assert.Contains("Stage 'historical in-place upgrade'", upgrade, StringComparison.Ordinal);
+        Assert.Contains("Stage 'same-version repair'", upgrade, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void InstallerAcceptanceConsumers_NeverRebuildOrRewriteAcceptedPayload()
     {
         AssertImmutableConsumer(

@@ -26,6 +26,15 @@ param(
 
 $ErrorActionPreference = "Stop"
 $serviceName = "WebAssistant"
+$scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $scriptDirectory "../.."))
+$runtimeIntegrity = Join-Path $scriptDirectory "naps2-runtime-integrity.ps1"
+if (-not (Test-Path -LiteralPath $runtimeIntegrity -PathType Leaf)) {
+    throw "Отсутствует NAPS2 runtime integrity helper: $runtimeIntegrity"
+}
+. $runtimeIntegrity
+$candidateSdk = Get-CandidateNaps2SdkEvidence -RepositoryRoot $repositoryRoot
+
 $historicalVersion = "0.3.21"
 $historicalSourceSha = "77a5c66c431c746d2be2f283640c7951730911eb"
 $historicalArtifactName = "WebAssistant-win-x64-0.3.21.exe"
@@ -355,6 +364,49 @@ function Write-ConfigMsiLogEvidence {
     }
 }
 
+function Write-Naps2MsiLogEvidence {
+    param([Parameter(Mandatory = $true)][string]$PrimaryLog)
+
+    $directory = Split-Path -Parent $PrimaryLog
+    $stem = [IO.Path]::GetFileNameWithoutExtension($PrimaryLog)
+    foreach ($log in @(Get-ChildItem -LiteralPath $directory -Filter "$stem*.log" -File -ErrorAction SilentlyContinue)) {
+        $matches = @(Select-String `
+            -LiteralPath $log.FullName `
+            -Pattern 'NAPS2\.Sdk\.dll|NAPS2_Sdk|ComponentRegister.*NAPS2\.Sdk\.dll' `
+            -CaseSensitive:$false `
+            -ErrorAction SilentlyContinue | Select-Object -First 40)
+        if ($matches.Count -gt 0) {
+            Write-Host "naps2_msi_log=$($log.Name)"
+            foreach ($match in $matches) {
+                Write-Host "naps2_msi_evidence=$($match.LineNumber):$($match.Line.Trim())"
+            }
+        }
+    }
+}
+
+function Write-BundleFailureEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$PrimaryLog,
+        [Parameter(Mandatory = $true)][string]$Stage
+    )
+
+    $directory = Split-Path -Parent $PrimaryLog
+    $prefix = [IO.Path]::GetFileNameWithoutExtension($PrimaryLog)
+    $logs = @(Get-ChildItem -LiteralPath $directory -Filter "$prefix*.log" -File -ErrorAction SilentlyContinue)
+
+    foreach ($log in $logs) {
+        Write-Host "bundle_failure_log stage=$Stage file=$($log.Name)"
+        $matches = @(Select-String `
+            -LiteralPath $log.FullName `
+            -Pattern 'error|failed|0x8[0-9A-Fa-f]{7}|FilesInUse|MsiRMFilesInUse|Apply complete|execute package|NAPS2\.Sdk\.dll' `
+            -CaseSensitive:$false `
+            -ErrorAction SilentlyContinue | Select-Object -Last 120)
+        foreach ($match in $matches) {
+            Write-Host "bundle_failure_evidence=$($match.LineNumber):$($match.Line.Trim())"
+        }
+    }
+}
+
 function Assert-InstalledConfigPreserved {
     param(
         [Parameter(Mandatory = $true)][string]$ExpectedSha256,
@@ -515,6 +567,14 @@ try {
     }
     Write-Host "historical_service_pid=$oldServicePid owned_worker_pids=$(@($ownedWorkers | ForEach-Object { [int]$_.ProcessId }) -join ',')"
 
+    $historicalSdkPath = Join-Path $installDirectoryFull 'NAPS2.Sdk.dll'
+    if (-not (Test-Path -LiteralPath $historicalSdkPath -PathType Leaf)) {
+        throw "Historical NAPS2.Sdk.dll is missing before upgrade."
+    }
+    $historicalSdkSha256 = (Get-FileHash -LiteralPath $historicalSdkPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $historicalSdkFileVersion = (Get-Item -LiteralPath $historicalSdkPath).VersionInfo.FileVersion
+    Write-Host "historical_naps2_runtime sha256=$historicalSdkSha256 fileVersion=$historicalSdkFileVersion"
+
     if (Test-Path -LiteralPath $burnLog) {
         Remove-Item -LiteralPath $burnLog -Force
     }
@@ -538,6 +598,16 @@ try {
         Assert-ProcessIdentityGone -Identity $capturedIdentity -Description 'Historical runtime process'
     }
     Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
+    try {
+        Assert-InstalledNaps2SdkMatchesCandidate `
+            -InstallDirectory $installDirectoryFull `
+            -ExpectedSha256 $candidateSdk.Sha256 `
+            -Stage 'historical in-place upgrade'
+    }
+    catch {
+        Write-Naps2MsiLogEvidence -PrimaryLog $burnLog
+        throw
+    }
     Assert-ProgramDataSentinels
     Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'upgrade'
 
@@ -582,12 +652,21 @@ try {
     if (Test-Path -LiteralPath $repairLog) {
         Remove-Item -LiteralPath $repairLog -Force
     }
-    Invoke-Bundle `
+    $repairExitCode = Invoke-Bundle `
         -Executable $candidate.Path `
         -Arguments @('/repair', '/quiet', '/norestart', '/log', $repairLog) `
-        -Operation "same-version repair $($candidate.Version)" | Out-Null
+        -Operation "same-version repair $($candidate.Version)" `
+        -AllowFailure
+    if ($repairExitCode -ne 0) {
+        Write-BundleFailureEvidence -PrimaryLog $repairLog -Stage 'same-version repair'
+        throw "WebAssistant bundle same-version repair $($candidate.Version) failed with exit code $repairExitCode."
+    }
     Assert-NoFilesInUseEvidence -PrimaryLog $repairLog
     Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
+    Assert-InstalledNaps2SdkMatchesCandidate `
+        -InstallDirectory $installDirectoryFull `
+        -ExpectedSha256 $candidateSdk.Sha256 `
+        -Stage 'same-version repair'
     Invoke-Scanners -ExpectedPort $Port | Out-Null
     Assert-ProgramDataSentinels
     Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'same-version repair'

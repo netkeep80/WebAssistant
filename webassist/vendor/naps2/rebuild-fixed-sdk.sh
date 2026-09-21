@@ -4,7 +4,7 @@ set -euo pipefail
 UPSTREAM_REPOSITORY="https://github.com/cyanfish/naps2.git"
 UPSTREAM_COMMIT="450cba65aaffe6387041050a573051a64cd80fe9"
 PACKAGE_ID="WebAssistant.NAPS2.Sdk"
-PACKAGE_VERSION="1.3.0-webassistant.3.450cba65"
+PACKAGE_VERSION="1.3.0-webassistant.4.450cba65"
 PACKAGE_FILE="$PACKAGE_ID.$PACKAGE_VERSION.nupkg"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,7 +53,16 @@ replace_exact(
     "        <PackageId Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
     "WebAssistant.NAPS2.Sdk</PackageId>\n"
     "        <PackageVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
-    "1.3.0-webassistant.3.450cba65</PackageVersion>",
+    "1.3.0-webassistant.4.450cba65</PackageVersion>",
+)
+
+version_targets = root / "NAPS2.Setup/targets/VersionTargets.targets"
+replace_exact(
+    version_targets,
+    "        <VersionName>8.3.0</VersionName>",
+    "        <VersionName>8.3.0</VersionName>\n"
+    "        <AssemblyVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.0</AssemblyVersion>\n"
+    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.4</FileVersion>",
 )
 
 paper_source_caps = root / "NAPS2.Sdk/Scan/PaperSourceCaps.cs"
