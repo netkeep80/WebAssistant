@@ -372,9 +372,9 @@ function Write-Naps2MsiLogEvidence {
     foreach ($log in @(Get-ChildItem -LiteralPath $directory -Filter "$stem*.log" -File -ErrorAction SilentlyContinue)) {
         $matches = @(Select-String `
             -LiteralPath $log.FullName `
-            -Pattern 'NAPS2\.Sdk|NAPS2_Sdk|equal version|Won.t Overwrite|InstallFiles|File:' `
+            -Pattern 'NAPS2\.Sdk\.dll|NAPS2_Sdk|ComponentRegister.*NAPS2\.Sdk\.dll' `
             -CaseSensitive:$false `
-            -ErrorAction SilentlyContinue | Select-Object -First 160)
+            -ErrorAction SilentlyContinue | Select-Object -First 40)
         if ($matches.Count -gt 0) {
             Write-Host "naps2_msi_log=$($log.Name)"
             foreach ($match in $matches) {
