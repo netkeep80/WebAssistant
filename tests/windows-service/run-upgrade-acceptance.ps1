@@ -364,6 +364,26 @@ function Write-ConfigMsiLogEvidence {
     }
 }
 
+function Write-Naps2MsiLogEvidence {
+    param([Parameter(Mandatory = $true)][string]$PrimaryLog)
+
+    $directory = Split-Path -Parent $PrimaryLog
+    $stem = [IO.Path]::GetFileNameWithoutExtension($PrimaryLog)
+    foreach ($log in @(Get-ChildItem -LiteralPath $directory -Filter "$stem*.log" -File -ErrorAction SilentlyContinue)) {
+        $matches = @(Select-String `
+            -LiteralPath $log.FullName `
+            -Pattern 'NAPS2\.Sdk|NAPS2_Sdk|equal version|Won.t Overwrite|InstallFiles|File:' `
+            -CaseSensitive:$false `
+            -ErrorAction SilentlyContinue | Select-Object -First 160)
+        if ($matches.Count -gt 0) {
+            Write-Host "naps2_msi_log=$($log.Name)"
+            foreach ($match in $matches) {
+                Write-Host "naps2_msi_evidence=$($match.LineNumber):$($match.Line.Trim())"
+            }
+        }
+    }
+}
+
 function Assert-InstalledConfigPreserved {
     param(
         [Parameter(Mandatory = $true)][string]$ExpectedSha256,
@@ -524,6 +544,14 @@ try {
     }
     Write-Host "historical_service_pid=$oldServicePid owned_worker_pids=$(@($ownedWorkers | ForEach-Object { [int]$_.ProcessId }) -join ',')"
 
+    $historicalSdkPath = Join-Path $installDirectoryFull 'NAPS2.Sdk.dll'
+    if (-not (Test-Path -LiteralPath $historicalSdkPath -PathType Leaf)) {
+        throw "Historical NAPS2.Sdk.dll is missing before upgrade."
+    }
+    $historicalSdkSha256 = (Get-FileHash -LiteralPath $historicalSdkPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $historicalSdkFileVersion = (Get-Item -LiteralPath $historicalSdkPath).VersionInfo.FileVersion
+    Write-Host "historical_naps2_runtime sha256=$historicalSdkSha256 fileVersion=$historicalSdkFileVersion"
+
     if (Test-Path -LiteralPath $burnLog) {
         Remove-Item -LiteralPath $burnLog -Force
     }
@@ -547,10 +575,16 @@ try {
         Assert-ProcessIdentityGone -Identity $capturedIdentity -Description 'Historical runtime process'
     }
     Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
-    Assert-InstalledNaps2SdkMatchesCandidate `
-        -InstallDirectory $installDirectoryFull `
-        -ExpectedSha256 $candidateSdk.Sha256 `
-        -Stage 'historical in-place upgrade'
+    try {
+        Assert-InstalledNaps2SdkMatchesCandidate `
+            -InstallDirectory $installDirectoryFull `
+            -ExpectedSha256 $candidateSdk.Sha256 `
+            -Stage 'historical in-place upgrade'
+    }
+    catch {
+        Write-Naps2MsiLogEvidence -PrimaryLog $burnLog
+        throw
+    }
     Assert-ProgramDataSentinels
     Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'upgrade'
 
