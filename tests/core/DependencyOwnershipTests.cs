@@ -18,6 +18,7 @@ public sealed class DependencyOwnershipTests
     private const string WorkerPackageId = "WebAssistant.NAPS2.Sdk.Worker.Win32";
     private const string WorkerPackageVersion = "1.3.0-webassistant.1.450cba65";
     private const string WorkerPackageFile = "WebAssistant.NAPS2.Sdk.Worker.Win32.1.3.0-webassistant.1.450cba65.nupkg";
+    private const string WorkerPackageSha256 = "18993608e478661100df88f2ea80fcd87c88719d05b0b8f6230da18b582ed691";
     private const string PreviousPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg";
     private const string OlderPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg";
     private const string UpstreamCommit = "450cba65aaffe6387041050a573051a64cd80fe9";
@@ -87,6 +88,12 @@ public sealed class DependencyOwnershipTests
     {
         var packagePath = GetPackagePath(WorkerPackageFile);
         Assert.True(File.Exists(packagePath), $"Не найден repository-owned Win32 worker package: {packagePath}");
+
+        using (var package = File.OpenRead(packagePath))
+        {
+            var actualSha256 = Convert.ToHexString(SHA256.HashData(package)).ToLowerInvariant();
+            Assert.Equal(WorkerPackageSha256, actualSha256);
+        }
 
         using var archive = ZipFile.OpenRead(packagePath);
         var nuspecEntry = Assert.Single(archive.Entries, entry =>
@@ -169,6 +176,7 @@ public sealed class DependencyOwnershipTests
         Assert.Contains(WorkerPackageId, provenance, StringComparison.Ordinal);
         Assert.Contains(WorkerPackageVersion, provenance, StringComparison.Ordinal);
         Assert.Contains(WorkerPackageFile, provenance, StringComparison.Ordinal);
+        Assert.Contains(WorkerPackageSha256, provenance, StringComparison.Ordinal);
         Assert.Contains(UpstreamCommit, provenance, StringComparison.Ordinal);
         Assert.Contains("source-aligned", provenance, StringComparison.OrdinalIgnoreCase);
     }
