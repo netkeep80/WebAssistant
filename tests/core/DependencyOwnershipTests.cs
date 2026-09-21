@@ -101,6 +101,16 @@ public sealed class DependencyOwnershipTests
         Assert.Equal(WorkerPackageVersion, version.Value);
         Assert.Single(archive.Entries, entry =>
             string.Equals(entry.FullName, "contentFiles/NAPS2.Worker.exe", StringComparison.Ordinal));
+        Assert.Single(archive.Entries, entry =>
+            string.Equals(
+                entry.FullName,
+                "build/WebAssistant.NAPS2.Sdk.Worker.Win32.targets",
+                StringComparison.Ordinal));
+        Assert.DoesNotContain(archive.Entries, entry =>
+            string.Equals(
+                entry.FullName,
+                "build/NAPS2.Sdk.Worker.Win32.targets",
+                StringComparison.Ordinal));
     }
 
     [Fact]
