@@ -26,6 +26,15 @@ param(
 
 $ErrorActionPreference = "Stop"
 $serviceName = "WebAssistant"
+$scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $scriptDirectory "../.."))
+$runtimeIntegrity = Join-Path $scriptDirectory "naps2-runtime-integrity.ps1"
+if (-not (Test-Path -LiteralPath $runtimeIntegrity -PathType Leaf)) {
+    throw "Отсутствует NAPS2 runtime integrity helper: $runtimeIntegrity"
+}
+. $runtimeIntegrity
+$candidateSdk = Get-CandidateNaps2SdkEvidence -RepositoryRoot $repositoryRoot
+
 $historicalVersion = "0.3.21"
 $historicalSourceSha = "77a5c66c431c746d2be2f283640c7951730911eb"
 $historicalArtifactName = "WebAssistant-win-x64-0.3.21.exe"
@@ -538,6 +547,10 @@ try {
         Assert-ProcessIdentityGone -Identity $capturedIdentity -Description 'Historical runtime process'
     }
     Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
+    Assert-InstalledNaps2SdkMatchesCandidate `
+        -InstallDirectory $installDirectoryFull `
+        -ExpectedSha256 $candidateSdk.Sha256 `
+        -Stage 'historical in-place upgrade'
     Assert-ProgramDataSentinels
     Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'upgrade'
 
@@ -588,6 +601,10 @@ try {
         -Operation "same-version repair $($candidate.Version)" | Out-Null
     Assert-NoFilesInUseEvidence -PrimaryLog $repairLog
     Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
+    Assert-InstalledNaps2SdkMatchesCandidate `
+        -InstallDirectory $installDirectoryFull `
+        -ExpectedSha256 $candidateSdk.Sha256 `
+        -Stage 'same-version repair'
     Invoke-Scanners -ExpectedPort $Port | Out-Null
     Assert-ProgramDataSentinels
     Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'same-version repair'
