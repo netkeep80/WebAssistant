@@ -147,6 +147,7 @@ public sealed class InstallerArtifactContractTests
         Assert.Contains("Remove=\"uninstall\"", packageSource, StringComparison.Ordinal);
         Assert.Contains("$(var.PayloadRoot)", packageSource, StringComparison.Ordinal);
         Assert.Contains("$(var.ProductVersion)", packageSource, StringComparison.Ordinal);
+        Assert.Contains("<Property Id=\"REINSTALLMODE\" Value=\"emus\" />", packageSource, StringComparison.Ordinal);
 
         Assert.Contains("<Bundle", bundleSource, StringComparison.Ordinal);
         Assert.Contains("Name=\"$(var.ProductDisplayName)\"", bundleSource, StringComparison.Ordinal);
