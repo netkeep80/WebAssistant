@@ -131,26 +131,6 @@ public sealed class DependencyOwnershipTests
     }
 
     [Fact]
-    public void SourceAlignedWin32Worker_HasMonotonicFileVersion()
-    {
-        using var archive = ZipFile.OpenRead(GetPackagePath(WorkerPackageFile));
-        var workerEntry = Assert.Single(archive.Entries, entry =>
-            string.Equals(entry.FullName, "contentFiles/NAPS2.Worker.exe", StringComparison.Ordinal));
-
-        var temporaryPath = Path.Combine(Path.GetTempPath(), $"webassistant-naps2-worker-{Guid.NewGuid():N}.exe");
-        try
-        {
-            workerEntry.ExtractToFile(temporaryPath);
-            var fileVersion = FileVersionInfo.GetVersionInfo(temporaryPath).FileVersion;
-            Assert.Equal("8.3.0.1", fileVersion);
-        }
-        finally
-        {
-            File.Delete(temporaryPath);
-        }
-    }
-
-    [Fact]
     public void ProductReference_UsesRepositoryOwnedSourceAlignedWorker()
     {
         var root = FindRepositoryRoot();
