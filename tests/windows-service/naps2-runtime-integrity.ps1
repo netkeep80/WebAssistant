@@ -74,9 +74,10 @@ function Assert-InstalledNaps2SdkMatchesCandidate {
     }
 
     $actualSha256 = (Get-FileHash -LiteralPath $installedSdk -Algorithm SHA256).Hash.ToLowerInvariant()
+    $fileVersion = (Get-Item -LiteralPath $installedSdk).VersionInfo.FileVersion
     if ($actualSha256 -ne $ExpectedSha256) {
-        throw "NAPS2.Sdk.dll byte identity mismatch после $Stage. expected=$ExpectedSha256 actual=$actualSha256 path=$installedSdk"
+        throw "NAPS2.Sdk.dll byte identity mismatch после $Stage. expected=$ExpectedSha256 actual=$actualSha256 fileVersion=$fileVersion path=$installedSdk"
     }
 
-    Write-Host "windows_naps2_runtime_integrity=PASS stage=$Stage sha256=$actualSha256"
+    Write-Host "windows_naps2_runtime_integrity=PASS stage=$Stage sha256=$actualSha256 fileVersion=$fileVersion"
 }
