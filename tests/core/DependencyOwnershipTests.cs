@@ -118,6 +118,16 @@ public sealed class DependencyOwnershipTests
                 entry.FullName,
                 "build/NAPS2.Sdk.Worker.Win32.targets",
                 StringComparison.Ordinal));
+
+        var targetsEntry = Assert.Single(archive.Entries, entry =>
+            string.Equals(
+                entry.FullName,
+                "build/WebAssistant.NAPS2.Sdk.Worker.Win32.targets",
+                StringComparison.Ordinal));
+        using var targetsReader = new StreamReader(targetsEntry.Open());
+        var targetsText = targetsReader.ReadToEnd();
+        Assert.Contains("contentFiles\\NAPS2.Worker.exe", targetsText, StringComparison.Ordinal);
+        Assert.Contains("<Link>NAPS2.Worker.exe</Link>", targetsText, StringComparison.Ordinal);
     }
 
     [Fact]
