@@ -163,6 +163,23 @@ public sealed class PlatformEndToEndTests
             await page
                 .Locator("#scanner-select")
                 .SelectOptionAsync(selectedScannerId);
+
+            var capabilitiesResponseTask = page.WaitForResponseAsync(
+                response =>
+                    response.Request.Method == "GET" &&
+                    response.Url == BrowserBaseUrl +
+                        $"v1/scanners/{Uri.EscapeDataString(selectedScannerId)}/settings",
+                new PageWaitForResponseOptions { Timeout = 90_000 });
+
+            await page
+                .Locator("#scanner-capabilities:not([disabled])")
+                .ClickAsync();
+
+            var capabilitiesResponse = await capabilitiesResponseTask;
+            Assert.True(
+                capabilitiesResponse.Ok,
+                $"Чтение возможностей из браузера завершилось HTTP {capabilitiesResponse.Status}.");
+
             await page
                 .Locator("#scan-button:not([disabled])")
                 .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
@@ -221,6 +238,10 @@ public sealed class PlatformEndToEndTests
 
             Assert.Contains(observedRequests, url => url == BrowserBaseUrl + "v1/diag/info");
             Assert.Contains(observedRequests, url => url == BrowserBaseUrl + "v1/scanners");
+            Assert.Contains(
+                observedRequests,
+                url => url == BrowserBaseUrl +
+                    $"v1/scanners/{Uri.EscapeDataString(selectedScannerId)}/settings");
             Assert.Contains(observedRequests, url => url == BrowserBaseUrl + "v1/scan");
         }
         finally
