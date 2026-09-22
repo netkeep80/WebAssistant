@@ -449,6 +449,7 @@ public sealed class ObservabilityContractTests
         Assert.Contains("worker.acquire", recipe, StringComparison.Ordinal);
         Assert.Contains("worker.release", recipe, StringComparison.Ordinal);
         Assert.Contains("worker.exit", recipe, StringComparison.Ordinal);
+        Assert.Contains("outcome=forcedKill", recipe, StringComparison.Ordinal);
         Assert.Contains("workerPid", recipe, StringComparison.Ordinal);
         Assert.Contains("parentPid", recipe, StringComparison.Ordinal);
     }
