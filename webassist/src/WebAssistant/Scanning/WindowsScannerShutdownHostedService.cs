@@ -22,12 +22,14 @@ internal sealed class WindowsScannerShutdownHostedService : IHostedService
     public Task StopAsync(CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
+        logger.LogInformation("scanner.shutdown stage=start");
+
         try
         {
             var disposed = holder.ShutdownIfCreated();
             stopwatch.Stop();
             logger.LogInformation(
-                "scanner.shutdown outcome={Outcome} durationMs={DurationMs}",
+                "scanner.shutdown stage=complete outcome={Outcome} durationMs={DurationMs}",
                 disposed ? "success" : "notCreated",
                 stopwatch.ElapsedMilliseconds);
             return Task.CompletedTask;
@@ -36,7 +38,7 @@ internal sealed class WindowsScannerShutdownHostedService : IHostedService
         {
             stopwatch.Stop();
             logger.LogError(
-                "scanner.shutdown outcome=failure durationMs={DurationMs} exceptionType={ExceptionType} hresult={HResult}",
+                "scanner.shutdown stage=complete outcome=failure durationMs={DurationMs} exceptionType={ExceptionType} hresult={HResult}",
                 stopwatch.ElapsedMilliseconds,
                 exception.GetType().Name,
                 $"0x{unchecked((uint)exception.HResult):X8}");
