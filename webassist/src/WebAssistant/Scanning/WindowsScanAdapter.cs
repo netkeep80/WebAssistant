@@ -15,6 +15,7 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
     private readonly ScanningContext scanningContext;
     private readonly ScanController controller;
     private readonly ILogger? logger;
+    private readonly AsyncLocal<ScannerWorkerLeaseCapture?> activeWorkerLeaseCapture = new();
     private int disposed;
 
     internal WindowsScanAdapter(ILogger? logger = null)
@@ -31,6 +32,14 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             scanningContext.Logger = logger;
         }
         scanningContext.SetUpWin32Worker();
+        scanningContext.WorkerLeaseAcquired = lease =>
+        {
+            var capture = activeWorkerLeaseCapture.Value;
+            if (capture is not null)
+            {
+                capture.Publish(new Naps2WorkerLease(lease));
+            }
+        };
         controller = new ScanController(scanningContext);
     }
 
@@ -38,7 +47,7 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         CancellationToken cancellationToken = default)
     {
         Func<Driver, Task<List<ScanDevice>>> getDevices =
-            driver => controller.GetDeviceList(driver);
+            driver => GetDeviceListWithBoundaryAsync(driver, cancellationToken);
         return logger is null
             ? DiscoverAsync(getDevices, cancellationToken)
             : DiscoverAsync(getDevices, logger, cancellationToken);
@@ -49,7 +58,7 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         CancellationToken cancellationToken = default)
     {
         Func<Driver, Task<List<ScanDevice>>> getDevices =
-            driver => controller.GetDeviceList(driver);
+            driver => GetDeviceListWithBoundaryAsync(driver, cancellationToken);
         return logger is null
             ? ResolveRegisteredEndpointAsync(scannerId, getDevices, cancellationToken)
             : ResolveRegisteredEndpointAsync(scannerId, getDevices, logger, cancellationToken);
@@ -60,9 +69,17 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         CancellationToken cancellationToken = default)
     {
         Func<Driver, Task<List<ScanDevice>>> getDevices =
-            driver => controller.GetDeviceList(driver);
+            driver => GetDeviceListWithBoundaryAsync(driver, cancellationToken);
+        var isTwain = ScannerIdentity.TryParse(scannerId, out var backend) &&
+            backend == ScannerBackend.Twain;
         Func<ScanDevice, CancellationToken, Task<ScanCaps>> getCaps =
-            (device, token) => controller.GetCaps(device, token);
+            (device, token) => isTwain
+                ? ExecuteTwainWorkerOperationAsync(
+                    ScannerOperationKind.Capabilities,
+                    ScannerOperationDeadlines.Capabilities,
+                    token,
+                    () => controller.GetCaps(device, token))
+                : controller.GetCaps(device, token);
         return logger is null
             ? ResolveCapabilitiesAsync(scannerId, getDevices, getCaps, cancellationToken)
             : ResolveCapabilitiesAsync(scannerId, getDevices, getCaps, logger, cancellationToken);
@@ -349,6 +366,16 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
                 stopwatch.ElapsedMilliseconds);
             throw;
         }
+        catch (ScannerOperationTimeoutException)
+        {
+            stopwatch.Stop();
+            throw;
+        }
+        catch (ScannerWorkerRecoveryException)
+        {
+            stopwatch.Stop();
+            throw;
+        }
         catch (Exception exception)
         {
             stopwatch.Stop();
@@ -394,7 +421,9 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             scannerId,
             backend,
             driver,
-            selectedDriver => controller.GetDeviceList(selectedDriver),
+            selectedDriver => GetDeviceListWithBoundaryAsync(
+                selectedDriver,
+                cancellationToken),
             logger,
             cancellationToken);
         var matches = FindMatches(devices, backend, scannerId);
@@ -429,10 +458,14 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
                 source);
             try
             {
-                await foreach (var image in controller.Scan(options, cancellationToken).WithCancellation(cancellationToken))
-                {
-                    images.Add(image);
-                }
+                var acquiredImages = backend == ScannerBackend.Twain
+                    ? await ExecuteTwainWorkerOperationAsync(
+                        ScannerOperationKind.Acquisition,
+                        ScannerOperationDeadlines.Acquisition,
+                        cancellationToken,
+                        () => AcquireImagesAsync(options, cancellationToken))
+                    : await AcquireImagesAsync(options, cancellationToken);
+                images.AddRange(acquiredImages);
 
                 acquisitionStopwatch.Stop();
                 logger?.LogInformation(
@@ -542,6 +575,129 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         }
     }
 
+    private Task<List<ScanDevice>> GetDeviceListWithBoundaryAsync(
+        Driver driver,
+        CancellationToken cancellationToken)
+    {
+        if (driver != Driver.Twain)
+        {
+            return controller.GetDeviceList(driver);
+        }
+
+        return ExecuteTwainWorkerOperationAsync(
+            ScannerOperationKind.Discovery,
+            ScannerOperationDeadlines.Discovery,
+            cancellationToken,
+            () => controller.GetDeviceList(driver));
+    }
+
+    private async Task<T> ExecuteTwainWorkerOperationAsync<T>(
+        ScannerOperationKind operation,
+        TimeSpan deadline,
+        CancellationToken cancellationToken,
+        Func<Task<T>> operationFactory)
+    {
+        if (activeWorkerLeaseCapture.Value is not null)
+        {
+            throw new InvalidOperationException(
+                "Вложенная TWAIN worker operation не поддерживается.");
+        }
+
+        var capture = new ScannerWorkerLeaseCapture();
+        activeWorkerLeaseCapture.Value = capture;
+        logger?.LogDebug(
+            "scanner.workerBoundary backend=twain operation={Operation} event=start deadlineMs={DeadlineMs}",
+            OperationName(operation),
+            (long)deadline.TotalMilliseconds);
+
+        try
+        {
+            return await ScannerWorkerBoundary.ExecuteAsync(
+                    operation,
+                    ScannerBackend.Twain,
+                    deadline,
+                    cancellationToken,
+                    capture,
+                    operationFactory)
+                .ConfigureAwait(false);
+        }
+        catch (ScannerOperationTimeoutException)
+        {
+            logger?.LogWarning(
+                "scanner.workerBoundary backend=twain operation={Operation} outcome=timeout deadlineMs={DeadlineMs}",
+                OperationName(operation),
+                (long)deadline.TotalMilliseconds);
+            throw;
+        }
+        catch (ScannerWorkerRecoveryException exception)
+        {
+            logger?.LogError(
+                "scanner.workerBoundary backend=twain operation={Operation} outcome=recoveryFailed workerPid={WorkerPid} exceptionType={ExceptionType} hresult={HResult}",
+                OperationName(operation),
+                exception.WorkerProcessId,
+                exception.InnerException?.GetType().Name ?? exception.GetType().Name,
+                FormatHResult(exception.InnerException ?? exception));
+            throw;
+        }
+        finally
+        {
+            activeWorkerLeaseCapture.Value = null;
+        }
+    }
+
+    private async Task<List<ProcessedImage>> AcquireImagesAsync(
+        ScanOptions options,
+        CancellationToken cancellationToken)
+    {
+        var acquired = new List<ProcessedImage>();
+        try
+        {
+            await foreach (var image in controller
+                               .Scan(options, cancellationToken)
+                               .WithCancellation(cancellationToken))
+            {
+                acquired.Add(image);
+            }
+
+            return acquired;
+        }
+        catch
+        {
+            foreach (var image in acquired)
+            {
+                image.Dispose();
+            }
+
+            throw;
+        }
+    }
+
+    private static string OperationName(ScannerOperationKind operation) => operation switch
+    {
+        ScannerOperationKind.Discovery => "discovery",
+        ScannerOperationKind.Capabilities => "capabilities",
+        ScannerOperationKind.Acquisition => "acquisition",
+        _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
+    };
+
+    private sealed class Naps2WorkerLease(WorkerProcessLease lease) : IScannerWorkerLease
+    {
+        public int ProcessId => lease.ProcessId;
+
+        public Task TerminateAsync(
+            ScannerWorkerTerminationReason reason,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return lease.TerminateAsync(reason switch
+            {
+                ScannerWorkerTerminationReason.Deadline => "deadline",
+                ScannerWorkerTerminationReason.ClientCancellation => "clientCancellation",
+                _ => throw new ArgumentOutOfRangeException(nameof(reason), reason, null)
+            });
+        }
+    }
+
     private static ScanDevice[] FindMatches(
         IEnumerable<ScanDevice> devices,
         ScannerBackend backend,
@@ -585,6 +741,16 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            throw;
+        }
+        catch (ScannerOperationTimeoutException)
+        {
+            stopwatch.Stop();
+            throw;
+        }
+        catch (ScannerWorkerRecoveryException)
+        {
+            stopwatch.Stop();
             throw;
         }
         catch (Exception exception)
