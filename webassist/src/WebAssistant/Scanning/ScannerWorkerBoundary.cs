@@ -112,9 +112,15 @@ internal static class ScannerWorkerBoundary
             Timeout.InfiniteTimeSpan,
             deadlineCancellation.Token);
 
-        // Run the factory itself behind the boundary: NAPS2 worker acquisition and
-        // initialization contain synchronous work before the remote async Task is returned.
-        var operationTask = Task.Run(operationFactory);
+        // Scanner worker acquisition/initialization may block synchronously before
+        // the remote async Task is returned. Keep that work off the shared thread pool so
+        // deadline continuations cannot be starved by the very operation they supervise.
+        var operationTask = Task.Factory.StartNew(
+                operationFactory,
+                CancellationToken.None,
+                TaskCreationOptions.DenyChildAttach | TaskCreationOptions.LongRunning,
+                TaskScheduler.Default)
+            .Unwrap();
 
         if (operationTask.IsCompleted)
         {
