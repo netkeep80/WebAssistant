@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using WebAssistant.Logging;
 using WebAssistant.Runtime;
 
 namespace WebAssistant.Scanning;
@@ -12,8 +13,16 @@ internal sealed class WindowsScanAdapterHolder
 
     public WindowsScanAdapterHolder(
         ILogger<WindowsScanAdapter> logger,
-        RuntimeDiagnosticSnapshotProvider diagnostics)
-        : this(() => new WindowsScanAdapter(logger, diagnostics))
+        RuntimeDiagnosticSnapshotProvider diagnostics,
+        DailyFileLoggerProvider? dailyLoggerProvider = null)
+        : this(() => new WindowsScanAdapter(
+            dailyLoggerProvider is null
+                ? logger
+                : new ResilientLogger(
+                    logger,
+                    dailyLoggerProvider.CreateLogger(
+                        "WebAssistant.Scanning.WindowsScanAdapter")),
+            diagnostics))
     {
     }
 
