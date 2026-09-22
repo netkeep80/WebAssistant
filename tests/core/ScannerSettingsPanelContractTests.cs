@@ -23,6 +23,7 @@ public sealed class ScannerSettingsPanelContractTests
 
         Assert.Contains("id=\"scanner-mode\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"scanner-settings-controls\"", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"scanner-capabilities\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"scanner-info\"", html, StringComparison.Ordinal);
         Assert.Contains("/v1/scanner-settings/schema", html, StringComparison.Ordinal);
         Assert.Contains("/settings", html, StringComparison.Ordinal);
@@ -55,7 +56,7 @@ public sealed class ScannerSettingsPanelContractTests
     }
 
     [Fact]
-    public void ServicePanel_ProbesCapabilitiesOnlyAfterExplicitScannerSelection()
+    public void ServicePanel_ProbesCapabilitiesOnlyAfterExplicitUserAction()
     {
         var root = FindRepositoryRoot();
         var html = File.ReadAllText(Path.Combine(
@@ -68,10 +69,17 @@ public sealed class ScannerSettingsPanelContractTests
 
         Assert.Contains("Выберите сканер", html, StringComparison.Ordinal);
         Assert.Contains(
+            "scannerSelect.addEventListener(\"change\",selectScannerEndpoint)",
+            html,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "scannerCapabilitiesButton.addEventListener(\"click\",refreshSelectedScannerSettings)",
+            html,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
             "scannerSelect.addEventListener(\"change\",refreshSelectedScannerSettings)",
             html,
             StringComparison.Ordinal);
-        Assert.DoesNotContain("await refreshSelectedScannerSettings();", html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -132,18 +140,21 @@ public sealed class ScannerSettingsPanelContractTests
             await page.WaitForFunctionAsync("!document.getElementById('scanner-select').disabled");
 
             await page.SelectOptionAsync("#scanner-select", "scanner-a");
+            await page.ClickAsync("#scanner-capabilities");
             await page.WaitForFunctionAsync("!document.getElementById('scan-button').disabled");
             await page.ClickAsync("#scan-button");
             await page.Locator("#pdf-result").WaitForAsync(new() { State = WaitForSelectorState.Visible });
             Assert.True(await page.Locator("#pdf-result").IsVisibleAsync());
 
             await page.SelectOptionAsync("#scanner-select", "scanner-b");
+            await page.ClickAsync("#scanner-capabilities");
             await page.WaitForFunctionAsync(
                 "document.getElementById('scanner-status').textContent.includes('Ошибка capabilities')");
             Assert.True(await page.Locator("#pdf-result").IsHiddenAsync());
             Assert.Equal(string.Empty, (await page.Locator("#scan-status").InnerTextAsync()).Trim());
 
             await page.SelectOptionAsync("#scanner-select", "scanner-a");
+            await page.ClickAsync("#scanner-capabilities");
             await page.WaitForFunctionAsync("!document.getElementById('scan-button').disabled");
             await page.ClickAsync("#scan-button");
             await page.WaitForFunctionAsync(
@@ -205,6 +216,7 @@ public sealed class ScannerSettingsPanelContractTests
             await page.WaitForFunctionAsync("!document.getElementById('scanner-select').disabled");
 
             await page.SelectOptionAsync("#scanner-select", "scanner-a");
+            await page.ClickAsync("#scanner-capabilities");
             await page.WaitForFunctionAsync("!document.getElementById('scan-button').disabled");
             await page.ClickAsync("#scan-button");
             await page.Locator("#pdf-result").WaitForAsync(new() { State = WaitForSelectorState.Visible });
@@ -271,9 +283,11 @@ public sealed class ScannerSettingsPanelContractTests
             await page.WaitForFunctionAsync("!document.getElementById('scanner-select').disabled");
 
             await page.SelectOptionAsync("#scanner-select", "scanner-a");
+            await page.ClickAsync("#scanner-capabilities");
             var scannerARoute = await heldScannerA.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
             await page.SelectOptionAsync("#scanner-select", "scanner-b");
+            await page.ClickAsync("#scanner-capabilities");
             await page.WaitForFunctionAsync("document.getElementById('scanner-mode').value === 'feeder'");
 
             await FulfillJsonAsync(scannerARoute, Projection("scanner-a", "flatbed", "flatbed"));

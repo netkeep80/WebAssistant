@@ -4,7 +4,7 @@ set -euo pipefail
 UPSTREAM_REPOSITORY="https://github.com/cyanfish/naps2.git"
 UPSTREAM_COMMIT="450cba65aaffe6387041050a573051a64cd80fe9"
 PACKAGE_ID="WebAssistant.NAPS2.Sdk"
-PACKAGE_VERSION="1.3.0-webassistant.5.450cba65"
+PACKAGE_VERSION="1.3.0-webassistant.6.450cba65"
 PACKAGE_FILE="$PACKAGE_ID.$PACKAGE_VERSION.nupkg"
 WORKER_PACKAGE_ID="WebAssistant.NAPS2.Sdk.Worker.Win32"
 WORKER_PACKAGE_VERSION="1.3.0-webassistant.2.450cba65"
@@ -56,7 +56,7 @@ replace_exact(
     "        <PackageId Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
     "WebAssistant.NAPS2.Sdk</PackageId>\n"
     "        <PackageVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
-    "1.3.0-webassistant.5.450cba65</PackageVersion>\n"
+    "1.3.0-webassistant.6.450cba65</PackageVersion>\n"
     "        <PackageId Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Win32'\">"
     "WebAssistant.NAPS2.Sdk.Worker.Win32</PackageId>\n"
     "        <PackageVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Win32'\">"
@@ -76,7 +76,7 @@ replace_exact(
     "        <VersionName>8.3.0</VersionName>",
     "        <VersionName>8.3.0</VersionName>\n"
     "        <AssemblyVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.0</AssemblyVersion>\n"
-    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.5</FileVersion>\n"
+    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.6</FileVersion>\n"
     "        <AssemblyVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Build'\">8.3.0.0</AssemblyVersion>\n"
     "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Build'\">8.3.0.2</FileVersion>",
 )
@@ -399,7 +399,7 @@ replace_exact(
 replace_exact(
     worker_context,
     '''    public async Task Stop()\n    {\n        if (_stopped) return;\n        _stopped = true;\n\n        // Try to cleanly stop the worker\n        Task.Run(() =>\n        {\n            try\n            {\n                Service.StopWorker();\n            }\n            catch (RpcException e) when (e.Status.StatusCode == StatusCode.Unavailable)\n            {\n                // This can happen normally if the system is shutting down (and terminated the worker processes) so we\n                // don't log as an error.\n                _logger.LogDebug("Could not stop the worker process. It may have crashed.");\n            }\n            catch (Exception e)\n            {\n                _logger.LogError(e, "Error stopping worker");\n            }\n        }).AssertNoAwait();\n\n        // Wait for either the worker process to close or for our timeout\n        await Task.WhenAny(Process.WaitForExitAsync(), Task.Delay(WorkerStopTimeout)).ConfigureAwait(false);\n\n        // If the worker process still hasn't closed we kill it now\n        if (!Process.HasExited)\n        {\n            _logger.LogError("Killing unresponsive worker");\n            try\n            {\n                Process.Kill();\n            }\n            catch (Exception e)\n            {\n                _logger.LogError(e, "Error killing unresponsive worker");\n            }\n        }\n    }\n\n    public void Dispose()\n    {\n        Stop().AssertNoAwait();\n    }\n''',
-    '''    public Task Stop()\n    {\n        lock (_stopLock)\n        {\n            return _stopTask ??= StopCoreAsync();\n        }\n    }\n\n    private async Task StopCoreAsync()\n    {\n        _ = Task.Run(() =>\n        {\n            try\n            {\n                Service.StopWorker();\n            }\n            catch (RpcException e) when (e.Status.StatusCode == StatusCode.Unavailable)\n            {\n                _logger.LogDebug("Could not stop the worker process. It may have crashed.");\n            }\n            catch (Exception e)\n            {\n                _logger.LogError(e, "Error stopping worker");\n            }\n        });\n\n        if (!Process.HasExited)\n        {\n            await Task.WhenAny(Process.WaitForExitAsync(), Task.Delay(WorkerStopTimeout)).ConfigureAwait(false);\n        }\n\n        if (!Process.HasExited)\n        {\n            _logger.LogError("Killing unresponsive worker");\n            try\n            {\n                Process.Kill();\n            }\n            catch (InvalidOperationException) when (Process.HasExited)\n            {\n            }\n            catch (Exception e)\n            {\n                _logger.LogError(e, "Error killing unresponsive worker");\n                throw;\n            }\n\n            if (!Process.HasExited)\n            {\n                await Task.WhenAny(Process.WaitForExitAsync(), Task.Delay(WorkerKillTimeout)).ConfigureAwait(false);\n            }\n        }\n\n        if (!Process.HasExited)\n        {\n            throw new TimeoutException($"Worker process {Process.Id} did not exit after termination.");\n        }\n    }\n\n    public void Dispose()\n    {\n        Stop().GetAwaiter().GetResult();\n    }\n''',
+    '''    public Task Stop()\n    {\n        lock (_stopLock)\n        {\n            return _stopTask ??= StopCoreAsync();\n        }\n    }\n\n    private async Task StopCoreAsync()\n    {\n        _ = Task.Run(() =>\n        {\n            try\n            {\n                Service.StopWorker();\n            }\n            catch (RpcException e) when (e.Status.StatusCode == StatusCode.Unavailable)\n            {\n                _logger.LogDebug("Could not stop the worker process. It may have crashed.");\n            }\n            catch (Exception e)\n            {\n                _logger.LogError(e, "Error stopping worker");\n            }\n        });\n\n        if (!Process.HasExited)\n        {\n            await Task.WhenAny(Process.WaitForExitAsync(), Task.Delay(WorkerStopTimeout)).ConfigureAwait(false);\n        }\n\n        var forcedKill = false;\n\n        if (!Process.HasExited)\n        {\n            forcedKill = true;\n            _logger.LogWarning(\n                "worker.termination event=requested mode=forcedKill workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",\n                Process.Id,\n                Environment.ProcessId,\n                Type);\n            try\n            {\n                Process.Kill();\n            }\n            catch (InvalidOperationException) when (Process.HasExited)\n            {\n            }\n            catch (Exception e)\n            {\n                _logger.LogError(e, "Error killing unresponsive worker");\n                throw;\n            }\n\n            if (!Process.HasExited)\n            {\n                await Task.WhenAny(Process.WaitForExitAsync(), Task.Delay(WorkerKillTimeout)).ConfigureAwait(false);\n            }\n        }\n\n        if (!Process.HasExited)\n        {\n            throw new TimeoutException($"Worker process {Process.Id} did not exit after termination.");\n        }\n    }\n\n    public void Dispose()\n    {\n        Stop().GetAwaiter().GetResult();\n    }\n''',
 )
 
 worker_factory_interface = root / "NAPS2.Sdk/Remoting/Worker/IWorkerFactory.cs"
@@ -605,17 +605,34 @@ replace_exact(
             throw new TimeoutException($"Worker process {Process.Id} did not exit after termination.");
         }
 
-        _logger.LogDebug(
-            "worker.exit event=end outcome=success workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType} exitCode={ExitCode}",
-            Process.Id,
-            Environment.ProcessId,
-            Type,
-            Process.ExitCode);
-        _logger.LogDebug(
-            "worker.release event=end outcome=success workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",
-            Process.Id,
-            Environment.ProcessId,
-            Type);
+        if (forcedKill)
+        {
+            _logger.LogWarning(
+                "worker.exit event=end outcome=forcedKill workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType} exitCode={ExitCode}",
+                Process.Id,
+                Environment.ProcessId,
+                Type,
+                Process.ExitCode);
+            _logger.LogDebug(
+                "worker.release event=end outcome=forcedKill workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",
+                Process.Id,
+                Environment.ProcessId,
+                Type);
+        }
+        else
+        {
+            _logger.LogDebug(
+                "worker.exit event=end outcome=success workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType} exitCode={ExitCode}",
+                Process.Id,
+                Environment.ProcessId,
+                Type,
+                Process.ExitCode);
+            _logger.LogDebug(
+                "worker.release event=end outcome=success workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",
+                Process.Id,
+                Environment.ProcessId,
+                Type);
+        }
     }
 ''',
 )

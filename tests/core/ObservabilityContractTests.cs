@@ -8,9 +8,11 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NAPS2.Scan;
 using WebAssistant.Http;
+using WebAssistant.Logging;
 using WebAssistant.Scanning;
 using Xunit;
 
@@ -360,6 +362,33 @@ public sealed class ObservabilityContractTests
     }
 
     [Fact]
+    public void ResilientLogger_ScopeDisposeFailureDoesNotEscape()
+    {
+        var fallback = new CaptureLogger();
+        var resilient = new ResilientLogger(
+            new ScopeDisposeThrowingLogger(),
+            fallback);
+
+        using (resilient.BeginScope(new Dictionary<string, object?>
+               {
+                   ["operationId"] = "scope-dispose-test"
+               }))
+        {
+            resilient.LogInformation("primary-operation-marker");
+        }
+
+        Assert.Contains(
+            fallback.Entries,
+            entry =>
+                entry.Message.Contains(
+                    "logging.sink.failure",
+                    StringComparison.Ordinal) &&
+                entry.Message.Contains(
+                    "ObjectDisposedException",
+                    StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task DailyLog_RoundTripsRussianUtf8ThroughDiagnosticsEndpoint()
     {
         const string marker =
@@ -420,6 +449,7 @@ public sealed class ObservabilityContractTests
         Assert.Contains("worker.acquire", recipe, StringComparison.Ordinal);
         Assert.Contains("worker.release", recipe, StringComparison.Ordinal);
         Assert.Contains("worker.exit", recipe, StringComparison.Ordinal);
+        Assert.Contains("outcome=forcedKill", recipe, StringComparison.Ordinal);
         Assert.Contains("workerPid", recipe, StringComparison.Ordinal);
         Assert.Contains("parentPid", recipe, StringComparison.Ordinal);
     }
@@ -467,7 +497,10 @@ public sealed class ObservabilityContractTests
         var holder = new WindowsScanAdapterHolder(() => adapter);
         _ = holder.GetOrCreate();
         var logger = new CaptureLogger<WindowsScannerShutdownHostedService>();
-        var service = new WindowsScannerShutdownHostedService(holder, logger);
+        var service = new WindowsScannerShutdownHostedService(
+            holder,
+            logger,
+            new TestHostApplicationLifetime());
 
         await service.StopAsync(CancellationToken.None);
 
@@ -691,6 +724,42 @@ public sealed class ObservabilityContractTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult<Stream>(
                 new MemoryStream(DiagnosticPdfBytes, writable: false));
+    }
+
+    private sealed class TestHostApplicationLifetime : IHostApplicationLifetime
+    {
+        private readonly CancellationTokenSource started = new();
+        private readonly CancellationTokenSource stopping = new();
+        private readonly CancellationTokenSource stopped = new();
+
+        public CancellationToken ApplicationStarted => started.Token;
+        public CancellationToken ApplicationStopping => stopping.Token;
+        public CancellationToken ApplicationStopped => stopped.Token;
+
+        public void StopApplication() => stopping.Cancel();
+    }
+
+    private sealed class ScopeDisposeThrowingLogger : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => new ThrowingScope();
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+        }
+
+        private sealed class ThrowingScope : IDisposable
+        {
+            public void Dispose() =>
+                throw new ObjectDisposedException("EventLogInternal");
+        }
     }
 
     private sealed class ThrowingLoggerProvider(string throwingCategory)

@@ -44,6 +44,37 @@ internal sealed class RequestLoggingMiddleware
                 ["operationId"] = operationId
             });
         var requestCompleted = false;
+        var clientCancellationLogged = 0;
+
+        void LogClientCancellation()
+        {
+            if (Interlocked.Exchange(ref clientCancellationLogged, 1) != 0)
+            {
+                return;
+            }
+
+            var elapsed = Stopwatch.GetElapsedTime(started);
+            if (scannerId is null)
+            {
+                logger.LogInformation(
+                    "HTTP-запрос отменён клиентом {Method} {Path} cancellation=clientRequested requestState=active elapsedMs={ElapsedMs:F1}",
+                    context.Request.Method,
+                    context.Request.Path.Value,
+                    elapsed.TotalMilliseconds);
+            }
+            else
+            {
+                logger.LogInformation(
+                    "HTTP-запрос отменён клиентом {Method} {Path} scannerId={ScannerId} cancellation=clientRequested requestState=active elapsedMs={ElapsedMs:F1}",
+                    context.Request.Method,
+                    context.Request.Path.Value,
+                    scannerId,
+                    elapsed.TotalMilliseconds);
+            }
+        }
+
+        using var requestCancellationRegistration =
+            context.RequestAborted.Register(LogClientCancellation);
 
         try
         {
@@ -52,26 +83,7 @@ internal sealed class RequestLoggingMiddleware
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
-            var elapsed = Stopwatch.GetElapsedTime(started);
-
-            if (scannerId is null)
-            {
-                logger.LogInformation(
-                    "HTTP-запрос отменён клиентом {Method} {Path} cancellation=clientRequested elapsedMs={ElapsedMs:F1}",
-                    context.Request.Method,
-                    context.Request.Path.Value,
-                    elapsed.TotalMilliseconds);
-            }
-            else
-            {
-                logger.LogInformation(
-                    "HTTP-запрос отменён клиентом {Method} {Path} scannerId={ScannerId} cancellation=clientRequested elapsedMs={ElapsedMs:F1}",
-                    context.Request.Method,
-                    context.Request.Path.Value,
-                    scannerId,
-                    elapsed.TotalMilliseconds);
-            }
-
+            LogClientCancellation();
             throw;
         }
         catch (Exception exception)
@@ -116,15 +128,36 @@ internal sealed class RequestLoggingMiddleware
 
     private static string? TryGetSafeScannerId(HttpContext context)
     {
-        if (!string.Equals(
-                context.Request.Path.Value,
-                $"{ApiVersion.CurrentPrefix}/scan",
-                StringComparison.Ordinal))
+        var path = context.Request.Path.Value ?? string.Empty;
+        var settingsPrefix = $"{ApiVersion.CurrentPrefix}/scanners/";
+        const string settingsSuffix = "/settings";
+
+        if (path.StartsWith(settingsPrefix, StringComparison.Ordinal) &&
+            path.EndsWith(settingsSuffix, StringComparison.Ordinal))
         {
-            return null;
+            var scannerId = path[
+                settingsPrefix.Length..
+                ^settingsSuffix.Length];
+
+            if (scannerId.Length > 0 &&
+                !scannerId.Contains('/'))
+            {
+                try
+                {
+                    return Sanitize(Uri.UnescapeDataString(scannerId));
+                }
+                catch (UriFormatException)
+                {
+                    return Sanitize(scannerId);
+                }
+            }
         }
 
-        if (!context.Request.Query.TryGetValue("scannerId", out var values))
+        if (!string.Equals(
+                path,
+                $"{ApiVersion.CurrentPrefix}/scan",
+                StringComparison.Ordinal) ||
+            !context.Request.Query.TryGetValue("scannerId", out var values))
         {
             return null;
         }
