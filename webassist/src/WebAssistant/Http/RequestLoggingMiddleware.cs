@@ -41,7 +41,7 @@ internal sealed class RequestLoggingMiddleware(
             if (scannerId is null)
             {
                 logger.LogInformation(
-                    "HTTP-запрос отменён клиентом {Method} {Path} elapsedMs={ElapsedMs:F1}",
+                    "HTTP-запрос отменён клиентом {Method} {Path} cancellation=clientRequested elapsedMs={ElapsedMs:F1}",
                     context.Request.Method,
                     context.Request.Path.Value,
                     elapsed.TotalMilliseconds);
@@ -49,7 +49,7 @@ internal sealed class RequestLoggingMiddleware(
             else
             {
                 logger.LogInformation(
-                    "HTTP-запрос отменён клиентом {Method} {Path} scannerId={ScannerId} elapsedMs={ElapsedMs:F1}",
+                    "HTTP-запрос отменён клиентом {Method} {Path} scannerId={ScannerId} cancellation=clientRequested elapsedMs={ElapsedMs:F1}",
                     context.Request.Method,
                     context.Request.Path.Value,
                     scannerId,
