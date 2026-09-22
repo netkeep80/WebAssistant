@@ -56,6 +56,41 @@ internal static class ScannerSettingsEndpointHandlers
                 modes = modes.Select(ModeResponse).ToArray()
             });
         }
+        catch (ScannerOperationTimeoutException exception)
+        {
+            logger.LogWarning(
+                "Превышен deadline scanner operation operation={Operation} backend={Backend} scannerId={ScannerId} timeoutMs={TimeoutMs}",
+                OperationName(exception.Operation),
+                exception.Backend,
+                scannerId,
+                (long)exception.Timeout.TotalMilliseconds);
+            return Results.Problem(
+                statusCode: StatusCodes.Status504GatewayTimeout,
+                title: "Превышено время ожидания операции со сканером",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "scanner_operation_timeout",
+                    ["operation"] = OperationName(exception.Operation)
+                });
+        }
+        catch (ScannerWorkerRecoveryException exception)
+        {
+            logger.LogError(
+                "Не удалось восстановить scanner worker operation={Operation} backend={Backend} scannerId={ScannerId} workerPid={WorkerPid}",
+                OperationName(exception.Operation),
+                exception.Backend,
+                scannerId,
+                exception.WorkerProcessId);
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Не удалось восстановить scanner worker",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "scanner_worker_recovery_failed",
+                    ["operation"] = OperationName(exception.Operation)
+                });
+        }
+
         catch (ScannerBackendUnavailableException exception)
         {
             var diagnosticException = exception.InnerException ?? exception;
@@ -85,6 +120,14 @@ internal static class ScannerSettingsEndpointHandlers
                 title: "Ошибка получения настроек сканера");
         }
     }
+
+    private static string OperationName(ScannerOperationKind operation) => operation switch
+    {
+        ScannerOperationKind.Discovery => "discovery",
+        ScannerOperationKind.Capabilities => "capabilities",
+        ScannerOperationKind.Acquisition => "acquisition",
+        _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
+    };
 
     private static string CapabilityStateName(ScannerCapabilityState state) => state switch
     {
