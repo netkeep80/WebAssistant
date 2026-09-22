@@ -32,6 +32,7 @@ builder.Services.AddSingleton(serviceProvider =>
         serviceProvider.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton<FileSystemApplicationService>();
 builder.Services.AddSingleton(_ => new AgentRuntimeInfo());
+builder.Services.AddSingleton<RuntimeDiagnosticSnapshotProvider>();
 builder.Services.AddSingleton(serviceProvider =>
     new DailyLogReader(
         serviceProvider.GetRequiredService<WebAssistantRuntimeOptions>().LogDirectory));
@@ -57,6 +58,43 @@ else if (OperatingSystem.IsLinux())
 
 var app = builder.Build();
 var runtimeOptions = app.Services.GetRequiredService<WebAssistantRuntimeOptions>();
+var runtimeDiagnostics = app.Services.GetRequiredService<RuntimeDiagnosticSnapshotProvider>();
+var startupDiagnosticsLogger = app.Services
+    .GetRequiredService<ILoggerFactory>()
+    .CreateLogger("WebAssistant.Runtime.Diagnostics");
+
+if (startupDiagnosticsLogger.IsEnabled(LogLevel.Debug))
+{
+    var snapshot = runtimeDiagnostics.Capture();
+    startupDiagnosticsLogger.LogDebug(
+        "runtime.fingerprint processPid={ProcessPid} processArchitecture={ProcessArchitecture} packageCapturedAtUtc={PackageCapturedAtUtc}",
+        snapshot.Process.Pid,
+        snapshot.Process.Architecture,
+        snapshot.PackageCapturedAtUtc);
+
+    foreach (var component in snapshot.Components)
+    {
+        if (!component.Available)
+        {
+            startupDiagnosticsLogger.LogDebug(
+                "runtime.component name={ComponentName} available=false filePath={FilePath}",
+                component.Name,
+                component.FilePath);
+            continue;
+        }
+
+        startupDiagnosticsLogger.LogDebug(
+            "runtime.component name={ComponentName} available=true filePath={FilePath} fileVersion={FileVersion} productVersion={ProductVersion} assemblyVersion={AssemblyVersion} architecture={Architecture} size={Size} sha256={Sha256}",
+            component.Name,
+            component.FilePath,
+            component.FileVersion,
+            component.ProductVersion,
+            component.AssemblyVersion,
+            component.Architecture,
+            component.Size,
+            component.Sha256);
+    }
+}
 
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseDefaultFiles();
@@ -134,19 +172,39 @@ api.MapGet("/diag/info", (
     AgentRuntimeInfo runtimeInfo,
     WebAssistantRuntimeOptions options,
     ScanCoordinator coordinator,
-    FileSystemRootRegistry fileSystemRegistry) =>
+    FileSystemRootRegistry fileSystemRegistry,
+    RuntimeDiagnosticSnapshotProvider diagnostics,
+    ILoggerFactory loggerFactory) =>
 {
     var uptime = DateTimeOffset.Now - runtimeInfo.StartedAt;
-    return Results.Ok(new
+    var diagnosticLogger = loggerFactory.CreateLogger(
+        "WebAssistant.Runtime.Diagnostics");
+    var diagnosticLevel = diagnosticLogger.IsEnabled(LogLevel.Trace)
+        ? "Trace"
+        : diagnosticLogger.IsEnabled(LogLevel.Debug)
+            ? "Debug"
+            : diagnosticLogger.IsEnabled(LogLevel.Information)
+                ? "Information"
+                : "Restricted";
+
+    var response = new Dictionary<string, object?>
     {
-        version = runtimeInfo.Version,
-        os = RuntimeInformation.OSDescription,
-        uptimeSeconds = Math.Max(0L, (long)uptime.TotalSeconds),
-        listenUrl = $"http://{options.ListenAddress}:{options.Port}",
-        apiVersion = ApiVersion.Current,
-        scanState = coordinator.IsBusy ? "busy" : "idle",
-        fileSystemState = fileSystemRegistry.DiagnosticState
-    });
+        ["version"] = runtimeInfo.Version,
+        ["os"] = RuntimeInformation.OSDescription,
+        ["uptimeSeconds"] = Math.Max(0L, (long)uptime.TotalSeconds),
+        ["listenUrl"] = $"http://{options.ListenAddress}:{options.Port}",
+        ["apiVersion"] = ApiVersion.Current,
+        ["scanState"] = coordinator.IsBusy ? "busy" : "idle",
+        ["fileSystemState"] = fileSystemRegistry.DiagnosticState,
+        ["diagnosticLevel"] = diagnosticLevel
+    };
+
+    if (diagnosticLogger.IsEnabled(LogLevel.Debug))
+    {
+        response["runtimeFingerprint"] = diagnostics.Capture();
+    }
+
+    return Results.Ok(response);
 });
 api.MapGet("/diag/logs", async (
     string? date,
