@@ -69,7 +69,12 @@ internal sealed class DailyFileLoggerProvider(string logDirectory) :
 
             if (exception is not null)
             {
-                text.AppendLine(exception.ToString());
+                text
+                    .Append("exceptionType=")
+                    .Append(exception.GetType().Name)
+                    .Append(" hresult=")
+                    .AppendLine(
+                        $"0x{unchecked((uint)exception.HResult):X8}");
             }
 
             lock (writeGate)
