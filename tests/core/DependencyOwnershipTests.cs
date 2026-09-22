@@ -13,8 +13,8 @@ namespace WebAssistant.CoreTests;
 public sealed class DependencyOwnershipTests
 {
     private const string PackageId = "WebAssistant.NAPS2.Sdk";
-    private const string PackageVersion = "1.3.0-webassistant.7.450cba65";
-    private const string PackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.7.450cba65.nupkg";
+    private const string PackageVersion = "1.3.0-webassistant.8.450cba65";
+    private const string PackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.8.450cba65.nupkg";
     private const string WorkerPackageId = "WebAssistant.NAPS2.Sdk.Worker.Win32";
     private const string WorkerPackageVersion = "1.3.0-webassistant.2.450cba65";
     private const string WorkerPackageFile = "WebAssistant.NAPS2.Sdk.Worker.Win32.1.3.0-webassistant.2.450cba65.nupkg";
@@ -24,7 +24,7 @@ public sealed class DependencyOwnershipTests
     private const string UpstreamCommit = "450cba65aaffe6387041050a573051a64cd80fe9";
     private const string PreviousPackageSha256 = "391e592f39ba8a0f8c030ea50e5dbf858bc2eaf9121b4f1b4cfbc2bf0e711e84";
     private const string OlderPackageSha256 = "d2f53f57535f892df023c2e7cffeb4ad091d107e1192ada0d532be51d48fb88f";
-    private const string CurrentPackageSha256 = "c537a6028514523aff38ffbf3bfd13fcff7b50741e47664090effd6334b37f7e";
+    private const string CurrentPackageSha256 = "__SDK_SHA256__";
     private const long MaxPackageBytes = 1024L * 1024L;
 
     [Fact]
@@ -75,7 +75,7 @@ public sealed class DependencyOwnershipTests
             var fileVersion = FileVersionInfo.GetVersionInfo(temporaryPath).FileVersion;
 
             Assert.Equal(new Version(8, 3, 0, 0), assemblyVersion);
-            Assert.Equal("8.3.0.7", fileVersion);
+            Assert.Equal("8.3.0.8", fileVersion);
         }
         finally
         {
@@ -278,8 +278,8 @@ public sealed class DependencyOwnershipTests
         Assert.Contains($"`{CurrentPackageSha256}`", provenance, StringComparison.Ordinal);
         Assert.Contains($"`{PreviousPackageSha256}`", provenance, StringComparison.Ordinal);
         Assert.Contains($"`{OlderPackageSha256}`", provenance, StringComparison.Ordinal);
-        Assert.Contains("Пакет `.7` сохраняет CLR identity", provenance, StringComparison.Ordinal);
-        Assert.Contains("FileVersion=8.3.0.7", provenance, StringComparison.Ordinal);
+        Assert.Contains("Пакет `.8` сохраняет CLR identity", provenance, StringComparison.Ordinal);
+        Assert.Contains("FileVersion=8.3.0.8", provenance, StringComparison.Ordinal);
         Assert.Contains("AssemblyVersion=8.3.0.0", provenance, StringComparison.Ordinal);
         Assert.Contains("остаётся неизменяемым", provenance, StringComparison.OrdinalIgnoreCase);
     }
@@ -292,7 +292,7 @@ public sealed class DependencyOwnershipTests
         var rebuild = File.ReadAllText(rebuildPath);
 
         Assert.Contains(PackageVersion, rebuild, StringComparison.Ordinal);
-        Assert.Contains("8.3.0.7</FileVersion>", rebuild, StringComparison.Ordinal);
+        Assert.Contains("8.3.0.8</FileVersion>", rebuild, StringComparison.Ordinal);
         Assert.Contains("8.3.0.0</AssemblyVersion>", rebuild, StringComparison.Ordinal);
         Assert.Contains("NAPS2.Sdk/Remoting/Worker/WorkerContext.cs", rebuild, StringComparison.Ordinal);
         Assert.Contains("NAPS2.Sdk/Remoting/Worker/WorkerFactory.cs", rebuild, StringComparison.Ordinal);
