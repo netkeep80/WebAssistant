@@ -130,9 +130,9 @@ src/WebAssistant/appsettings.json отсутствует
 }
 ```
 
-`Information` предназначен для обычной эксплуатации: итог HTTP/scanner operation, существенные предупреждения и крупные timings. `Debug` предназначен для опытной эксплуатации и расследования: он добавляет `operationId`, подробные scanner stage boundaries, package runtime fingerprint, PID и identity принадлежащих `NAPS2.Worker`, а на Windows — identity реально загруженного `twaindsm.dll`. `Trace` оставляет включёнными наиболее подробные безопасные технические события и должен использоваться кратковременно. Для гарантированного применения изменённого packaged `appsettings.json` достаточно перезапустить службу; специальная диагностическая сборка не нужна.
+`Information` предназначен для обычной эксплуатации: итог HTTP/scanner operation, существенные предупреждения и крупные timings. `Debug` предназначен для опытной эксплуатации и расследования: он добавляет `operationId`, causal `worker.acquire/release/exit`, exact worker PID/bitness, TWAIN native stage boundaries и x86 worker self-report фактически загруженных legacy `twain_32.dll` или modern `twaindsm.dll` и vendor DS modules. `Trace` оставляет включёнными наиболее подробные безопасные технические события и должен использоваться кратковременно. Для гарантированного применения изменённого packaged `appsettings.json` достаточно перезапустить службу; специальная диагностическая сборка не нужна.
 
-В `Debug` и `Trace` `GET /v1/diag/info` служит штатным self-contained диагностическим отчётом: версии, пути, размеры и SHA-256 package-owned runtime, PID/bitness worker и загруженный TWAIN DSM можно получить через WebAssistant без ручных PowerShell/cmd/shell-команд. Обычный `Information` не публикует эти подробности.
+В `Debug` и `Trace` `GET /v1/diag/info` даёт package/runtime inventory, а causal `operationId ↔ workerPid ↔ DSM/DS ↔ native stage` восстанавливается по собственному daily log WebAssistant без ручных PowerShell/cmd/shell-команд. Host-side worker snapshot не считается доказательством ownership конкретной операции и не заменяет x86 worker self-report. Обычный `Information` не публикует эти подробности.
 
 Пример конфигурации нескольких корней:
 
