@@ -32,12 +32,15 @@ builder.Services.AddSingleton(serviceProvider =>
         serviceProvider.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton<FileSystemApplicationService>();
 builder.Services.AddSingleton(_ => new AgentRuntimeInfo());
+builder.Services.AddSingleton(_ => new RuntimeDiagnosticSnapshotProvider());
 builder.Services.AddSingleton(serviceProvider =>
     new DailyLogReader(
         serviceProvider.GetRequiredService<WebAssistantRuntimeOptions>().LogDirectory));
-builder.Services.AddSingleton<ILoggerProvider>(serviceProvider =>
+builder.Services.AddSingleton(serviceProvider =>
     new DailyFileLoggerProvider(
         serviceProvider.GetRequiredService<WebAssistantRuntimeOptions>().LogDirectory));
+builder.Services.AddSingleton<ILoggerProvider>(serviceProvider =>
+    serviceProvider.GetRequiredService<DailyFileLoggerProvider>());
 builder.Services.AddSingleton<ScanCoordinator>();
 builder.Services.AddCors();
 
@@ -57,6 +60,59 @@ else if (OperatingSystem.IsLinux())
 
 var app = builder.Build();
 var runtimeOptions = app.Services.GetRequiredService<WebAssistantRuntimeOptions>();
+var runtimeDiagnostics = app.Services.GetRequiredService<RuntimeDiagnosticSnapshotProvider>();
+var startupDiagnosticsLogger = app.Services
+    .GetRequiredService<ILoggerFactory>()
+    .CreateLogger("WebAssistant.Runtime.Diagnostics");
+var lifecycleDiagnosticsLogger = new ResilientLogger(
+    startupDiagnosticsLogger,
+    app.Services
+        .GetRequiredService<DailyFileLoggerProvider>()
+        .CreateLogger("WebAssistant.Runtime.Diagnostics"));
+
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    var workerCount = runtimeDiagnostics.CaptureWorkers().Count;
+    lifecycleDiagnosticsLogger.LogInformation(
+        "host.shutdown stage=requested observedWorkerCount={WorkerCount}",
+        workerCount);
+});
+app.Lifetime.ApplicationStopped.Register(() =>
+    lifecycleDiagnosticsLogger.LogInformation(
+        "host.shutdown stage=applicationStopped"));
+
+if (startupDiagnosticsLogger.IsEnabled(LogLevel.Debug))
+{
+    var snapshot = runtimeDiagnostics.Capture();
+    startupDiagnosticsLogger.LogDebug(
+        "runtime.fingerprint processPid={ProcessPid} processArchitecture={ProcessArchitecture} packageCapturedAtUtc={PackageCapturedAtUtc}",
+        snapshot.Process.Pid,
+        snapshot.Process.Architecture,
+        snapshot.PackageCapturedAtUtc);
+
+    foreach (var component in snapshot.Components)
+    {
+        if (!component.Available)
+        {
+            startupDiagnosticsLogger.LogDebug(
+                "runtime.component name={ComponentName} available=false filePath={FilePath}",
+                component.Name,
+                component.FilePath);
+            continue;
+        }
+
+        startupDiagnosticsLogger.LogDebug(
+            "runtime.component name={ComponentName} available=true filePath={FilePath} fileVersion={FileVersion} productVersion={ProductVersion} assemblyVersion={AssemblyVersion} architecture={Architecture} size={Size} sha256={Sha256}",
+            component.Name,
+            component.FilePath,
+            component.FileVersion,
+            component.ProductVersion,
+            component.AssemblyVersion,
+            component.Architecture,
+            component.Size,
+            component.Sha256);
+    }
+}
 
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseDefaultFiles();
@@ -79,11 +135,15 @@ api.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 api.MapGet("/scanners", async (
     IServiceProvider services,
     ILoggerFactory loggerFactory,
+    DailyFileLoggerProvider dailyLoggerProvider,
     CancellationToken cancellationToken) =>
 {
+    const string category = "WebAssistant.Http.Scanners";
     return await ScannerEndpointHandlers.ListAsync(
         services.GetService<IScanAdapter>(),
-        loggerFactory.CreateLogger("WebAssistant.Http.Scanners"),
+        new ResilientLogger(
+            loggerFactory.CreateLogger(category),
+            dailyLoggerProvider.CreateLogger(category)),
         cancellationToken);
 });
 api.MapGet("/scanner-settings/schema", ScannerSettingsEndpointHandlers.Schema);
@@ -91,12 +151,16 @@ api.MapGet("/scanners/{scannerId}/settings", async (
     string scannerId,
     IServiceProvider services,
     ILoggerFactory loggerFactory,
+    DailyFileLoggerProvider dailyLoggerProvider,
     CancellationToken cancellationToken) =>
 {
+    const string category = "WebAssistant.Http.ScannerSettings";
     return await ScannerSettingsEndpointHandlers.GetAsync(
         services.GetService<IScanAdapter>(),
         scannerId,
-        loggerFactory.CreateLogger("WebAssistant.Http.ScannerSettings"),
+        new ResilientLogger(
+            loggerFactory.CreateLogger(category),
+            dailyLoggerProvider.CreateLogger(category)),
         cancellationToken);
 });
 api.MapPost("/scan", async (
@@ -134,19 +198,39 @@ api.MapGet("/diag/info", (
     AgentRuntimeInfo runtimeInfo,
     WebAssistantRuntimeOptions options,
     ScanCoordinator coordinator,
-    FileSystemRootRegistry fileSystemRegistry) =>
+    FileSystemRootRegistry fileSystemRegistry,
+    RuntimeDiagnosticSnapshotProvider diagnostics,
+    ILoggerFactory loggerFactory) =>
 {
     var uptime = DateTimeOffset.Now - runtimeInfo.StartedAt;
-    return Results.Ok(new
+    var diagnosticLogger = loggerFactory.CreateLogger(
+        "WebAssistant.Runtime.Diagnostics");
+    var diagnosticLevel = diagnosticLogger.IsEnabled(LogLevel.Trace)
+        ? "Trace"
+        : diagnosticLogger.IsEnabled(LogLevel.Debug)
+            ? "Debug"
+            : diagnosticLogger.IsEnabled(LogLevel.Information)
+                ? "Information"
+                : "Restricted";
+
+    var response = new Dictionary<string, object?>
     {
-        version = runtimeInfo.Version,
-        os = RuntimeInformation.OSDescription,
-        uptimeSeconds = Math.Max(0L, (long)uptime.TotalSeconds),
-        listenUrl = $"http://{options.ListenAddress}:{options.Port}",
-        apiVersion = ApiVersion.Current,
-        scanState = coordinator.IsBusy ? "busy" : "idle",
-        fileSystemState = fileSystemRegistry.DiagnosticState
-    });
+        ["version"] = runtimeInfo.Version,
+        ["os"] = RuntimeInformation.OSDescription,
+        ["uptimeSeconds"] = Math.Max(0L, (long)uptime.TotalSeconds),
+        ["listenUrl"] = $"http://{options.ListenAddress}:{options.Port}",
+        ["apiVersion"] = ApiVersion.Current,
+        ["scanState"] = coordinator.IsBusy ? "busy" : "idle",
+        ["fileSystemState"] = fileSystemRegistry.DiagnosticState,
+        ["diagnosticLevel"] = diagnosticLevel
+    };
+
+    if (diagnosticLogger.IsEnabled(LogLevel.Debug))
+    {
+        response["runtimeFingerprint"] = diagnostics.Capture();
+    }
+
+    return Results.Ok(response);
 });
 api.MapGet("/diag/logs", async (
     string? date,

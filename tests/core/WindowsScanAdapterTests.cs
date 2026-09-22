@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NAPS2.Scan;
 using WebAssistant.Scanning;
 using Xunit;
@@ -149,6 +150,87 @@ public sealed class WindowsScanAdapterTests
     }
 
     [Fact]
+    public async Task SelectedCapabilities_DebugStagesHaveStartAndCompletionTiming()
+    {
+        var logger = new CaptureLogger();
+        var selectedId = ScannerIdentity.Create(
+            ScannerBackend.Twain,
+            "twain-observability");
+
+        var scanner = await WindowsScanAdapter.ResolveCapabilitiesAsync(
+            selectedId,
+            _ => Task.FromResult(new List<ScanDevice>
+            {
+                new(Driver.Twain, "twain-observability", "TWAIN diagnostic")
+            }),
+            (_, _) => Task.FromResult(new ScanCaps()),
+            logger);
+
+        Assert.NotNull(scanner);
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Debug &&
+                     entry.Message.Contains(
+                         "stage=getDeviceList event=start",
+                         StringComparison.Ordinal));
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Information &&
+                     entry.Message.Contains(
+                         "stage=getDeviceList outcome=success",
+                         StringComparison.Ordinal) &&
+                     entry.Message.Contains(
+                         "durationMs=",
+                         StringComparison.Ordinal));
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Debug &&
+                     entry.Message.Contains(
+                         "stage=getCaps event=start",
+                         StringComparison.Ordinal));
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Information &&
+                     entry.Message.Contains(
+                         "stage=getCaps outcome=success",
+                         StringComparison.Ordinal) &&
+                     entry.Message.Contains(
+                         "durationMs=",
+                         StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SelectedCapabilities_FailureDoesNotLogRawDriverMessage()
+    {
+        const string secret = "native-driver-private-message";
+        var logger = new CaptureLogger();
+        var selectedId = ScannerIdentity.Create(
+            ScannerBackend.Twain,
+            "twain-observability");
+
+        _ = await WindowsScanAdapter.ResolveCapabilitiesAsync(
+            selectedId,
+            _ => Task.FromResult(new List<ScanDevice>
+            {
+                new(Driver.Twain, "twain-observability", "TWAIN diagnostic")
+            }),
+            (_, _) => Task.FromException<ScanCaps>(
+                new InvalidOperationException(secret)),
+            logger);
+
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Warning &&
+                     entry.Message.Contains(
+                         "stage=getCaps outcome=failure",
+                         StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            logger.Entries,
+            entry => entry.Message.Contains(secret, StringComparison.Ordinal));
+        Assert.All(logger.Entries, entry => Assert.Null(entry.Exception));
+    }
+
+    [Fact]
     public async Task Discovery_OneBackendFailurePreservesSuccessfulBackendAndWarning()
     {
         var result = await WindowsScanAdapter.DiscoverAsync(
@@ -239,7 +321,7 @@ public sealed class WindowsScanAdapterTests
         var workerPath = Assert.Single(candidates, File.Exists);
         var fileVersion = FileVersionInfo.GetVersionInfo(workerPath).FileVersion;
 
-        Assert.Equal("8.3.0.1", fileVersion);
+        Assert.Equal("8.3.0.2", fileVersion);
     }
 
     [Fact]
@@ -342,6 +424,32 @@ public sealed class WindowsScanAdapterTests
             adapter.Dispose();
         }
     }
+
+    private sealed class CaptureLogger : ILogger
+    {
+        internal List<LogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add(new LogEntry(
+                logLevel,
+                formatter(state, exception),
+                exception));
+    }
+
+    private sealed record LogEntry(
+        LogLevel Level,
+        string Message,
+        Exception? Exception);
 
     private static async Task<IReadOnlyList<WorkerIdentity>> WaitForNewOwnedWorkersAsync(
         HashSet<WorkerKey> baseline,

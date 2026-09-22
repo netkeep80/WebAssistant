@@ -17,7 +17,7 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
     private readonly ILogger? logger;
     private int disposed;
 
-    internal WindowsScanAdapter(ILogger<WindowsScanAdapter>? logger = null)
+    internal WindowsScanAdapter(ILogger? logger = null)
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(7))
         {
@@ -26,6 +26,10 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
 
         this.logger = logger;
         scanningContext = new ScanningContext(new GdiImageContext());
+        if (logger is not null)
+        {
+            scanningContext.Logger = logger;
+        }
         scanningContext.SetUpWin32Worker();
         controller = new ScanController(scanningContext);
     }
@@ -96,6 +100,9 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                logger?.LogDebug(
+                    "scanner.discovery backend={Backend} stage=getDeviceList event=start",
+                    BackendName(backend));
                 var devices = await getDevices(driver);
                 cancellationToken.ThrowIfCancellationRequested();
                 stopwatch.Stop();
@@ -297,7 +304,32 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var caps = await getCaps(device, cancellationToken);
+            logger?.LogDebug(
+                "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps event=start",
+                BackendName(backend),
+                scannerId);
+            var backendActive = 1;
+            using var cancellationRegistration = cancellationToken.Register(() =>
+            {
+                if (Volatile.Read(ref backendActive) == 1)
+                {
+                    logger?.LogDebug(
+                        "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps cancellation=backendRequested operationState=active",
+                        BackendName(backend),
+                        scannerId);
+                }
+            });
+
+            ScanCaps caps;
+            try
+            {
+                caps = await getCaps(device, cancellationToken);
+            }
+            finally
+            {
+                Volatile.Write(ref backendActive, 0);
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
             stopwatch.Stop();
             logger?.LogInformation(
@@ -309,19 +341,24 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            stopwatch.Stop();
+            logger?.LogDebug(
+                "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps outcome=cancelled durationMs={DurationMs}",
+                BackendName(backend),
+                scannerId,
+                stopwatch.ElapsedMilliseconds);
             throw;
         }
         catch (Exception exception)
         {
             stopwatch.Stop();
             logger?.LogWarning(
-                "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps outcome=failure durationMs={DurationMs} capabilityState=unavailable exceptionType={ExceptionType} hresult={HResult} message={Message}",
+                "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps outcome=failure durationMs={DurationMs} capabilityState=unavailable exceptionType={ExceptionType} hresult={HResult}",
                 BackendName(backend),
                 scannerId,
                 stopwatch.ElapsedMilliseconds,
                 exception.GetType().Name,
-                FormatHResult(exception),
-                SafeExceptionMessage(exception, device.ID));
+                FormatHResult(exception));
             return CreateRegisteredEndpoint(device, backend);
         }
     }
@@ -384,9 +421,48 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         var images = new List<ProcessedImage>();
         try
         {
-            await foreach (var image in controller.Scan(options, cancellationToken).WithCancellation(cancellationToken))
+            var acquisitionStopwatch = Stopwatch.StartNew();
+            logger?.LogDebug(
+                "scanner.scan backend={Backend} scannerId={ScannerId} stage=acquisition event=start source={Source}",
+                BackendName(backend),
+                scannerId,
+                source);
+            try
             {
-                images.Add(image);
+                await foreach (var image in controller.Scan(options, cancellationToken).WithCancellation(cancellationToken))
+                {
+                    images.Add(image);
+                }
+
+                acquisitionStopwatch.Stop();
+                logger?.LogInformation(
+                    "scanner.scan backend={Backend} scannerId={ScannerId} stage=acquisition outcome=success durationMs={DurationMs} pageCount={PageCount}",
+                    BackendName(backend),
+                    scannerId,
+                    acquisitionStopwatch.ElapsedMilliseconds,
+                    images.Count);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                acquisitionStopwatch.Stop();
+                logger?.LogDebug(
+                    "scanner.scan backend={Backend} scannerId={ScannerId} stage=acquisition outcome=cancelled durationMs={DurationMs}",
+                    BackendName(backend),
+                    scannerId,
+                    acquisitionStopwatch.ElapsedMilliseconds);
+                throw;
+            }
+            catch (Exception exception)
+            {
+                acquisitionStopwatch.Stop();
+                logger?.LogWarning(
+                    "scanner.scan backend={Backend} scannerId={ScannerId} stage=acquisition outcome=failure durationMs={DurationMs} exceptionType={ExceptionType} hresult={HResult}",
+                    BackendName(backend),
+                    scannerId,
+                    acquisitionStopwatch.ElapsedMilliseconds,
+                    exception.GetType().Name,
+                    FormatHResult(exception));
+                throw;
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -399,9 +475,39 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             try
             {
                 var exporter = new PdfExporter(scanningContext);
-                if (!await exporter.Export(pdf, images))
+                var exportStopwatch = Stopwatch.StartNew();
+                logger?.LogDebug(
+                    "scanner.scan backend={Backend} scannerId={ScannerId} stage=pdfExport event=start pageCount={PageCount}",
+                    BackendName(backend),
+                    scannerId,
+                    images.Count);
+                try
                 {
-                    throw new InvalidOperationException("Не удалось сформировать PDF из отсканированных страниц.");
+                    if (!await exporter.Export(pdf, images))
+                    {
+                        throw new InvalidOperationException("Не удалось сформировать PDF из отсканированных страниц.");
+                    }
+
+                    exportStopwatch.Stop();
+                    logger?.LogInformation(
+                        "scanner.scan backend={Backend} scannerId={ScannerId} stage=pdfExport outcome=success durationMs={DurationMs} pageCount={PageCount} pdfBytes={PdfBytes}",
+                        BackendName(backend),
+                        scannerId,
+                        exportStopwatch.ElapsedMilliseconds,
+                        images.Count,
+                        pdf.Length);
+                }
+                catch (Exception exception)
+                {
+                    exportStopwatch.Stop();
+                    logger?.LogWarning(
+                        "scanner.scan backend={Backend} scannerId={ScannerId} stage=pdfExport outcome=failure durationMs={DurationMs} exceptionType={ExceptionType} hresult={HResult}",
+                        BackendName(backend),
+                        scannerId,
+                        exportStopwatch.ElapsedMilliseconds,
+                        exception.GetType().Name,
+                        FormatHResult(exception));
+                    throw;
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
@@ -460,6 +566,11 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+            logger?.LogDebug(
+                "{Operation} backend={Backend} scannerId={ScannerId} stage=getDeviceList event=start",
+                operation,
+                BackendName(backend),
+                scannerId);
             var devices = await getDevices(driver);
             cancellationToken.ThrowIfCancellationRequested();
             stopwatch.Stop();
@@ -521,24 +632,6 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             MapFeederPaperState(paperSourceCaps?.FeederHasPaper),
             Naps2ScannerCapabilityMapper.From(caps),
             ScannerCapabilityState.Complete);
-    }
-
-    private static string SafeExceptionMessage(Exception exception, string nativeId)
-    {
-        var message = exception.Message;
-        if (!string.IsNullOrEmpty(nativeId))
-        {
-            message = message.Replace(
-                nativeId,
-                "<native-id>",
-                StringComparison.OrdinalIgnoreCase);
-        }
-
-        return new string(
-            message
-                .Where(character => !char.IsControl(character))
-                .Take(500)
-                .ToArray());
     }
 
     private static string FormatHResult(Exception exception) =>

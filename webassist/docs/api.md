@@ -301,7 +301,19 @@ Base64, JSON-конверт документа и ZIP/растровый кон�
 
 `GET /v1/diag/info`
 
-Возвращает безопасную информацию времени выполнения: версию, ОС, время работы, URL прослушивания, версию API, текущее состояние координатора сканирования и поле `fileSystemState` для файловой подсистемы.
+Всегда возвращает безопасную базовую информацию времени выполнения: версию, ОС, время работы, URL прослушивания, версию API, текущее состояние координатора сканирования, поле `fileSystemState` для файловой подсистемы и фактически действующий `diagnosticLevel`.
+
+При обычном уровне `Information` ответ намеренно не публикует пути к бинарникам, SHA-256 и подробный runtime fingerprint.
+
+При включённом для категории `WebAssistant` уровне `Debug` или `Trace` тот же endpoint дополнительно возвращает `runtimeFingerprint`. Он предназначен для сбора достаточного технического evidence без запуска PowerShell, cmd или shell-команд на рабочей станции. В fingerprint входят:
+
+- PID, архитектура, путь исполняемого процесса WebAssistant и версия .NET runtime;
+- package-owned компоненты `WebAssistant`, `NAPS2.Sdk` и `NAPS2.Worker`: доступность, фактический путь, file/product/assembly version где применимо, размер, SHA-256 и архитектура;
+- общий runtime inventory принадлежащих текущему процессу `NAPS2.Worker`: PID, parent PID, архитектура, путь, версии, размер, SHA-256 и время запуска;
+- состояние host-side module inspection; для x86 worker отсутствие модуля в этом snapshot не считается доказательством, что модуль не загружен;
+- причинная связь scanner operation с worker и TWAIN runtime берётся не из snapshot, а из событий NAPS2 worker lifecycle и self-report.
+
+Package-owned fingerprint вычисляется один раз на процесс и повторно используется; live worker snapshot снимается при диагностическом запросе и сам не создаёт scanner worker. Snapshot является только общим inventory и не устанавливает `operationId ↔ workerPid`.
 
 `fileSystemState` принимает ровно одно из пяти значений:
 
@@ -315,12 +327,14 @@ Base64, JSON-конверт документа и ZIP/растровый кон�
 
 Возвращает собственный суточный журнал WebAssistant как `text/plain`.
 
-Ошибки:
+Каждый versioned HTTP-запрос получает `operationId`. Тот же идентификатор проходит в scanner/backend events и на реальной NAPS2 `worker.acquire` boundary связывается с exact `workerPid`; spare workers не назначаются операции по времени появления или parent PID. X86 worker сам сообщает requested/resolved/effective DSM, реально загруженные `twain_32.dll` или `twaindsm.dll`, vendor DS modules и их path/version/SHA-256. Для `GetCaps` Debug фиксирует begin/end/outcome/duration границы `dsOpen`, `feederSetFalse`, `feederGetFalse`, `flatbedCaps`, `feederSetTrue`, `feederGetTrue`, `feederCaps`, `duplex` и `metadata`; последний `begin` без `end` локализует зависший native boundary. Timeout/watchdog/kill/recovery в эту диагностику не входят.
+
+Ошибки `/v1/diag/logs`:
 
 - `400` — дата отсутствует или имеет неверный формат;
 - `404` — журнал за дату отсутствует.
 
-Точка API принимает только дату, а не имя файла или путь. Байты PDF, Base64, содержимое страниц и тело документа в технический журнал не записываются. Текущая служба сама не выполняет автоматическое хранение с ограниченным сроком или удаление старых суточных журналов.
+Точка журналов принимает только дату, а не имя файла или путь. Даже при `Debug` и `Trace` в технический журнал не записываются байты PDF, Base64, изображения страниц, содержимое документа, произвольное содержимое пользовательских файлов, пароли, токены или секреты. Текущая служба сама не выполняет автоматическое хранение с ограниченным сроком или удаление старых суточных журналов.
 
 ## CORS
 

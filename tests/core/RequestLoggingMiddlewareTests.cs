@@ -47,10 +47,15 @@ public sealed class RequestLoggingMiddlewareTests
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => middleware.InvokeAsync(context));
 
-        Assert.Contains(
+        var error = Assert.Single(
             logger.Entries,
-            entry => entry.Level == LogLevel.Error &&
-                     entry.Exception is InvalidOperationException);
+            entry => entry.Level == LogLevel.Error);
+        Assert.Null(error.Exception);
+        Assert.Contains(
+            "exceptionType=InvalidOperationException",
+            error.Message,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("boom", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(
             logger.Entries,
             entry => entry.Message.Contains("status=200", StringComparison.Ordinal));

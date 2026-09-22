@@ -63,12 +63,18 @@ internal static class ScannerEndpointHandlers
         }
         catch (Exception exception)
         {
-            logger.LogError(exception, "Не удалось получить список зарегистрированных scanner endpoints");
+            logger.LogError(
+                "Не удалось получить список зарегистрированных scanner endpoints exceptionType={ExceptionType} hresult={HResult}",
+                exception.GetType().Name,
+                FormatHResult(exception));
             return Results.Problem(
                 statusCode: StatusCodes.Status502BadGateway,
                 title: "Ошибка обнаружения сканеров");
         }
     }
+
+    private static string FormatHResult(Exception exception) =>
+        $"0x{unchecked((uint)exception.HResult):X8}";
 
     private static string BackendName(ScannerBackend backend) => backend switch
     {

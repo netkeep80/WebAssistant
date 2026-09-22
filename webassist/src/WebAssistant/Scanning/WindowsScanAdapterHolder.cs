@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using WebAssistant.Logging;
 
 namespace WebAssistant.Scanning;
 
@@ -9,8 +10,16 @@ internal sealed class WindowsScanAdapterHolder
     private IScanAdapter? adapter;
     private bool shutdownStarted;
 
-    public WindowsScanAdapterHolder(ILogger<WindowsScanAdapter> logger)
-        : this(() => new WindowsScanAdapter(logger))
+    public WindowsScanAdapterHolder(
+        ILogger<WindowsScanAdapter> logger,
+        DailyFileLoggerProvider? dailyLoggerProvider = null)
+        : this(() => new WindowsScanAdapter(
+            dailyLoggerProvider is null
+                ? logger
+                : new ResilientLogger(
+                    logger,
+                    dailyLoggerProvider.CreateLogger(
+                        "WebAssistant.Scanning.WindowsScanAdapter"))))
     {
     }
 

@@ -126,14 +126,20 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
                 }
                 catch (ArgumentException exception)
                 {
-                    logger.LogWarning(exception, "Некорректный запрос источника сканирования");
+                    logger.LogWarning(
+                        "Некорректный запрос источника сканирования exceptionType={ExceptionType} hresult={HResult}",
+                        exception.GetType().Name,
+                        FormatHResult(exception));
                     return Results.Problem(
                         statusCode: StatusCodes.Status400BadRequest,
                         title: "Некорректные параметры сканирования");
                 }
                 catch (NotSupportedException exception)
                 {
-                    logger.LogWarning(exception, "Запрошенный режим сканирования не поддерживается");
+                    logger.LogWarning(
+                        "Запрошенный режим сканирования не поддерживается exceptionType={ExceptionType} hresult={HResult}",
+                        exception.GetType().Name,
+                        FormatHResult(exception));
                     return Results.Problem(
                         statusCode: StatusCodes.Status422UnprocessableEntity,
                         title: "Режим сканирования не поддерживается");
@@ -149,14 +155,20 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
                 }
                 catch (ArgumentException exception)
                 {
-                    logger.LogWarning(exception, "Некорректные normalized scanner settings");
+                    logger.LogWarning(
+                        "Некорректные normalized scanner settings exceptionType={ExceptionType} hresult={HResult}",
+                        exception.GetType().Name,
+                        FormatHResult(exception));
                     return Results.Problem(
                         statusCode: StatusCodes.Status400BadRequest,
                         title: "Некорректные параметры сканирования");
                 }
                 catch (NotSupportedException exception)
                 {
-                    logger.LogWarning(exception, "Scanner settings не поддерживаются выбранным режимом");
+                    logger.LogWarning(
+                        "Scanner settings не поддерживаются выбранным режимом exceptionType={ExceptionType} hresult={HResult}",
+                        exception.GetType().Name,
+                        FormatHResult(exception));
                     return Results.Problem(
                         statusCode: StatusCodes.Status422UnprocessableEntity,
                         title: "Настройки сканирования не поддерживаются");

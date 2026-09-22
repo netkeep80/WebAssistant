@@ -4,10 +4,10 @@ set -euo pipefail
 UPSTREAM_REPOSITORY="https://github.com/cyanfish/naps2.git"
 UPSTREAM_COMMIT="450cba65aaffe6387041050a573051a64cd80fe9"
 PACKAGE_ID="WebAssistant.NAPS2.Sdk"
-PACKAGE_VERSION="1.3.0-webassistant.4.450cba65"
+PACKAGE_VERSION="1.3.0-webassistant.5.450cba65"
 PACKAGE_FILE="$PACKAGE_ID.$PACKAGE_VERSION.nupkg"
 WORKER_PACKAGE_ID="WebAssistant.NAPS2.Sdk.Worker.Win32"
-WORKER_PACKAGE_VERSION="1.3.0-webassistant.1.450cba65"
+WORKER_PACKAGE_VERSION="1.3.0-webassistant.2.450cba65"
 WORKER_PACKAGE_FILE="$WORKER_PACKAGE_ID.$WORKER_PACKAGE_VERSION.nupkg"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,11 +56,11 @@ replace_exact(
     "        <PackageId Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
     "WebAssistant.NAPS2.Sdk</PackageId>\n"
     "        <PackageVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
-    "1.3.0-webassistant.4.450cba65</PackageVersion>\n"
+    "1.3.0-webassistant.5.450cba65</PackageVersion>\n"
     "        <PackageId Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Win32'\">"
     "WebAssistant.NAPS2.Sdk.Worker.Win32</PackageId>\n"
     "        <PackageVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Win32'\">"
-    "1.3.0-webassistant.1.450cba65</PackageVersion>",
+    "1.3.0-webassistant.2.450cba65</PackageVersion>",
 )
 
 worker_package_project = root / "NAPS2.Sdk.Worker.Win32/NAPS2.Sdk.Worker.Win32.csproj"
@@ -76,9 +76,9 @@ replace_exact(
     "        <VersionName>8.3.0</VersionName>",
     "        <VersionName>8.3.0</VersionName>\n"
     "        <AssemblyVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.0</AssemblyVersion>\n"
-    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.4</FileVersion>\n"
+    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.5</FileVersion>\n"
     "        <AssemblyVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Build'\">8.3.0.0</AssemblyVersion>\n"
-    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Build'\">8.3.0.1</FileVersion>",
+    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Build'\">8.3.0.2</FileVersion>",
 )
 
 paper_source_caps = root / "NAPS2.Sdk/Scan/PaperSourceCaps.cs"
@@ -153,6 +153,237 @@ replace_exact(
     "    private PerSourceCaps GetPerSourceCaps(DataSource ds)\n",
 )
 
+
+replace_exact(
+    twain_driver,
+    '''    private static readonly Once TwainDsmSetup = new(() =>
+    {
+        var twainDsmPath = NativeLibrary.FindLibraryPath("twaindsm.dll");
+        PlatformCompat.System.LoadLibrary(twainDsmPath);
+        PlatformInfo.Current.NewDsmPath = twainDsmPath;
+    });
+''',
+    '''    private static string? _newDsmPath;
+
+    private static readonly Once TwainDsmSetup = new(() =>
+    {
+        var twainDsmPath = NativeLibrary.FindLibraryPath("twaindsm.dll");
+        PlatformCompat.System.LoadLibrary(twainDsmPath);
+        PlatformInfo.Current.NewDsmPath = twainDsmPath;
+        _newDsmPath = twainDsmPath;
+    });
+''',
+)
+replace_exact(
+    twain_driver,
+    '''    public Task<ScanCaps> GetCaps(ScanOptions options)
+    {
+        if (options.TwainOptions.Dsm != TwainDsm.Old)
+''',
+    '''    public Task<ScanCaps> GetCaps(ScanOptions options)
+    {
+        Trace($"twain.dsm event=request requestedDsm={options.TwainOptions.Dsm}");
+        if (options.TwainOptions.Dsm != TwainDsm.Old)
+''',
+)
+replace_exact(
+    twain_driver,
+    '''    private ScanCaps InternalGetCaps(ScanOptions options)
+    {
+        PlatformInfo.Current.PreferNewDSM = options.TwainOptions.Dsm != TwainDsm.Old;
+        var session = new TwainSession(TwainAppId);
+        using var handleManager = TwainHandleManager.Factory();
+        session.Open(handleManager.CreateMessageLoopHook());
+''',
+    '''    private ScanCaps InternalGetCaps(ScanOptions options)
+    {
+        PlatformInfo.Current.PreferNewDSM = options.TwainOptions.Dsm != TwainDsm.Old;
+        var effectiveDsm = PlatformInfo.Current.PreferNewDSM ? "new" : "old";
+        var resolvedPath = PlatformInfo.Current.PreferNewDSM
+            ? _newDsmPath ?? "<unknown>"
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "twain_32.dll");
+        Trace(
+            $"twain.dsm event=effective requestedDsm={options.TwainOptions.Dsm} resolvedDsm={effectiveDsm} effectiveDsm={effectiveDsm} resolvedPath={SanitizeDiagnosticValue(resolvedPath)}");
+
+        var session = new TwainSession(TwainAppId);
+        using var handleManager = TwainHandleManager.Factory();
+        TraceStage("sessionOpen", () => session.Open(handleManager.CreateMessageLoopHook()));
+        TraceTwainModules("sessionOpen");
+''',
+)
+replace_exact(
+    twain_driver,
+    '''                var rc = ds.Open();
+                if (rc != ReturnCode.Success)
+''',
+    '''                var rc = TraceStage("dsOpen", ds.Open);
+                TraceTwainModules("dsOpen");
+                if (rc != ReturnCode.Success)
+''',
+)
+replace_exact(
+    twain_driver,
+    '''                    var feederCap = ds.Capabilities.CapFeederEnabled;
+
+                    feederCap.SetValue(BoolType.False);
+                    bool supportsFlatbed = feederCap.GetCurrent() == BoolType.False;
+                    var flatbedCaps = supportsFlatbed ? GetPerSourceCaps(ds) : null;
+
+                    feederCap.SetValue(BoolType.True);
+                    bool supportsFeeder = feederCap.GetCurrent() == BoolType.True;
+                    var feederCaps = supportsFeeder ? GetPerSourceCaps(ds) : null;
+
+                    bool supportsDuplex = supportsFeeder && ds.Capabilities.CapDuplex.GetCurrent() != Duplex.None;
+''',
+    '''                    var feederCap = ds.Capabilities.CapFeederEnabled;
+
+                    TraceStage("feederSetFalse", () => { feederCap.SetValue(BoolType.False); });
+                    bool supportsFlatbed = TraceStage(
+                        "feederGetFalse",
+                        () => feederCap.GetCurrent() == BoolType.False);
+                    var flatbedCaps = TraceStage<PerSourceCaps?>(
+                        "flatbedCaps",
+                        () => supportsFlatbed ? GetPerSourceCaps(ds) : null);
+
+                    TraceStage("feederSetTrue", () => { feederCap.SetValue(BoolType.True); });
+                    bool supportsFeeder = TraceStage(
+                        "feederGetTrue",
+                        () => feederCap.GetCurrent() == BoolType.True);
+                    var feederCaps = TraceStage<PerSourceCaps?>(
+                        "feederCaps",
+                        () => supportsFeeder ? GetPerSourceCaps(ds) : null);
+
+                    bool supportsDuplex = TraceStage(
+                        "duplex",
+                        () => supportsFeeder && ds.Capabilities.CapDuplex.GetCurrent() != Duplex.None);
+''',
+)
+replace_exact(
+    twain_driver,
+    '''                    return new ScanCaps
+                    {
+                        MetadataCaps = new MetadataCaps
+                        {
+                            Manufacturer = ds.Manufacturer,
+                            Model = ds.Name,
+                            SerialNumber = ds.Capabilities.CapSerialNumber.GetCurrent()
+                        },
+''',
+    '''                    var metadata = TraceStage(
+                        "metadata",
+                        () => new MetadataCaps
+                        {
+                            Manufacturer = ds.Manufacturer,
+                            Model = ds.Name,
+                            SerialNumber = ds.Capabilities.CapSerialNumber.GetCurrent()
+                        });
+
+                    return new ScanCaps
+                    {
+                        MetadataCaps = metadata,
+''',
+)
+replace_exact(
+    twain_driver,
+    "    private PerSourceCaps GetPerSourceCaps(DataSource ds)\n",
+    '''    private static T TraceStage<T>(string stage, Func<T> action)
+    {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        Trace($"twain.getCaps stage={stage} event=begin");
+        try
+        {
+            var result = action();
+            Trace(
+                $"twain.getCaps stage={stage} event=end outcome=success durationMs={(long)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds}");
+            return result;
+        }
+        catch (Exception exception)
+        {
+            Trace(
+                $"twain.getCaps stage={stage} event=end outcome=failure durationMs={(long)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds} exceptionType={exception.GetType().Name} hresult=0x{unchecked((uint)exception.HResult):X8}");
+            throw;
+        }
+    }
+
+    private static void TraceStage(string stage, Action action)
+    {
+        TraceStage<object?>(stage, () =>
+        {
+            action();
+            return null;
+        });
+    }
+
+    private static void TraceTwainModules(string phase)
+    {
+        try
+        {
+            var found = false;
+            foreach (System.Diagnostics.ProcessModule module in
+                     System.Diagnostics.Process.GetCurrentProcess().Modules)
+            {
+                var modulePath = module.FileName;
+                var moduleName = Path.GetFileName(modulePath);
+                var isDsm =
+                    string.Equals(moduleName, "twaindsm.dll", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(moduleName, "twain_32.dll", StringComparison.OrdinalIgnoreCase);
+                var isVendor =
+                    modulePath.Contains(
+                        $"{Path.DirectorySeparatorChar}twain_32{Path.DirectorySeparatorChar}",
+                        StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(moduleName, "twain_32.dll", StringComparison.OrdinalIgnoreCase);
+
+                if (!isDsm && !isVendor)
+                {
+                    continue;
+                }
+
+                found = true;
+                var version = System.Diagnostics.FileVersionInfo
+                    .GetVersionInfo(modulePath)
+                    .FileVersion ?? "";
+                using var stream = File.OpenRead(modulePath);
+                var sha256 = Convert.ToHexString(
+                    System.Security.Cryptography.SHA256.HashData(stream));
+
+                Trace(
+                    $"twain.module phase={phase} observation=loaded moduleName={SanitizeDiagnosticValue(moduleName)} modulePath={SanitizeDiagnosticValue(modulePath)} fileVersion={SanitizeDiagnosticValue(version)} sha256={sha256}");
+            }
+
+            if (!found)
+            {
+                Trace($"twain.module phase={phase} observation=notLoaded");
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace(
+                $"twain.module phase={phase} observation=notObservable exceptionType={exception.GetType().Name} hresult=0x{unchecked((uint)exception.HResult):X8}");
+        }
+    }
+
+    private static void Trace(string value)
+    {
+        try
+        {
+            Console.Error.WriteLine($"WA_DIAG|{value}");
+        }
+        catch
+        {
+        }
+    }
+
+    private static string SanitizeDiagnosticValue(string value) =>
+        new(
+            value
+                .Where(character => !char.IsControl(character) && character != '|')
+                .Take(512)
+                .ToArray());
+
+    private PerSourceCaps GetPerSourceCaps(DataSource ds)
+''',
+)
+
 worker_context = root / "NAPS2.Sdk/Remoting/Worker/WorkerContext.cs"
 replace_exact(
     worker_context,
@@ -221,6 +452,172 @@ replace_exact(
     worker_factory,
     '''    public void StopSpareWorkers()\n    {\n        if (_workerQueues == null) return;\n        var stopTasks = new List<Task>();\n        foreach (var queue in _workerQueues.Values)\n        {\n            while (queue.TryTake(out var worker))\n            {\n                stopTasks.Add(worker.Stop());\n            }\n        }\n        Task.WhenAll(stopTasks).Wait();\n    }\n''',
     '''    public void StopSpareWorkers()\n    {\n        if (_workerQueues == null) return;\n        var stopTasks = new List<Task>();\n        foreach (var queue in _workerQueues.Values)\n        {\n            while (queue.TryTake(out var worker))\n            {\n                stopTasks.Add(worker.Stop());\n            }\n        }\n        Task.WhenAll(stopTasks).GetAwaiter().GetResult();\n    }\n\n    public Task ShutdownAsync()\n    {\n        lock (_lifecycleLock)\n        {\n            if (_shutdownTask != null)\n            {\n                return _shutdownTask;\n            }\n\n            _shutdownStarted = true;\n            _shutdownTask = Task.Run(StopAllWorkersAsync);\n            return _shutdownTask;\n        }\n    }\n\n    private async Task StopAllWorkersAsync()\n    {\n        Task[] startTasks;\n        lock (_lifecycleLock)\n        {\n            startTasks = _workerStarts.ToArray();\n        }\n        await Task.WhenAll(startTasks).ConfigureAwait(false);\n\n        WorkerContext[] workers;\n        lock (_lifecycleLock)\n        {\n            workers = _workers.ToArray();\n        }\n\n        await Task.WhenAll(workers.Select(worker => worker.Stop())).ConfigureAwait(false);\n\n        var aliveWorkers = workers.Where(worker => !worker.Process.HasExited).ToArray();\n        if (aliveWorkers.Length > 0)\n        {\n            throw new TimeoutException(\n                $"{aliveWorkers.Length} worker process(es) remained alive after shutdown.");\n        }\n\n        lock (_lifecycleLock)\n        {\n            foreach (var worker in workers)\n            {\n                _workers.Remove(worker);\n            }\n            if (_workerQueues != null)\n            {\n                foreach (var queue in _workerQueues.Values)\n                {\n                    while (queue.TryTake(out _))\n                    {\n                    }\n                }\n            }\n        }\n    }\n\n    private void ThrowIfShutdownStarted()\n    {\n        lock (_lifecycleLock)\n        {\n            if (_shutdownStarted)\n            {\n                throw new ObjectDisposedException(nameof(WorkerFactory));\n            }\n        }\n    }\n''',
+)
+
+
+replace_exact(
+    worker_factory,
+    '''                Arguments = $"{parentId}",
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                UseShellExecute = false
+''',
+    '''                Arguments = $"{parentId}",
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+''',
+)
+replace_exact(
+    worker_factory,
+    '''                Arguments = $"worker {parentId}",
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                UseShellExecute = false
+''',
+    '''                Arguments = $"worker {parentId}",
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+''',
+)
+replace_exact(
+    worker_factory,
+    "    private void StartWorkerService(ScanningContext scanningContext, WorkerType workerType, bool spare)\n",
+    '''    private static void StartWorkerDiagnosticReader(
+        ScanningContext scanningContext,
+        WorkerType workerType,
+        Process process)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    var line = await process.StandardError.ReadLineAsync().ConfigureAwait(false);
+                    if (line == null)
+                    {
+                        return;
+                    }
+                    if (!line.StartsWith("WA_DIAG|", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    scanningContext.Logger.LogDebug(
+                        "naps2.worker.diagnostic workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType} {WorkerDiagnostic}",
+                        process.Id,
+                        Environment.ProcessId,
+                        workerType,
+                        line["WA_DIAG|".Length..]);
+                }
+            }
+            catch (Exception exception)
+            {
+                scanningContext.Logger.LogDebug(
+                    "naps2.worker.diagnostic workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType} observation=notObservable exceptionType={ExceptionType} hresult={HResult}",
+                    process.Id,
+                    Environment.ProcessId,
+                    workerType,
+                    exception.GetType().Name,
+                    $"0x{unchecked((uint)exception.HResult):X8}");
+            }
+        });
+    }
+
+    private void StartWorkerService(ScanningContext scanningContext, WorkerType workerType, bool spare)
+''',
+)
+replace_exact(
+    worker_factory,
+    '''                    var proc = StartWorkerProcess(workerType);
+                    var options = new NamedPipeChannelOptions
+''',
+    '''                    var proc = StartWorkerProcess(workerType);
+                    StartWorkerDiagnosticReader(scanningContext, workerType, proc);
+                    var options = new NamedPipeChannelOptions
+''',
+)
+replace_exact(
+    worker_factory,
+    '''        var worker = NextWorker(scanningContext, workerType);
+        worker.Service.Init(scanningContext.FileStorageManager?.FolderPath);
+
+        lock (_lifecycleLock)
+''',
+    '''        scanningContext.Logger.LogDebug(
+            "worker.acquire event=begin workerType={WorkerType}",
+            workerType);
+        var worker = NextWorker(scanningContext, workerType);
+        worker.Service.Init(scanningContext.FileStorageManager?.FolderPath);
+        scanningContext.Logger.LogDebug(
+            "worker.acquire event=end workerType={WorkerType} workerPid={WorkerPid} parentPid={ParentPid} workerArchitecture={WorkerArchitecture}",
+            workerType,
+            worker.Process.Id,
+            Environment.ProcessId,
+            workerType == WorkerType.WinX86
+                ? "x86"
+                : Environment.Is64BitProcess ? "x64" : "x86");
+
+        lock (_lifecycleLock)
+''',
+)
+replace_exact(
+    worker_context,
+    '''    private async Task StopCoreAsync()
+    {
+        _ = Task.Run(() =>
+''',
+    '''    private async Task StopCoreAsync()
+    {
+        _logger.LogDebug(
+            "worker.release event=begin workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",
+            Process.Id,
+            Environment.ProcessId,
+            Type);
+
+        _ = Task.Run(() =>
+''',
+)
+replace_exact(
+    worker_context,
+    '''        if (!Process.HasExited)
+        {
+            throw new TimeoutException($"Worker process {Process.Id} did not exit after termination.");
+        }
+    }
+''',
+    '''        if (!Process.HasExited)
+        {
+            _logger.LogError(
+                "worker.exit event=end outcome=timeout workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",
+                Process.Id,
+                Environment.ProcessId,
+                Type);
+            _logger.LogDebug(
+                "worker.release event=end outcome=failure workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",
+                Process.Id,
+                Environment.ProcessId,
+                Type);
+            throw new TimeoutException($"Worker process {Process.Id} did not exit after termination.");
+        }
+
+        _logger.LogDebug(
+            "worker.exit event=end outcome=success workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType} exitCode={ExitCode}",
+            Process.Id,
+            Environment.ProcessId,
+            Type,
+            Process.ExitCode);
+        _logger.LogDebug(
+            "worker.release event=end outcome=success workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",
+            Process.Id,
+            Environment.ProcessId,
+            Type);
+    }
+''',
 )
 
 scanning_context = root / "NAPS2.Sdk/Scan/ScanningContext.cs"
