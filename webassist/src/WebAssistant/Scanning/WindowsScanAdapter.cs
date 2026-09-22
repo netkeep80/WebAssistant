@@ -5,7 +5,6 @@ using NAPS2.Images;
 using NAPS2.Images.Gdi;
 using NAPS2.Pdf;
 using NAPS2.Scan;
-using WebAssistant.Runtime;
 
 #pragma warning disable CA2252
 
@@ -16,12 +15,9 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
     private readonly ScanningContext scanningContext;
     private readonly ScanController controller;
     private readonly ILogger? logger;
-    private readonly RuntimeDiagnosticSnapshotProvider? diagnostics;
     private int disposed;
 
-    internal WindowsScanAdapter(
-        ILogger? logger = null,
-        RuntimeDiagnosticSnapshotProvider? diagnostics = null)
+    internal WindowsScanAdapter(ILogger? logger = null)
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(7))
         {
@@ -29,7 +25,6 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         }
 
         this.logger = logger;
-        this.diagnostics = diagnostics;
         scanningContext = new ScanningContext(new GdiImageContext());
         if (logger is not null)
         {
@@ -67,11 +62,7 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         Func<Driver, Task<List<ScanDevice>>> getDevices =
             driver => controller.GetDeviceList(driver);
         Func<ScanDevice, CancellationToken, Task<ScanCaps>> getCaps =
-            (device, token) => ObserveWorkerOperationAsync(
-                "scanner.capabilities",
-                scannerId,
-                () => controller.GetCaps(device, token),
-                token);
+            (device, token) => controller.GetCaps(device, token);
         return logger is null
             ? ResolveCapabilitiesAsync(scannerId, getDevices, getCaps, cancellationToken)
             : ResolveCapabilitiesAsync(scannerId, getDevices, getCaps, logger, cancellationToken);
@@ -642,132 +633,6 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             Naps2ScannerCapabilityMapper.From(caps),
             ScannerCapabilityState.Complete);
     }
-
-    private async Task<T> ObserveWorkerOperationAsync<T>(
-        string operation,
-        string scannerId,
-        Func<Task<T>> execute,
-        CancellationToken cancellationToken)
-    {
-        if (logger is null ||
-            diagnostics is null ||
-            !logger.IsEnabled(LogLevel.Debug))
-        {
-            return await execute();
-        }
-
-        var operationTask = execute();
-        using var monitorCancellation =
-            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var monitorTask = MonitorWorkerSnapshotsAsync(
-            operation,
-            scannerId,
-            operationTask,
-            monitorCancellation.Token);
-
-        try
-        {
-            return await operationTask;
-        }
-        finally
-        {
-            monitorCancellation.Cancel();
-            try
-            {
-                await monitorTask;
-            }
-            catch (OperationCanceledException)
-            {
-            }
-        }
-    }
-
-    private async Task MonitorWorkerSnapshotsAsync(
-        string operation,
-        string scannerId,
-        Task operationTask,
-        CancellationToken cancellationToken)
-    {
-        if (logger is null || diagnostics is null)
-        {
-            return;
-        }
-
-        string? previousSignature = null;
-
-        while (!operationTask.IsCompleted)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var workers = diagnostics.CaptureWorkers();
-            var signature = WorkerSnapshotSignature(workers);
-
-            if (!string.Equals(
-                    signature,
-                    previousSignature,
-                    StringComparison.Ordinal))
-            {
-                previousSignature = signature;
-                logger.LogDebug(
-                    "{Operation} scannerId={ScannerId} stage=workerSnapshot ownedWorkerCount={WorkerCount}",
-                    operation,
-                    scannerId,
-                    workers.Count);
-
-                foreach (var worker in workers)
-                {
-                    logger.LogDebug(
-                        "{Operation} scannerId={ScannerId} stage=workerSnapshot workerPid={WorkerPid} parentPid={ParentPid} workerArchitecture={WorkerArchitecture} workerPath={WorkerPath} workerFileVersion={WorkerFileVersion} workerProductVersion={WorkerProductVersion} workerSize={WorkerSize} workerSha256={WorkerSha256} moduleInspection={ModuleInspection}",
-                        operation,
-                        scannerId,
-                        worker.Pid,
-                        worker.ParentPid,
-                        worker.Architecture,
-                        worker.ExecutablePath,
-                        worker.FileVersion,
-                        worker.ProductVersion,
-                        worker.Size,
-                        worker.Sha256,
-                        worker.ModuleInspectionState);
-
-                    foreach (var module in worker.TwainModules)
-                    {
-                        logger.LogDebug(
-                            "{Operation} scannerId={ScannerId} stage=workerModule workerPid={WorkerPid} moduleName={ModuleName} modulePath={ModulePath} moduleFileVersion={ModuleFileVersion} moduleProductVersion={ModuleProductVersion} moduleArchitecture={ModuleArchitecture} moduleSize={ModuleSize} moduleSha256={ModuleSha256}",
-                            operation,
-                            scannerId,
-                            worker.Pid,
-                            module.Name,
-                            module.FilePath,
-                            module.FileVersion,
-                            module.ProductVersion,
-                            module.Architecture,
-                            module.Size,
-                            module.Sha256);
-                    }
-                }
-            }
-
-            var delay = Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
-            var completed = await Task.WhenAny(operationTask, delay);
-            if (completed == operationTask)
-            {
-                break;
-            }
-
-            await delay;
-        }
-    }
-
-    private static string WorkerSnapshotSignature(
-        IReadOnlyList<RuntimeWorkerIdentity> workers) =>
-        string.Join(
-            "|",
-            workers.Select(worker =>
-                $"{worker.Pid}:{worker.ModuleInspectionState}:" +
-                string.Join(
-                    ",",
-                    worker.TwainModules.Select(module =>
-                        $"{module.Name}:{module.Sha256}"))));
 
     private static string FormatHResult(Exception exception) =>
         $"0x{unchecked((uint)exception.HResult):X8}";
