@@ -390,6 +390,23 @@ public sealed class ObservabilityContractTests
     }
 
     [Fact]
+    public void WindowsAdapter_DoesNotInferOperationWorkerFromProcessSnapshots()
+    {
+        var root = FindRepositoryRoot();
+        var adapter = File.ReadAllText(Path.Combine(
+            root,
+            "webassist",
+            "src",
+            "WebAssistant",
+            "Scanning",
+            "WindowsScanAdapter.cs"));
+
+        Assert.DoesNotContain("workerSnapshot", adapter, StringComparison.Ordinal);
+        Assert.DoesNotContain("CaptureWorkers", adapter, StringComparison.Ordinal);
+        Assert.DoesNotContain("MonitorWorkerSnapshots", adapter, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RepositoryOwnedNaps2Instrumentation_DefinesWorkerLeaseAndExitEvidence()
     {
         var root = FindRepositoryRoot();
