@@ -5,6 +5,7 @@ using NAPS2.Images;
 using NAPS2.Images.Gdi;
 using NAPS2.Pdf;
 using NAPS2.Scan;
+using WebAssistant.Runtime;
 
 #pragma warning disable CA2252
 
@@ -15,9 +16,12 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
     private readonly ScanningContext scanningContext;
     private readonly ScanController controller;
     private readonly ILogger? logger;
+    private readonly RuntimeDiagnosticSnapshotProvider? diagnostics;
     private int disposed;
 
-    internal WindowsScanAdapter(ILogger<WindowsScanAdapter>? logger = null)
+    internal WindowsScanAdapter(
+        ILogger<WindowsScanAdapter>? logger = null,
+        RuntimeDiagnosticSnapshotProvider? diagnostics = null)
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(7))
         {
@@ -25,6 +29,7 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         }
 
         this.logger = logger;
+        this.diagnostics = diagnostics;
         scanningContext = new ScanningContext(new GdiImageContext());
         scanningContext.SetUpWin32Worker();
         controller = new ScanController(scanningContext);
@@ -58,7 +63,11 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         Func<Driver, Task<List<ScanDevice>>> getDevices =
             driver => controller.GetDeviceList(driver);
         Func<ScanDevice, CancellationToken, Task<ScanCaps>> getCaps =
-            (device, token) => controller.GetCaps(device, token);
+            (device, token) => ObserveWorkerOperationAsync(
+                "scanner.capabilities",
+                scannerId,
+                () => controller.GetCaps(device, token),
+                token);
         return logger is null
             ? ResolveCapabilitiesAsync(scannerId, getDevices, getCaps, cancellationToken)
             : ResolveCapabilitiesAsync(scannerId, getDevices, getCaps, logger, cancellationToken);
@@ -96,6 +105,9 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                logger?.LogDebug(
+                    "scanner.discovery backend={Backend} stage=getDeviceList event=start",
+                    BackendName(backend));
                 var devices = await getDevices(driver);
                 cancellationToken.ThrowIfCancellationRequested();
                 stopwatch.Stop();
@@ -297,6 +309,10 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         var stopwatch = Stopwatch.StartNew();
         try
         {
+            logger?.LogDebug(
+                "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps event=start",
+                BackendName(backend),
+                scannerId);
             var caps = await getCaps(device, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             stopwatch.Stop();
@@ -309,19 +325,24 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            stopwatch.Stop();
+            logger?.LogDebug(
+                "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps outcome=cancelled durationMs={DurationMs}",
+                BackendName(backend),
+                scannerId,
+                stopwatch.ElapsedMilliseconds);
             throw;
         }
         catch (Exception exception)
         {
             stopwatch.Stop();
             logger?.LogWarning(
-                "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps outcome=failure durationMs={DurationMs} capabilityState=unavailable exceptionType={ExceptionType} hresult={HResult} message={Message}",
+                "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps outcome=failure durationMs={DurationMs} capabilityState=unavailable exceptionType={ExceptionType} hresult={HResult}",
                 BackendName(backend),
                 scannerId,
                 stopwatch.ElapsedMilliseconds,
                 exception.GetType().Name,
-                FormatHResult(exception),
-                SafeExceptionMessage(exception, device.ID));
+                FormatHResult(exception));
             return CreateRegisteredEndpoint(device, backend);
         }
     }
@@ -384,9 +405,48 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         var images = new List<ProcessedImage>();
         try
         {
-            await foreach (var image in controller.Scan(options, cancellationToken).WithCancellation(cancellationToken))
+            var acquisitionStopwatch = Stopwatch.StartNew();
+            logger?.LogDebug(
+                "scanner.scan backend={Backend} scannerId={ScannerId} stage=acquisition event=start source={Source}",
+                BackendName(backend),
+                scannerId,
+                source);
+            try
             {
-                images.Add(image);
+                await foreach (var image in controller.Scan(options, cancellationToken).WithCancellation(cancellationToken))
+                {
+                    images.Add(image);
+                }
+
+                acquisitionStopwatch.Stop();
+                logger?.LogInformation(
+                    "scanner.scan backend={Backend} scannerId={ScannerId} stage=acquisition outcome=success durationMs={DurationMs} pageCount={PageCount}",
+                    BackendName(backend),
+                    scannerId,
+                    acquisitionStopwatch.ElapsedMilliseconds,
+                    images.Count);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                acquisitionStopwatch.Stop();
+                logger?.LogDebug(
+                    "scanner.scan backend={Backend} scannerId={ScannerId} stage=acquisition outcome=cancelled durationMs={DurationMs}",
+                    BackendName(backend),
+                    scannerId,
+                    acquisitionStopwatch.ElapsedMilliseconds);
+                throw;
+            }
+            catch (Exception exception)
+            {
+                acquisitionStopwatch.Stop();
+                logger?.LogWarning(
+                    "scanner.scan backend={Backend} scannerId={ScannerId} stage=acquisition outcome=failure durationMs={DurationMs} exceptionType={ExceptionType} hresult={HResult}",
+                    BackendName(backend),
+                    scannerId,
+                    acquisitionStopwatch.ElapsedMilliseconds,
+                    exception.GetType().Name,
+                    FormatHResult(exception));
+                throw;
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -399,9 +459,39 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             try
             {
                 var exporter = new PdfExporter(scanningContext);
-                if (!await exporter.Export(pdf, images))
+                var exportStopwatch = Stopwatch.StartNew();
+                logger?.LogDebug(
+                    "scanner.scan backend={Backend} scannerId={ScannerId} stage=pdfExport event=start pageCount={PageCount}",
+                    BackendName(backend),
+                    scannerId,
+                    images.Count);
+                try
                 {
-                    throw new InvalidOperationException("Не удалось сформировать PDF из отсканированных страниц.");
+                    if (!await exporter.Export(pdf, images))
+                    {
+                        throw new InvalidOperationException("Не удалось сформировать PDF из отсканированных страниц.");
+                    }
+
+                    exportStopwatch.Stop();
+                    logger?.LogInformation(
+                        "scanner.scan backend={Backend} scannerId={ScannerId} stage=pdfExport outcome=success durationMs={DurationMs} pageCount={PageCount} pdfBytes={PdfBytes}",
+                        BackendName(backend),
+                        scannerId,
+                        exportStopwatch.ElapsedMilliseconds,
+                        images.Count,
+                        pdf.Length);
+                }
+                catch (Exception exception)
+                {
+                    exportStopwatch.Stop();
+                    logger?.LogWarning(
+                        "scanner.scan backend={Backend} scannerId={ScannerId} stage=pdfExport outcome=failure durationMs={DurationMs} exceptionType={ExceptionType} hresult={HResult}",
+                        BackendName(backend),
+                        scannerId,
+                        exportStopwatch.ElapsedMilliseconds,
+                        exception.GetType().Name,
+                        FormatHResult(exception));
+                    throw;
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
@@ -460,6 +550,11 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+            logger?.LogDebug(
+                "{Operation} backend={Backend} scannerId={ScannerId} stage=getDeviceList event=start",
+                operation,
+                BackendName(backend),
+                scannerId);
             var devices = await getDevices(driver);
             cancellationToken.ThrowIfCancellationRequested();
             stopwatch.Stop();
@@ -523,23 +618,131 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
             ScannerCapabilityState.Complete);
     }
 
-    private static string SafeExceptionMessage(Exception exception, string nativeId)
+    private async Task<T> ObserveWorkerOperationAsync<T>(
+        string operation,
+        string scannerId,
+        Func<Task<T>> execute,
+        CancellationToken cancellationToken)
     {
-        var message = exception.Message;
-        if (!string.IsNullOrEmpty(nativeId))
+        if (logger is null ||
+            diagnostics is null ||
+            !logger.IsEnabled(LogLevel.Debug))
         {
-            message = message.Replace(
-                nativeId,
-                "<native-id>",
-                StringComparison.OrdinalIgnoreCase);
+            return await execute();
         }
 
-        return new string(
-            message
-                .Where(character => !char.IsControl(character))
-                .Take(500)
-                .ToArray());
+        var operationTask = execute();
+        using var monitorCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var monitorTask = MonitorWorkerSnapshotsAsync(
+            operation,
+            scannerId,
+            operationTask,
+            monitorCancellation.Token);
+
+        try
+        {
+            return await operationTask;
+        }
+        finally
+        {
+            monitorCancellation.Cancel();
+            try
+            {
+                await monitorTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
     }
+
+    private async Task MonitorWorkerSnapshotsAsync(
+        string operation,
+        string scannerId,
+        Task operationTask,
+        CancellationToken cancellationToken)
+    {
+        if (logger is null || diagnostics is null)
+        {
+            return;
+        }
+
+        string? previousSignature = null;
+
+        while (!operationTask.IsCompleted)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var workers = diagnostics.CaptureWorkers();
+            var signature = WorkerSnapshotSignature(workers);
+
+            if (!string.Equals(
+                    signature,
+                    previousSignature,
+                    StringComparison.Ordinal))
+            {
+                previousSignature = signature;
+                logger.LogDebug(
+                    "{Operation} scannerId={ScannerId} stage=workerSnapshot ownedWorkerCount={WorkerCount}",
+                    operation,
+                    scannerId,
+                    workers.Count);
+
+                foreach (var worker in workers)
+                {
+                    logger.LogDebug(
+                        "{Operation} scannerId={ScannerId} stage=workerSnapshot workerPid={WorkerPid} parentPid={ParentPid} workerArchitecture={WorkerArchitecture} workerPath={WorkerPath} workerFileVersion={WorkerFileVersion} workerProductVersion={WorkerProductVersion} workerSize={WorkerSize} workerSha256={WorkerSha256} moduleInspection={ModuleInspection}",
+                        operation,
+                        scannerId,
+                        worker.Pid,
+                        worker.ParentPid,
+                        worker.Architecture,
+                        worker.ExecutablePath,
+                        worker.FileVersion,
+                        worker.ProductVersion,
+                        worker.Size,
+                        worker.Sha256,
+                        worker.ModuleInspectionState);
+
+                    foreach (var module in worker.TwainModules)
+                    {
+                        logger.LogDebug(
+                            "{Operation} scannerId={ScannerId} stage=workerModule workerPid={WorkerPid} moduleName={ModuleName} modulePath={ModulePath} moduleFileVersion={ModuleFileVersion} moduleProductVersion={ModuleProductVersion} moduleArchitecture={ModuleArchitecture} moduleSize={ModuleSize} moduleSha256={ModuleSha256}",
+                            operation,
+                            scannerId,
+                            worker.Pid,
+                            module.Name,
+                            module.FilePath,
+                            module.FileVersion,
+                            module.ProductVersion,
+                            module.Architecture,
+                            module.Size,
+                            module.Sha256);
+                    }
+                }
+            }
+
+            var delay = Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
+            var completed = await Task.WhenAny(operationTask, delay);
+            if (completed == operationTask)
+            {
+                break;
+            }
+
+            await delay;
+        }
+    }
+
+    private static string WorkerSnapshotSignature(
+        IReadOnlyList<RuntimeWorkerIdentity> workers) =>
+        string.Join(
+            "|",
+            workers.Select(worker =>
+                $"{worker.Pid}:{worker.ModuleInspectionState}:" +
+                string.Join(
+                    ",",
+                    worker.TwainModules.Select(module =>
+                        $"{module.Name}:{module.Sha256}"))));
 
     private static string FormatHResult(Exception exception) =>
         $"0x{unchecked((uint)exception.HResult):X8}";
