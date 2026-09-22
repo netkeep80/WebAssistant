@@ -1,11 +1,27 @@
 using System.Diagnostics;
+using WebAssistant.Logging;
 
 namespace WebAssistant.Http;
 
-internal sealed class RequestLoggingMiddleware(
-    RequestDelegate next,
-    ILogger<RequestLoggingMiddleware> logger)
+internal sealed class RequestLoggingMiddleware
 {
+    private readonly RequestDelegate next;
+    private readonly ILogger logger;
+
+    public RequestLoggingMiddleware(
+        RequestDelegate next,
+        ILogger<RequestLoggingMiddleware> logger,
+        DailyFileLoggerProvider? dailyLoggerProvider = null)
+    {
+        this.next = next;
+        this.logger = dailyLoggerProvider is null
+            ? logger
+            : new ResilientLogger(
+                logger,
+                dailyLoggerProvider.CreateLogger(
+                    "WebAssistant.Http.RequestLoggingMiddleware"));
+    }
+
     public async Task InvokeAsync(HttpContext context)
     {
         if (!context.Request.Path.StartsWithSegments(ApiVersion.CurrentPrefix))
