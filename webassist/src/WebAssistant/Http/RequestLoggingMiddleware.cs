@@ -140,7 +140,7 @@ internal sealed class RequestLoggingMiddleware
                 ^settingsSuffix.Length];
 
             if (scannerId.Length > 0 &&
-                !scannerId.Contains('/', StringComparison.Ordinal))
+                !scannerId.Contains('/'))
             {
                 try
                 {
