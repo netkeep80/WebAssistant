@@ -20,7 +20,7 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
     private int disposed;
 
     internal WindowsScanAdapter(
-        ILogger<WindowsScanAdapter>? logger = null,
+        ILogger? logger = null,
         RuntimeDiagnosticSnapshotProvider? diagnostics = null)
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(7))
@@ -31,6 +31,10 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
         this.logger = logger;
         this.diagnostics = diagnostics;
         scanningContext = new ScanningContext(new GdiImageContext());
+        if (logger is not null)
+        {
+            scanningContext.Logger = logger;
+        }
         scanningContext.SetUpWin32Worker();
         controller = new ScanController(scanningContext);
     }
