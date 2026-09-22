@@ -138,13 +138,21 @@ public sealed class ObservabilityContractTests
             .EnumerateArray()
             .ToArray();
 
-        Assert.Contains(components, component =>
-            component.GetProperty("name").GetString() == "WebAssistant" &&
-            component.GetProperty("available").GetBoolean());
+        var webAssistant = Assert.Single(
+            components,
+            component =>
+                component.GetProperty("name").GetString() == "WebAssistant" &&
+                component.GetProperty("available").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(
+            webAssistant.GetProperty("fileVersion").GetString()));
 
-        Assert.Contains(components, component =>
-            component.GetProperty("name").GetString() == "NAPS2.Sdk" &&
-            component.GetProperty("available").GetBoolean());
+        var naps2Sdk = Assert.Single(
+            components,
+            component =>
+                component.GetProperty("name").GetString() == "NAPS2.Sdk" &&
+                component.GetProperty("available").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(
+            naps2Sdk.GetProperty("fileVersion").GetString()));
 
         Assert.Contains(components, component =>
             component.GetProperty("name").GetString() == "NAPS2.Worker");
