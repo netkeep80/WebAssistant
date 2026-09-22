@@ -313,7 +313,28 @@ internal sealed class WindowsScanAdapter : IScanAdapter, IDisposable
                 "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps event=start",
                 BackendName(backend),
                 scannerId);
-            var caps = await getCaps(device, cancellationToken);
+            var backendActive = 1;
+            using var cancellationRegistration = cancellationToken.Register(() =>
+            {
+                if (Volatile.Read(ref backendActive) == 1)
+                {
+                    logger?.LogDebug(
+                        "scanner.capabilities backend={Backend} scannerId={ScannerId} stage=getCaps cancellation=backendRequested operationState=active",
+                        BackendName(backend),
+                        scannerId);
+                }
+            });
+
+            ScanCaps caps;
+            try
+            {
+                caps = await getCaps(device, cancellationToken);
+            }
+            finally
+            {
+                Volatile.Write(ref backendActive, 0);
+            }
+
             cancellationToken.ThrowIfCancellationRequested();
             stopwatch.Stop();
             logger?.LogInformation(
