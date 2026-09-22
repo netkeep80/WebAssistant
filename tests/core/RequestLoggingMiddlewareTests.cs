@@ -36,6 +36,72 @@ public sealed class RequestLoggingMiddlewareTests
     }
 
     [Fact]
+    public async Task RequestAborted_IsLoggedWhileDownstreamRemainsActive()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var entered = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var logger = new CaptureLogger<RequestLoggingMiddleware>();
+        var middleware = new RequestLoggingMiddleware(
+            async _ =>
+            {
+                entered.TrySetResult(true);
+                await release.Task;
+            },
+            logger);
+        var context = CreateApiContext();
+        context.RequestAborted = cancellation.Token;
+
+        var request = middleware.InvokeAsync(context);
+        await entered.Task;
+        cancellation.Cancel();
+
+        await Task.Yield();
+
+        Assert.Contains(
+            logger.Entries,
+            entry =>
+                entry.Level == LogLevel.Information &&
+                entry.Message.Contains(
+                    "cancellation=clientRequested",
+                    StringComparison.Ordinal) &&
+                entry.Message.Contains(
+                    "requestState=active",
+                    StringComparison.Ordinal));
+        Assert.False(request.IsCompleted);
+
+        release.TrySetResult(true);
+        await request;
+    }
+
+    [Fact]
+    public async Task ScannerSettingsRoute_LogsScannerIdFromPath()
+    {
+        const string scannerId = "wa2-twain-route-id";
+        var logger = new CaptureLogger<RequestLoggingMiddleware>();
+        var middleware = new RequestLoggingMiddleware(
+            context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status200OK;
+                return Task.CompletedTask;
+            },
+            logger);
+        var context = new DefaultHttpContext();
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Path = $"/v1/scanners/{scannerId}/settings";
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Message.Contains(
+                $"scannerId={scannerId}",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task UnexpectedException_IsLoggedAsErrorWithoutSuccessfulCompletion()
     {
         var logger = new CaptureLogger<RequestLoggingMiddleware>();
