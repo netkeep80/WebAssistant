@@ -8,21 +8,43 @@ internal sealed class WindowsScannerShutdownHostedService : IHostedService
 {
     private readonly WindowsScanAdapterHolder holder;
     private readonly ILogger<WindowsScannerShutdownHostedService> logger;
+    private readonly IHostApplicationLifetime applicationLifetime;
+    private IDisposable? stoppingRegistration;
+    private int shutdownStarted;
 
     public WindowsScannerShutdownHostedService(
         WindowsScanAdapterHolder holder,
-        ILogger<WindowsScannerShutdownHostedService> logger)
+        ILogger<WindowsScannerShutdownHostedService> logger,
+        IHostApplicationLifetime applicationLifetime)
     {
         this.holder = holder;
         this.logger = logger;
+        this.applicationLifetime = applicationLifetime;
     }
 
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        stoppingRegistration =
+            applicationLifetime.ApplicationStopping.Register(ShutdownOnce);
+        return Task.CompletedTask;
+    }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
+        ShutdownOnce();
+        stoppingRegistration?.Dispose();
+        return Task.CompletedTask;
+    }
+
+    private void ShutdownOnce()
+    {
+        if (Interlocked.Exchange(ref shutdownStarted, 1) != 0)
+        {
+            return;
+        }
+
         var stopwatch = Stopwatch.StartNew();
-        logger.LogInformation("scanner.shutdown stage=start");
+        logger.LogInformation("scanner.shutdown stage=start trigger=applicationStopping");
 
         try
         {
@@ -32,7 +54,6 @@ internal sealed class WindowsScannerShutdownHostedService : IHostedService
                 "scanner.shutdown stage=complete outcome={Outcome} durationMs={DurationMs}",
                 disposed ? "success" : "notCreated",
                 stopwatch.ElapsedMilliseconds);
-            return Task.CompletedTask;
         }
         catch (Exception exception)
         {
