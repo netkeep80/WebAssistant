@@ -131,6 +131,45 @@ public sealed class DependencyOwnershipTests
     }
 
     [Fact]
+    public void RepositoryOwnedPackages_ContainCausalObservabilityInstrumentation()
+    {
+        using var sdkArchive = ZipFile.OpenRead(GetPackagePath(PackageFile));
+        var sdkEntry = Assert.Single(sdkArchive.Entries, entry =>
+            string.Equals(entry.FullName, "lib/net10.0/NAPS2.Sdk.dll", StringComparison.Ordinal));
+        using var sdkStream = sdkEntry.Open();
+        using var sdkBuffer = new MemoryStream();
+        sdkStream.CopyTo(sdkBuffer);
+        var sdkBytes = sdkBuffer.ToArray();
+
+        using var workerArchive = ZipFile.OpenRead(GetPackagePath(WorkerPackageFile));
+        var workerEntry = Assert.Single(workerArchive.Entries, entry =>
+            string.Equals(entry.FullName, "contentFiles/NAPS2.Worker.exe", StringComparison.Ordinal));
+        using var workerStream = workerEntry.Open();
+        using var workerBuffer = new MemoryStream();
+        workerStream.CopyTo(workerBuffer);
+        var workerBytes = workerBuffer.ToArray();
+
+        foreach (var marker in new[]
+                 {
+                     "worker.acquire", "worker.release", "worker.exit",
+                     "WA_DIAG|", "twain_32.dll", "twaindsm.dll",
+                     "requestedDsm", "effectiveDsm",
+                     "dsOpen", "feederSetFalse", "feederGetFalse",
+                     "flatbedCaps", "feederSetTrue", "feederGetTrue",
+                     "feederCaps", "duplex", "metadata"
+                 })
+        {
+            var encoded = System.Text.Encoding.Unicode.GetBytes(marker);
+            Assert.True(
+                sdkBytes.AsSpan().IndexOf(encoded) >= 0,
+                $"SDK package does not contain observability marker: {marker}");
+            Assert.True(
+                workerBytes.AsSpan().IndexOf(encoded) >= 0,
+                $"Worker package does not contain observability marker: {marker}");
+        }
+    }
+
+    [Fact]
     public void ProductReference_UsesRepositoryOwnedSourceAlignedWorker()
     {
         var root = FindRepositoryRoot();
