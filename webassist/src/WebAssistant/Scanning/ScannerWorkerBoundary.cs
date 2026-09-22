@@ -107,25 +107,19 @@ internal static class ScannerWorkerBoundary
 
         requestCancellation.ThrowIfCancellationRequested();
 
-        Task<T> operationTask;
-        try
-        {
-            operationTask = operationFactory();
-        }
-        catch
-        {
-            throw;
-        }
+        using var deadlineCancellation = new CancellationTokenSource(timeout);
+        var deadlineTask = Task.Delay(
+            Timeout.InfiniteTimeSpan,
+            deadlineCancellation.Token);
+
+        // Run the factory itself behind the boundary: NAPS2 worker acquisition and
+        // initialization contain synchronous work before the remote async Task is returned.
+        var operationTask = Task.Run(operationFactory);
 
         if (operationTask.IsCompleted)
         {
             return await operationTask.ConfigureAwait(false);
         }
-
-        using var deadlineCancellation = new CancellationTokenSource(timeout);
-        var deadlineTask = Task.Delay(
-            Timeout.InfiniteTimeSpan,
-            deadlineCancellation.Token);
         var requestCancellationTask = requestCancellation.CanBeCanceled
             ? Task.Delay(Timeout.InfiniteTimeSpan, requestCancellation)
             : Task.Delay(Timeout.InfiniteTimeSpan);
@@ -153,6 +147,7 @@ internal static class ScannerWorkerBoundary
 
         if (!leaseCapture.TryGet(out var lease) || lease is null)
         {
+            ObserveLateCompletion(operationTask);
             throw new ScannerWorkerRecoveryException(
                 operation,
                 backend,
@@ -173,6 +168,8 @@ internal static class ScannerWorkerBoundary
                 exception);
         }
 
+        ObserveLateCompletion(operationTask);
+
         if (reason == ScannerWorkerTerminationReason.ClientCancellation)
         {
             throw new OperationCanceledException(requestCancellation);
@@ -182,5 +179,18 @@ internal static class ScannerWorkerBoundary
             operation,
             backend,
             timeout);
+    }
+
+    private static void ObserveLateCompletion<T>(Task<T> task)
+    {
+        _ = task.ContinueWith(
+            static completed =>
+            {
+                _ = completed.Exception;
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted |
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 }
