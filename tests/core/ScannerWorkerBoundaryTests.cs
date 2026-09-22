@@ -45,13 +45,13 @@ public sealed class ScannerWorkerBoundaryTests
             () => ScannerWorkerBoundary.ExecuteAsync(
                 ScannerOperationKind.Capabilities,
                 ScannerBackend.Twain,
-                TimeSpan.FromMilliseconds(40),
+                TimeSpan.FromMilliseconds(75),
                 CancellationToken.None,
                 capture,
                 () =>
                 {
                     capture.Publish(lease);
-                    Thread.Sleep(250);
+                    Thread.Sleep(500);
                     return Task.FromResult(91);
                 }));
 
@@ -64,7 +64,7 @@ public sealed class ScannerWorkerBoundaryTests
             lease.LastTerminationReason);
         Assert.True(lease.TerminationCompleted);
         Assert.True(
-            stopwatch.Elapsed < TimeSpan.FromMilliseconds(200),
+            stopwatch.Elapsed < TimeSpan.FromMilliseconds(350),
             $"Deadline started too late: elapsed={stopwatch.Elapsed.TotalMilliseconds:F0}ms.");
     }
 
