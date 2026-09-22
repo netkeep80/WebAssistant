@@ -64,6 +64,22 @@ var runtimeDiagnostics = app.Services.GetRequiredService<RuntimeDiagnosticSnapsh
 var startupDiagnosticsLogger = app.Services
     .GetRequiredService<ILoggerFactory>()
     .CreateLogger("WebAssistant.Runtime.Diagnostics");
+var lifecycleDiagnosticsLogger = new ResilientLogger(
+    startupDiagnosticsLogger,
+    app.Services
+        .GetRequiredService<DailyFileLoggerProvider>()
+        .CreateLogger("WebAssistant.Runtime.Diagnostics"));
+
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    var workerCount = runtimeDiagnostics.CaptureWorkers().Count;
+    lifecycleDiagnosticsLogger.LogInformation(
+        "host.shutdown stage=requested observedWorkerCount={WorkerCount}",
+        workerCount);
+});
+app.Lifetime.ApplicationStopped.Register(() =>
+    lifecycleDiagnosticsLogger.LogInformation(
+        "host.shutdown stage=applicationStopped"));
 
 if (startupDiagnosticsLogger.IsEnabled(LogLevel.Debug))
 {
