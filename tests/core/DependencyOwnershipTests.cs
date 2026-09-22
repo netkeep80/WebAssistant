@@ -13,18 +13,18 @@ namespace WebAssistant.CoreTests;
 public sealed class DependencyOwnershipTests
 {
     private const string PackageId = "WebAssistant.NAPS2.Sdk";
-    private const string PackageVersion = "1.3.0-webassistant.6.450cba65";
-    private const string PackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.6.450cba65.nupkg";
+    private const string PackageVersion = "1.3.0-webassistant.8.450cba65";
+    private const string PackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.8.450cba65.nupkg";
     private const string WorkerPackageId = "WebAssistant.NAPS2.Sdk.Worker.Win32";
     private const string WorkerPackageVersion = "1.3.0-webassistant.2.450cba65";
     private const string WorkerPackageFile = "WebAssistant.NAPS2.Sdk.Worker.Win32.1.3.0-webassistant.2.450cba65.nupkg";
     private const string WorkerPackageSha256 = "dab042ae1a25a2d963dfe96e111bd3d1fba3148547a22a319907f6d270d4fa15";
-    private const string PreviousPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.5.450cba65.nupkg";
-    private const string OlderPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.4.450cba65.nupkg";
+    private const string PreviousPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.6.450cba65.nupkg";
+    private const string OlderPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.5.450cba65.nupkg";
     private const string UpstreamCommit = "450cba65aaffe6387041050a573051a64cd80fe9";
-    private const string PreviousPackageSha256 = "d2f53f57535f892df023c2e7cffeb4ad091d107e1192ada0d532be51d48fb88f";
-    private const string OlderPackageSha256 = "34bf8c94b851dcabad12f6cb50abc504a14010b44b3d6db592efec6ad310e0fc";
-    private const string CurrentPackageSha256 = "391e592f39ba8a0f8c030ea50e5dbf858bc2eaf9121b4f1b4cfbc2bf0e711e84";
+    private const string PreviousPackageSha256 = "391e592f39ba8a0f8c030ea50e5dbf858bc2eaf9121b4f1b4cfbc2bf0e711e84";
+    private const string OlderPackageSha256 = "d2f53f57535f892df023c2e7cffeb4ad091d107e1192ada0d532be51d48fb88f";
+    private const string CurrentPackageSha256 = "2cd775d953b23ba50467b65ccf615c9f94a1eeeb9c5e40145cd5c93eec837769";
     private const long MaxPackageBytes = 1024L * 1024L;
 
     [Fact]
@@ -75,7 +75,7 @@ public sealed class DependencyOwnershipTests
             var fileVersion = FileVersionInfo.GetVersionInfo(temporaryPath).FileVersion;
 
             Assert.Equal(new Version(8, 3, 0, 0), assemblyVersion);
-            Assert.Equal("8.3.0.6", fileVersion);
+            Assert.Equal("8.3.0.8", fileVersion);
         }
         finally
         {
@@ -278,7 +278,8 @@ public sealed class DependencyOwnershipTests
         Assert.Contains($"`{CurrentPackageSha256}`", provenance, StringComparison.Ordinal);
         Assert.Contains($"`{PreviousPackageSha256}`", provenance, StringComparison.Ordinal);
         Assert.Contains($"`{OlderPackageSha256}`", provenance, StringComparison.Ordinal);
-        Assert.Contains("FileVersion=8.3.0.6", provenance, StringComparison.Ordinal);
+        Assert.Contains("Пакет `.8` сохраняет CLR identity", provenance, StringComparison.Ordinal);
+        Assert.Contains("FileVersion=8.3.0.8", provenance, StringComparison.Ordinal);
         Assert.Contains("AssemblyVersion=8.3.0.0", provenance, StringComparison.Ordinal);
         Assert.Contains("остаётся неизменяемым", provenance, StringComparison.OrdinalIgnoreCase);
     }
@@ -291,7 +292,7 @@ public sealed class DependencyOwnershipTests
         var rebuild = File.ReadAllText(rebuildPath);
 
         Assert.Contains(PackageVersion, rebuild, StringComparison.Ordinal);
-        Assert.Contains("8.3.0.6</FileVersion>", rebuild, StringComparison.Ordinal);
+        Assert.Contains("8.3.0.8</FileVersion>", rebuild, StringComparison.Ordinal);
         Assert.Contains("8.3.0.0</AssemblyVersion>", rebuild, StringComparison.Ordinal);
         Assert.Contains("NAPS2.Sdk/Remoting/Worker/WorkerContext.cs", rebuild, StringComparison.Ordinal);
         Assert.Contains("NAPS2.Sdk/Remoting/Worker/WorkerFactory.cs", rebuild, StringComparison.Ordinal);
@@ -300,6 +301,9 @@ public sealed class DependencyOwnershipTests
         Assert.Contains("_stopTask", rebuild, StringComparison.Ordinal);
         Assert.Contains("StopAllWorkersAsync", rebuild, StringComparison.Ordinal);
         Assert.Contains("ShutdownAsync", rebuild, StringComparison.Ordinal);
+        Assert.Contains("WorkerProcessLease", rebuild, StringComparison.Ordinal);
+        Assert.Contains("WorkerLeaseAcquired", rebuild, StringComparison.Ordinal);
+        Assert.Contains("TerminateCoreAsync", rebuild, StringComparison.Ordinal);
     }
 
     [Fact]

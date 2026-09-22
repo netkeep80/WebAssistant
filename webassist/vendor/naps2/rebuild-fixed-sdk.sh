@@ -4,7 +4,7 @@ set -euo pipefail
 UPSTREAM_REPOSITORY="https://github.com/cyanfish/naps2.git"
 UPSTREAM_COMMIT="450cba65aaffe6387041050a573051a64cd80fe9"
 PACKAGE_ID="WebAssistant.NAPS2.Sdk"
-PACKAGE_VERSION="1.3.0-webassistant.6.450cba65"
+PACKAGE_VERSION="1.3.0-webassistant.8.450cba65"
 PACKAGE_FILE="$PACKAGE_ID.$PACKAGE_VERSION.nupkg"
 WORKER_PACKAGE_ID="WebAssistant.NAPS2.Sdk.Worker.Win32"
 WORKER_PACKAGE_VERSION="1.3.0-webassistant.2.450cba65"
@@ -56,7 +56,7 @@ replace_exact(
     "        <PackageId Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
     "WebAssistant.NAPS2.Sdk</PackageId>\n"
     "        <PackageVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
-    "1.3.0-webassistant.6.450cba65</PackageVersion>\n"
+    "1.3.0-webassistant.8.450cba65</PackageVersion>\n"
     "        <PackageId Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Win32'\">"
     "WebAssistant.NAPS2.Sdk.Worker.Win32</PackageId>\n"
     "        <PackageVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Win32'\">"
@@ -76,7 +76,7 @@ replace_exact(
     "        <VersionName>8.3.0</VersionName>",
     "        <VersionName>8.3.0</VersionName>\n"
     "        <AssemblyVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.0</AssemblyVersion>\n"
-    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.6</FileVersion>\n"
+    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.8</FileVersion>\n"
     "        <AssemblyVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Build'\">8.3.0.0</AssemblyVersion>\n"
     "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Build'\">8.3.0.2</FileVersion>",
 )
@@ -91,6 +91,48 @@ replace_exact(
     "    /// Null means the current state is unavailable or unknown.\n"
     "    /// </summary>\n"
     "    public bool? FeederHasPaper { get; init; }\n}",
+)
+
+worker_process_lease = root / "NAPS2.Sdk/Scan/WorkerProcessLease.cs"
+worker_process_lease.write_text(
+    '''using NAPS2.Remoting.Worker;
+
+namespace NAPS2.Scan;
+
+/// <summary>
+/// Causal handle for the exact out-of-process worker leased to one scanner operation.
+/// </summary>
+public sealed class WorkerProcessLease
+{
+    private readonly WorkerContext _context;
+
+    internal WorkerProcessLease(WorkerContext context)
+    {
+        _context = context;
+    }
+
+    public int ProcessId => _context.Process.Id;
+
+    public Task TerminateAsync(string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        return _context.Terminate(reason);
+    }
+}
+''',
+    encoding="utf-8",
+)
+
+scanning_context_lease = root / "NAPS2.Sdk/Scan/ScanningContext.cs"
+replace_exact(
+    scanning_context_lease,
+    "    public ILogger Logger { get; set; } = NullLogger.Instance;\n",
+    "    public ILogger Logger { get; set; } = NullLogger.Instance;\n\n"
+    "    /// <summary>\n"
+    "    /// Called when an out-of-process worker is causally leased to the current scanner operation.\n"
+    "    /// Spare workers are not reported through this callback.\n"
+    "    /// </summary>\n"
+    "    public Action<WorkerProcessLease>? WorkerLeaseAcquired { get; set; }\n",
 )
 
 wia_driver = root / "NAPS2.Sdk/Scan/Internal/Wia/WiaScanDriver.cs"
@@ -552,7 +594,6 @@ replace_exact(
             "worker.acquire event=begin workerType={WorkerType}",
             workerType);
         var worker = NextWorker(scanningContext, workerType);
-        worker.Service.Init(scanningContext.FileStorageManager?.FolderPath);
         scanningContext.Logger.LogDebug(
             "worker.acquire event=end workerType={WorkerType} workerPid={WorkerPid} parentPid={ParentPid} workerArchitecture={WorkerArchitecture}",
             workerType,
@@ -561,6 +602,19 @@ replace_exact(
             workerType == WorkerType.WinX86
                 ? "x86"
                 : Environment.Is64BitProcess ? "x64" : "x86");
+
+        try
+        {
+            // Publish the causal process before any synchronous worker RPC so
+            // WebAssistant can enforce its deadline even if initialization blocks.
+            scanningContext.WorkerLeaseAcquired?.Invoke(new WorkerProcessLease(worker));
+            worker.Service.Init(scanningContext.FileStorageManager?.FolderPath);
+        }
+        catch
+        {
+            worker.Terminate("workerInitializationFailure").GetAwaiter().GetResult();
+            throw;
+        }
 
         lock (_lifecycleLock)
 ''',
@@ -634,6 +688,122 @@ replace_exact(
                 Type);
         }
     }
+''',
+)
+
+replace_exact(
+    worker_context,
+    '''    public Task Stop()
+    {
+        lock (_stopLock)
+        {
+            return _stopTask ??= StopCoreAsync();
+        }
+    }
+
+    private async Task StopCoreAsync()
+''',
+    '''    public Task Stop()
+    {
+        lock (_stopLock)
+        {
+            return _stopTask ??= StopCoreAsync();
+        }
+    }
+
+    public Task Terminate(string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        lock (_stopLock)
+        {
+            return _stopTask ??= TerminateCoreAsync(reason);
+        }
+    }
+
+    private async Task TerminateCoreAsync(string reason)
+    {
+        _logger.LogDebug(
+            "worker.release event=begin workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",
+            Process.Id,
+            Environment.ProcessId,
+            Type);
+
+        if (Process.HasExited)
+        {
+            _logger.LogDebug(
+                "worker.exit event=end outcome=alreadyExited workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType} exitCode={ExitCode}",
+                Process.Id,
+                Environment.ProcessId,
+                Type,
+                Process.ExitCode);
+            _logger.LogDebug(
+                "worker.release event=end outcome=success workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",
+                Process.Id,
+                Environment.ProcessId,
+                Type);
+            return;
+        }
+
+        _logger.LogWarning(
+            "worker.termination event=requested mode=forcedKill reason={Reason} workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",
+            reason,
+            Process.Id,
+            Environment.ProcessId,
+            Type);
+
+        try
+        {
+            Process.Kill();
+        }
+        catch (InvalidOperationException) when (Process.HasExited)
+        {
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Error killing scanner worker");
+            throw;
+        }
+
+        if (!Process.HasExited)
+        {
+            await Task.WhenAny(
+                    Process.WaitForExitAsync(),
+                    Task.Delay(WorkerKillTimeout))
+                .ConfigureAwait(false);
+        }
+
+        if (!Process.HasExited)
+        {
+            _logger.LogError(
+                "worker.exit event=end outcome=timeout reason={Reason} workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",
+                reason,
+                Process.Id,
+                Environment.ProcessId,
+                Type);
+            _logger.LogDebug(
+                "worker.release event=end outcome=failure workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",
+                Process.Id,
+                Environment.ProcessId,
+                Type);
+            throw new TimeoutException(
+                $"Worker process {Process.Id} did not exit after forced termination.");
+        }
+
+        _logger.LogWarning(
+            "worker.exit event=end outcome=forcedKill reason={Reason} workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType} exitCode={ExitCode}",
+            reason,
+            Process.Id,
+            Environment.ProcessId,
+            Type,
+            Process.ExitCode);
+        _logger.LogDebug(
+            "worker.release event=end outcome=forcedKill workerPid={WorkerPid} parentPid={ParentPid} workerType={WorkerType}",
+            Process.Id,
+            Environment.ProcessId,
+            Type);
+    }
+
+    private async Task StopCoreAsync()
 ''',
 )
 
