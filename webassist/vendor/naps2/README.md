@@ -31,7 +31,7 @@ WebAssistant хранит принадлежащие репозиторию па
 
 Worker self-report нужен в том числе для x86 TWAIN worker: 64-битный host-side `Process.Modules` не считается достаточным доказательством фактически загруженного DSM/DS в 32-битном процессе.
 
-Пакет `.5` сохраняет CLR identity `AssemblyVersion=8.3.0.0`, но получает монотонный `FileVersion=8.3.0.7`. Политика выбора scanner/source внутри NAPS2 не реализуется: `source=auto` остаётся ответственностью WebAssistant.
+Пакет `.7` сохраняет CLR identity `AssemblyVersion=8.3.0.0`, но получает монотонный `FileVersion=8.3.0.7`. Политика выбора scanner/source внутри NAPS2 не реализуется: `source=auto` остаётся ответственностью WebAssistant.
 
 Неизменяемые предшественники SDK:
 
