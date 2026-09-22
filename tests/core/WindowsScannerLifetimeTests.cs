@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using WebAssistant.Scanning;
 using Xunit;
@@ -31,7 +32,8 @@ public sealed class WindowsScannerLifetimeTests
         });
         var hostedService = new WindowsScannerShutdownHostedService(
             holder,
-            new CaptureLogger<WindowsScannerShutdownHostedService>());
+            new CaptureLogger<WindowsScannerShutdownHostedService>(),
+            new FakeHostApplicationLifetime());
 
         await hostedService.StopAsync(CancellationToken.None);
 
@@ -99,7 +101,10 @@ public sealed class WindowsScannerLifetimeTests
             Interlocked.Increment(ref created);
             return new FakeScanAdapter();
         });
-        var hostedService = new WindowsScannerShutdownHostedService(holder, logger);
+        var hostedService = new WindowsScannerShutdownHostedService(
+            holder,
+            logger,
+            new FakeHostApplicationLifetime());
 
         await hostedService.StopAsync(CancellationToken.None);
 
@@ -117,7 +122,10 @@ public sealed class WindowsScannerLifetimeTests
         var logger = new CaptureLogger<WindowsScannerShutdownHostedService>();
         var holder = new WindowsScanAdapterHolder(() => adapter);
         Assert.Same(adapter, holder.GetOrCreate());
-        var hostedService = new WindowsScannerShutdownHostedService(holder, logger);
+        var hostedService = new WindowsScannerShutdownHostedService(
+            holder,
+            logger,
+            new FakeHostApplicationLifetime());
 
         await hostedService.StopAsync(CancellationToken.None);
 
@@ -129,14 +137,54 @@ public sealed class WindowsScannerLifetimeTests
     }
 
     [Fact]
+    public async Task ApplicationStopping_DisposesOwnedAdapterBeforeStopAsync()
+    {
+        var adapter = new FakeScanAdapter();
+        var holder = new WindowsScanAdapterHolder(() => adapter);
+        Assert.Same(adapter, holder.GetOrCreate());
+        var lifetime = new FakeHostApplicationLifetime();
+        var logger = new CaptureLogger<WindowsScannerShutdownHostedService>();
+        var hostedService = new WindowsScannerShutdownHostedService(
+            holder,
+            logger,
+            lifetime);
+
+        await hostedService.StartAsync(CancellationToken.None);
+        lifetime.StopApplication();
+
+        Assert.Equal(1, adapter.DisposeCalls);
+        Assert.Contains(logger.Messages, message =>
+            message.Contains(
+                "scanner.shutdown stage=start trigger=applicationStopping",
+                StringComparison.Ordinal));
+
+        await hostedService.StopAsync(CancellationToken.None);
+        Assert.Equal(1, adapter.DisposeCalls);
+    }
+
+    [Fact]
     public void HostedService_DependsOnHolderAndLogger_NotOnScanAdapter()
     {
         var constructor = Assert.Single(typeof(WindowsScannerShutdownHostedService).GetConstructors());
         var parameters = constructor.GetParameters();
 
-        Assert.Equal(2, parameters.Length);
+        Assert.Equal(3, parameters.Length);
         Assert.Equal(typeof(WindowsScanAdapterHolder), parameters[0].ParameterType);
         Assert.Equal(typeof(ILogger<WindowsScannerShutdownHostedService>), parameters[1].ParameterType);
+        Assert.Equal(typeof(IHostApplicationLifetime), parameters[2].ParameterType);
+    }
+
+    private sealed class FakeHostApplicationLifetime : IHostApplicationLifetime
+    {
+        private readonly CancellationTokenSource started = new();
+        private readonly CancellationTokenSource stopping = new();
+        private readonly CancellationTokenSource stopped = new();
+
+        public CancellationToken ApplicationStarted => started.Token;
+        public CancellationToken ApplicationStopping => stopping.Token;
+        public CancellationToken ApplicationStopped => stopped.Token;
+
+        public void StopApplication() => stopping.Cancel();
     }
 
     private sealed class FakeScanAdapter : IScanAdapter, IDisposable
