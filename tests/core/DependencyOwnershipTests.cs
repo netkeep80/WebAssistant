@@ -278,6 +278,7 @@ public sealed class DependencyOwnershipTests
         Assert.Contains($"`{CurrentPackageSha256}`", provenance, StringComparison.Ordinal);
         Assert.Contains($"`{PreviousPackageSha256}`", provenance, StringComparison.Ordinal);
         Assert.Contains($"`{OlderPackageSha256}`", provenance, StringComparison.Ordinal);
+        Assert.Contains("Пакет `.7` сохраняет CLR identity", provenance, StringComparison.Ordinal);
         Assert.Contains("FileVersion=8.3.0.7", provenance, StringComparison.Ordinal);
         Assert.Contains("AssemblyVersion=8.3.0.0", provenance, StringComparison.Ordinal);
         Assert.Contains("остаётся неизменяемым", provenance, StringComparison.OrdinalIgnoreCase);
