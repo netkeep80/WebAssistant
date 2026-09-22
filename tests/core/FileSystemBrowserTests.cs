@@ -90,7 +90,7 @@ public sealed class FileSystemBrowserTests
             async Task Visible(string side, string name) => await Row(side, name).WaitForAsync();
             async Task WaitBreadcrumb(string side, string expected) =>
                 await page.WaitForFunctionAsync(
-                    "args => document.getElementById(args.id).innerText.includes(args.expected)",
+                    "args => document.getElementById(args.id).innerText.trim() === args.expected",
                     new { id = $"filesystem-{side}-breadcrumb", expected });
             async Task Prompt(string selector, string value)
             {
