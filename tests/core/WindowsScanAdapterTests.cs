@@ -321,7 +321,7 @@ public sealed class WindowsScanAdapterTests
         var workerPath = Assert.Single(candidates, File.Exists);
         var fileVersion = FileVersionInfo.GetVersionInfo(workerPath).FileVersion;
 
-        Assert.Equal("8.3.0.1", fileVersion);
+        Assert.Equal("8.3.0.2", fileVersion);
     }
 
     [Fact]
