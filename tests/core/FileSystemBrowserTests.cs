@@ -151,6 +151,12 @@ public sealed class FileSystemBrowserTests
             Assert.Equal(3, await SelectedCount("left"));
             await page.ClickAsync("#filesystem-left thead th[data-sort-key='size'] .sort-button");
             Assert.Equal(3, await SelectedCount("left"));
+            Assert.Equal(
+                new[] { "a.xml", "b.xml", "c.json" },
+                await Entries("left")
+                    .Locator("tr.selected-row")
+                    .EvaluateAllAsync<string[]>(
+                        "rows => rows.map(row => row.dataset.entryName)"));
 
             foreach (var name in new[] { "a.xml", "b.xml", "c.json" })
             {
