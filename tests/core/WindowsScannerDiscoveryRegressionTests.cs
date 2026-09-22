@@ -156,8 +156,11 @@ public sealed class WindowsScannerDiscoveryRegressionTests
                 StringComparison.Ordinal) &&
             message.Contains("durationMs=", StringComparison.Ordinal) &&
             message.Contains("exceptionType=TimeoutException", StringComparison.Ordinal) &&
-            message.Contains("hresult=0x", StringComparison.Ordinal) &&
-            message.Contains("message=selected capability timeout", StringComparison.Ordinal));
+            message.Contains("hresult=0x", StringComparison.Ordinal));
+        Assert.DoesNotContain(logger.Messages, message =>
+            message.Contains(
+                "selected capability timeout",
+                StringComparison.Ordinal));
         Assert.DoesNotContain(logger.Messages, message =>
             message.Contains(nativeId, StringComparison.Ordinal));
     }
