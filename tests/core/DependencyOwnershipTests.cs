@@ -24,7 +24,7 @@ public sealed class DependencyOwnershipTests
     private const string UpstreamCommit = "450cba65aaffe6387041050a573051a64cd80fe9";
     private const string PreviousPackageSha256 = "391e592f39ba8a0f8c030ea50e5dbf858bc2eaf9121b4f1b4cfbc2bf0e711e84";
     private const string OlderPackageSha256 = "d2f53f57535f892df023c2e7cffeb4ad091d107e1192ada0d532be51d48fb88f";
-    private const string CurrentPackageSha256 = "__SDK_SHA256__";
+    private const string CurrentPackageSha256 = "c537a6028514523aff38ffbf3bfd13fcff7b50741e47664090effd6334b37f7e";
     private const long MaxPackageBytes = 1024L * 1024L;
 
     [Fact]
