@@ -7,8 +7,8 @@ WebAssistant хранит принадлежащие репозиторию па
 - идентификатор: `WebAssistant.NAPS2.Sdk`;
 - версия: `1.3.0-webassistant.6.450cba65`;
 - файл: `../nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.6.450cba65.nupkg`;
-- размер: `__SDK_SIZE__` байт;
-- SHA-256: `__SDK_SHA256__`;
+- размер: `996884` байт;
+- SHA-256: `391e592f39ba8a0f8c030ea50e5dbf858bc2eaf9121b4f1b4cfbc2bf0e711e84`;
 - исходный репозиторий: `https://github.com/cyanfish/naps2`;
 - точный исходный commit: `450cba65aaffe6387041050a573051a64cd80fe9`;
 - `AssemblyVersion=8.3.0.0`;
@@ -55,7 +55,7 @@ Worker self-report нужен в том числе для x86 TWAIN worker: 64-�
 4. выполняет `dotnet pack`;
 5. канонически переписывает `.nupkg`: записи сортируются, временные метки и атрибуты ZIP фиксируются, дополнительные поля и комментарии удаляются, используется `ZIP_STORED`.
 
-Канонический SDK `.6` имеет размер `__SDK_SIZE__` байт и SHA-256 `__SDK_SHA256__`.
+Канонический SDK `.6` имеет размер `996884` байт и SHA-256 `391e592f39ba8a0f8c030ea50e5dbf858bc2eaf9121b4f1b4cfbc2bf0e711e84`.
 
 ## Source-aligned Win32 worker
 
