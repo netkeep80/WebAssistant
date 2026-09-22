@@ -35,6 +35,40 @@ public sealed class ScannerWorkerBoundaryTests
     }
 
     [Fact]
+    public async Task Deadline_IncludesSynchronousOperationStartupAfterLeasePublication()
+    {
+        var lease = new FakeWorkerLease(41021);
+        var capture = new ScannerWorkerLeaseCapture();
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        var exception = await Assert.ThrowsAsync<ScannerOperationTimeoutException>(
+            () => ScannerWorkerBoundary.ExecuteAsync(
+                ScannerOperationKind.Capabilities,
+                ScannerBackend.Twain,
+                TimeSpan.FromMilliseconds(40),
+                CancellationToken.None,
+                capture,
+                () =>
+                {
+                    capture.Publish(lease);
+                    Thread.Sleep(250);
+                    return Task.FromResult(91);
+                }));
+
+        stopwatch.Stop();
+
+        Assert.Equal(ScannerOperationKind.Capabilities, exception.Operation);
+        Assert.Equal(1, lease.TerminationCalls);
+        Assert.Equal(
+            ScannerWorkerTerminationReason.Deadline,
+            lease.LastTerminationReason);
+        Assert.True(lease.TerminationCompleted);
+        Assert.True(
+            stopwatch.Elapsed < TimeSpan.FromMilliseconds(200),
+            $"Deadline started too late: elapsed={stopwatch.Elapsed.TotalMilliseconds:F0}ms.");
+    }
+
+    [Fact]
     public async Task ClientCancellation_HangingOperationTerminatesExactLeaseBeforeCancellationSurfaces()
     {
         var backend = new TaskCompletionSource<int>(
