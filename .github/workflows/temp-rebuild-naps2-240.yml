@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   rebuild:
-    if: ${{ github.event.head_commit.message == '#240: trigger NAPS2 SDK .7 rebuild' }}
+    if: "${{ github.event.head_commit.message == '#240: trigger NAPS2 SDK .7 rebuild' }}"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
