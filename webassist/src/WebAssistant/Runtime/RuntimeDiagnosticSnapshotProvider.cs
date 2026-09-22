@@ -6,6 +6,8 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using NAPS2.Scan;
 
+#pragma warning disable CA2252
+
 namespace WebAssistant.Runtime;
 
 internal sealed class RuntimeDiagnosticSnapshotProvider
@@ -519,3 +521,5 @@ internal sealed record RuntimeModuleIdentity(
     long Size,
     string Sha256,
     string Architecture);
+
+#pragma warning restore CA2252
