@@ -408,6 +408,42 @@ public sealed class ObservabilityContractTests
     }
 
     [Fact]
+    public void RepositoryOwnedNaps2Instrumentation_DefinesTwainSelfReportAndGetCapsBoundaries()
+    {
+        var root = FindRepositoryRoot();
+        var recipe = File.ReadAllText(Path.Combine(
+            root,
+            "webassist",
+            "vendor",
+            "naps2",
+            "rebuild-fixed-sdk.sh"));
+
+        Assert.Contains("WA_DIAG|", recipe, StringComparison.Ordinal);
+        Assert.Contains("twain_32.dll", recipe, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("twaindsm.dll", recipe, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("requestedDsm", recipe, StringComparison.Ordinal);
+        Assert.Contains("effectiveDsm", recipe, StringComparison.Ordinal);
+        Assert.Contains("modulePath", recipe, StringComparison.Ordinal);
+        Assert.Contains("sha256", recipe, StringComparison.Ordinal);
+
+        foreach (var stage in new[]
+                 {
+                     "dsOpen",
+                     "feederSetFalse",
+                     "feederGetFalse",
+                     "flatbedCaps",
+                     "feederSetTrue",
+                     "feederGetTrue",
+                     "feederCaps",
+                     "duplex",
+                     "metadata"
+                 })
+        {
+            Assert.Contains(stage, recipe, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public async Task ScannerShutdown_EmitsDistinctStartAndCompletionBoundaries()
     {
         var adapter = new DisposableFakeScanAdapter();
