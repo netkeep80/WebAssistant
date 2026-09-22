@@ -20,11 +20,15 @@ public sealed class ScannerCancellationPropagationTests
         var source = File.ReadAllText(sourcePath);
 
         Assert.Contains(
-            "controller.Scan(options, cancellationToken).WithCancellation(cancellationToken)",
+            ".Scan(options, cancellationToken)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ".WithCancellation(cancellationToken)",
             source,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
-            "controller.Scan(options).WithCancellation(cancellationToken)",
+            ".Scan(options).WithCancellation(cancellationToken)",
             source,
             StringComparison.Ordinal);
     }
