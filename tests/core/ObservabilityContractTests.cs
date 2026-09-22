@@ -14,6 +14,8 @@ using WebAssistant.Http;
 using WebAssistant.Scanning;
 using Xunit;
 
+#pragma warning disable CA2252
+
 namespace WebAssistant.CoreTests;
 
 public sealed class ObservabilityContractTests
@@ -275,7 +277,7 @@ public sealed class ObservabilityContractTests
 
         var operation = WindowsScanAdapter.ResolveCapabilitiesAsync(
             scannerId,
-            driver => Task.FromResult(driver switch
+            driver => Task.FromResult<List<ScanDevice>>(driver switch
             {
                 Driver.Twain =>
                 [
@@ -743,3 +745,5 @@ public sealed class ObservabilityContractTests
         }
     }
 }
+
+#pragma warning restore CA2252
