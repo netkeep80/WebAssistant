@@ -5,14 +5,14 @@ WebAssistant хранит принадлежащие репозиторию па
 Текущий зафиксированный SDK:
 
 - идентификатор: `WebAssistant.NAPS2.Sdk`;
-- версия: `1.3.0-webassistant.5.450cba65`;
-- файл: `../nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.5.450cba65.nupkg`;
-- размер: `995860` байт;
-- SHA-256: `d2f53f57535f892df023c2e7cffeb4ad091d107e1192ada0d532be51d48fb88f`;
+- версия: `1.3.0-webassistant.6.450cba65`;
+- файл: `../nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.6.450cba65.nupkg`;
+- размер: `__SDK_SIZE__` байт;
+- SHA-256: `__SDK_SHA256__`;
 - исходный репозиторий: `https://github.com/cyanfish/naps2`;
 - точный исходный commit: `450cba65aaffe6387041050a573051a64cd80fe9`;
 - `AssemblyVersion=8.3.0.0`;
-- `FileVersion=8.3.0.5`.
+- `FileVersion=8.3.0.6`.
 
 Исходная база включает исправление `Sane: Fix handling of fixed-point WordList options`. Изменения WebAssistant поверх pinned upstream:
 
@@ -20,7 +20,7 @@ WebAssistant хранит принадлежащие репозиторию па
 - чтение состояния feeder для WIA и TWAIN с `null` при недоступном или неопределённом состоянии;
 - ограниченный и идемпотентный lifecycle worker;
 - общий `ShutdownAsync()` для worker factory и scanning context;
-- причинная диагностика `worker.acquire / worker.release / worker.exit`;
+- причинная диагностика `worker.acquire / worker.release / worker.exit`, включая явное `outcome=forcedKill` для принудительного завершения;
 - worker self-report TWAIN runtime через служебные строки `WA_DIAG|` в stderr;
 - фиксация requested/resolved/effective DSM;
 - фиксация реально загруженных `twaindsm.dll`, legacy `twain_32.dll` и vendor DS modules непосредственно из worker-процесса;
@@ -29,13 +29,13 @@ WebAssistant хранит принадлежащие репозиторию па
 
 Worker self-report нужен в том числе для x86 TWAIN worker: 64-битный host-side `Process.Modules` не считается достаточным доказательством фактически загруженного DSM/DS в 32-битном процессе.
 
-Пакет `.5` сохраняет CLR identity `AssemblyVersion=8.3.0.0`, но получает монотонный `FileVersion=8.3.0.5`. Политика выбора scanner/source внутри NAPS2 не реализуется: `source=auto` остаётся ответственностью WebAssistant.
+Пакет `.5` сохраняет CLR identity `AssemblyVersion=8.3.0.0`, но получает монотонный `FileVersion=8.3.0.6`. Политика выбора scanner/source внутри NAPS2 не реализуется: `source=auto` остаётся ответственностью WebAssistant.
 
 Неизменяемые предшественники SDK:
 
+- `.5`: SHA-256 `d2f53f57535f892df023c2e7cffeb4ad091d107e1192ada0d532be51d48fb88f`;
 - `.4`: SHA-256 `34bf8c94b851dcabad12f6cb50abc504a14010b44b3d6db592efec6ad310e0fc`;
-- `.3`: SHA-256 `e8abde3b7bd7e756eea714883c6e6ed79c6bb5f5052cd630b3dc763e45a50915`;
-- `.2`: SHA-256 `2dbc6e96cf0d46a554318f3224561861e669dd09b60fc618319c53fed10dcc9f`.
+- `.3`: SHA-256 `e8abde3b7bd7e756eea714883c6e6ed79c6bb5f5052cd630b3dc763e45a50915`.
 
 Старые поколения никогда не пересобираются и не перезаписываются.
 
@@ -55,7 +55,7 @@ Worker self-report нужен в том числе для x86 TWAIN worker: 64-�
 4. выполняет `dotnet pack`;
 5. канонически переписывает `.nupkg`: записи сортируются, временные метки и атрибуты ZIP фиксируются, дополнительные поля и комментарии удаляются, используется `ZIP_STORED`.
 
-Канонический SDK `.5` имеет размер `995860` байт и SHA-256 `d2f53f57535f892df023c2e7cffeb4ad091d107e1192ada0d532be51d48fb88f`.
+Канонический SDK `.6` имеет размер `__SDK_SIZE__` байт и SHA-256 `__SDK_SHA256__`.
 
 ## Source-aligned Win32 worker
 
