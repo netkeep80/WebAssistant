@@ -210,13 +210,15 @@ public sealed class ObservabilityContractTests
             ['\r', '\n'],
             StringSplitOptions.RemoveEmptyEntries);
 
-        var handlerLine = Assert.Single(lines.Where(line =>
-            line.Contains(
+        var handlerLine = Assert.Single(
+            lines,
+            line => line.Contains(
                 "Обнаружено зарегистрированных scanner endpoints",
-                StringComparison.Ordinal)));
-        var httpLine = Assert.Single(lines.Where(line =>
-            line.Contains("GET /v1/scanners", StringComparison.Ordinal) &&
-            line.Contains("status=200", StringComparison.Ordinal)));
+                StringComparison.Ordinal));
+        var httpLine = Assert.Single(
+            lines,
+            line => line.Contains("GET /v1/scanners", StringComparison.Ordinal) &&
+                    line.Contains("status=200", StringComparison.Ordinal));
 
         var handlerId = ExtractOperationId(handlerLine);
         var httpId = ExtractOperationId(httpLine);
