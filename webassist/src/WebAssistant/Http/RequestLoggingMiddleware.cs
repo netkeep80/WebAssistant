@@ -16,6 +16,17 @@ internal sealed class RequestLoggingMiddleware(
 
         var started = Stopwatch.GetTimestamp();
         var scannerId = TryGetSafeScannerId(context);
+        var operationId = Activity.Current?.TraceId.ToString();
+        if (string.IsNullOrWhiteSpace(operationId))
+        {
+            operationId = Guid.NewGuid().ToString("N");
+        }
+
+        using var scope = logger.BeginScope(
+            new Dictionary<string, object?>
+            {
+                ["operationId"] = operationId
+            });
         var requestCompleted = false;
 
         try
@@ -50,11 +61,12 @@ internal sealed class RequestLoggingMiddleware(
         catch (Exception exception)
         {
             logger.LogError(
-                exception,
-                "Ошибка HTTP-запроса {Method} {Path} scannerId={ScannerId}",
+                "Ошибка HTTP-запроса {Method} {Path} scannerId={ScannerId} exceptionType={ExceptionType} hresult={HResult}",
                 context.Request.Method,
                 context.Request.Path.Value,
-                scannerId);
+                scannerId,
+                exception.GetType().Name,
+                FormatHResult(exception));
             throw;
         }
         finally
@@ -103,6 +115,9 @@ internal sealed class RequestLoggingMiddleware(
 
         return Sanitize(values.ToString());
     }
+
+    private static string FormatHResult(Exception exception) =>
+        $"0x{unchecked((uint)exception.HResult):X8}";
 
     private static string Sanitize(string value)
     {
