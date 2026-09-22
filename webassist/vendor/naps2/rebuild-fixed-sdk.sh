@@ -4,10 +4,10 @@ set -euo pipefail
 UPSTREAM_REPOSITORY="https://github.com/cyanfish/naps2.git"
 UPSTREAM_COMMIT="450cba65aaffe6387041050a573051a64cd80fe9"
 PACKAGE_ID="WebAssistant.NAPS2.Sdk"
-PACKAGE_VERSION="1.3.0-webassistant.4.450cba65"
+PACKAGE_VERSION="1.3.0-webassistant.5.450cba65"
 PACKAGE_FILE="$PACKAGE_ID.$PACKAGE_VERSION.nupkg"
 WORKER_PACKAGE_ID="WebAssistant.NAPS2.Sdk.Worker.Win32"
-WORKER_PACKAGE_VERSION="1.3.0-webassistant.1.450cba65"
+WORKER_PACKAGE_VERSION="1.3.0-webassistant.2.450cba65"
 WORKER_PACKAGE_FILE="$WORKER_PACKAGE_ID.$WORKER_PACKAGE_VERSION.nupkg"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,11 +56,11 @@ replace_exact(
     "        <PackageId Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
     "WebAssistant.NAPS2.Sdk</PackageId>\n"
     "        <PackageVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">"
-    "1.3.0-webassistant.4.450cba65</PackageVersion>\n"
+    "1.3.0-webassistant.5.450cba65</PackageVersion>\n"
     "        <PackageId Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Win32'\">"
     "WebAssistant.NAPS2.Sdk.Worker.Win32</PackageId>\n"
     "        <PackageVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Win32'\">"
-    "1.3.0-webassistant.1.450cba65</PackageVersion>",
+    "1.3.0-webassistant.2.450cba65</PackageVersion>",
 )
 
 worker_package_project = root / "NAPS2.Sdk.Worker.Win32/NAPS2.Sdk.Worker.Win32.csproj"
@@ -76,9 +76,9 @@ replace_exact(
     "        <VersionName>8.3.0</VersionName>",
     "        <VersionName>8.3.0</VersionName>\n"
     "        <AssemblyVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.0</AssemblyVersion>\n"
-    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.4</FileVersion>\n"
+    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk'\">8.3.0.5</FileVersion>\n"
     "        <AssemblyVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Build'\">8.3.0.0</AssemblyVersion>\n"
-    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Build'\">8.3.0.1</FileVersion>",
+    "        <FileVersion Condition=\"'$(MSBuildProjectName)' == 'NAPS2.Sdk.Worker.Build'\">8.3.0.2</FileVersion>",
 )
 
 paper_source_caps = root / "NAPS2.Sdk/Scan/PaperSourceCaps.cs"
