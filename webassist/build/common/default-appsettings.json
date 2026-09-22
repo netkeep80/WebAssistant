@@ -1,4 +1,10 @@
 {
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "WebAssistant": "Information"
+    }
+  },
   "WebAssistant": {
     "Port": 17654,
     "LogDirectory": "",
