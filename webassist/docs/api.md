@@ -309,11 +309,11 @@ Base64, JSON-конверт документа и ZIP/растровый кон�
 
 - PID, архитектура, путь исполняемого процесса WebAssistant и версия .NET runtime;
 - package-owned компоненты `WebAssistant`, `NAPS2.Sdk` и `NAPS2.Worker`: доступность, фактический путь, file/product/assembly version где применимо, размер, SHA-256 и архитектура;
-- принадлежащие текущему процессу `NAPS2.Worker`: PID, parent PID, архитектура, путь, версии, размер, SHA-256 и время запуска;
-- для реально загруженного worker-модуля `twaindsm.dll`: имя, путь, версии, размер, SHA-256 и архитектура;
-- состояние попытки прочитать список модулей worker, если ОС не разрешила это сделать.
+- общий runtime inventory принадлежащих текущему процессу `NAPS2.Worker`: PID, parent PID, архитектура, путь, версии, размер, SHA-256 и время запуска;
+- состояние host-side module inspection; для x86 worker отсутствие модуля в этом snapshot не считается доказательством, что модуль не загружен;
+- причинная связь scanner operation с worker и TWAIN runtime берётся не из snapshot, а из событий NAPS2 worker lifecycle и self-report.
 
-Package-owned fingerprint вычисляется один раз на процесс и повторно используется; live worker/module snapshot снимается при диагностическом запросе. Пустой список workers означает, что на момент запроса принадлежащий WebAssistant worker не наблюдался; диагностический запрос сам не создаёт scanner worker.
+Package-owned fingerprint вычисляется один раз на процесс и повторно используется; live worker snapshot снимается при диагностическом запросе и сам не создаёт scanner worker. Snapshot является только общим inventory и не устанавливает `operationId ↔ workerPid`.
 
 `fileSystemState` принимает ровно одно из пяти значений:
 
@@ -327,7 +327,7 @@ Package-owned fingerprint вычисляется один раз на проце
 
 Возвращает собственный суточный журнал WebAssistant как `text/plain`.
 
-Каждый versioned HTTP-запрос получает `operationId`. Тот же идентификатор записывается в события scanner stages, возникшие в контексте этого запроса. В `Debug` существенные scanner stages имеют явную границу старта, а завершение содержит `outcome` и `durationMs`. Во время длительного `GetCaps` WebAssistant также пишет изменяющийся снимок принадлежащих процессу NAPS2 workers и реально загруженных `twaindsm.dll` под тем же `operationId`. Этот снимок является диагностическим evidence; управляющая ownership-ссылка для принудительного завершения конкретного worker относится к отдельному механизму bounded recovery, а не к диагностике.
+Каждый versioned HTTP-запрос получает `operationId`. Тот же идентификатор проходит в scanner/backend events и на реальной NAPS2 `worker.acquire` boundary связывается с exact `workerPid`; spare workers не назначаются операции по времени появления или parent PID. X86 worker сам сообщает requested/resolved/effective DSM, реально загруженные `twain_32.dll` или `twaindsm.dll`, vendor DS modules и их path/version/SHA-256. Для `GetCaps` Debug фиксирует begin/end/outcome/duration границы `dsOpen`, `feederSetFalse`, `feederGetFalse`, `flatbedCaps`, `feederSetTrue`, `feederGetTrue`, `feederCaps`, `duplex` и `metadata`; последний `begin` без `end` локализует зависший native boundary. Timeout/watchdog/kill/recovery в эту диагностику не входят.
 
 Ошибки `/v1/diag/logs`:
 
