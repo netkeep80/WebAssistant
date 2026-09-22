@@ -229,6 +229,41 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
             logger.LogInformation("Сканирование успешно завершено scannerId={ScannerId}", safeScannerId);
             return Results.Stream(pdf, contentType: "application/pdf");
         }
+        catch (ScannerOperationTimeoutException exception)
+        {
+            logger.LogWarning(
+                "Превышен deadline scanner operation operation={Operation} backend={Backend} scannerId={ScannerId} timeoutMs={TimeoutMs}",
+                OperationName(exception.Operation),
+                exception.Backend,
+                SafeLogText(scannerId),
+                (long)exception.Timeout.TotalMilliseconds);
+            return Results.Problem(
+                statusCode: StatusCodes.Status504GatewayTimeout,
+                title: "Превышено время ожидания операции со сканером",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "scanner_operation_timeout",
+                    ["operation"] = OperationName(exception.Operation)
+                });
+        }
+        catch (ScannerWorkerRecoveryException exception)
+        {
+            logger.LogError(
+                "Не удалось восстановить scanner worker operation={Operation} backend={Backend} scannerId={ScannerId} workerPid={WorkerPid}",
+                OperationName(exception.Operation),
+                exception.Backend,
+                SafeLogText(scannerId),
+                exception.WorkerProcessId);
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Не удалось восстановить scanner worker",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["code"] = "scanner_worker_recovery_failed",
+                    ["operation"] = OperationName(exception.Operation)
+                });
+        }
+
         catch (ScannerBackendUnavailableException exception)
         {
             var diagnosticException = exception.InnerException ?? exception;
@@ -266,6 +301,14 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
             acquisitionGate.Release();
         }
     }
+
+    private static string OperationName(ScannerOperationKind operation) => operation switch
+    {
+        ScannerOperationKind.Discovery => "discovery",
+        ScannerOperationKind.Capabilities => "capabilities",
+        ScannerOperationKind.Acquisition => "acquisition",
+        _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
+    };
 
     private static ScanSource ResolveExplicitSourceWithoutCapabilities(
         RequestedScanSource source,
