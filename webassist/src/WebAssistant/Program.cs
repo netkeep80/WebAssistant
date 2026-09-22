@@ -36,9 +36,11 @@ builder.Services.AddSingleton(_ => new RuntimeDiagnosticSnapshotProvider());
 builder.Services.AddSingleton(serviceProvider =>
     new DailyLogReader(
         serviceProvider.GetRequiredService<WebAssistantRuntimeOptions>().LogDirectory));
-builder.Services.AddSingleton<ILoggerProvider>(serviceProvider =>
+builder.Services.AddSingleton(serviceProvider =>
     new DailyFileLoggerProvider(
         serviceProvider.GetRequiredService<WebAssistantRuntimeOptions>().LogDirectory));
+builder.Services.AddSingleton<ILoggerProvider>(serviceProvider =>
+    serviceProvider.GetRequiredService<DailyFileLoggerProvider>());
 builder.Services.AddSingleton<ScanCoordinator>();
 builder.Services.AddCors();
 
@@ -117,11 +119,15 @@ api.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 api.MapGet("/scanners", async (
     IServiceProvider services,
     ILoggerFactory loggerFactory,
+    DailyFileLoggerProvider dailyLoggerProvider,
     CancellationToken cancellationToken) =>
 {
+    const string category = "WebAssistant.Http.Scanners";
     return await ScannerEndpointHandlers.ListAsync(
         services.GetService<IScanAdapter>(),
-        loggerFactory.CreateLogger("WebAssistant.Http.Scanners"),
+        new ResilientLogger(
+            loggerFactory.CreateLogger(category),
+            dailyLoggerProvider.CreateLogger(category)),
         cancellationToken);
 });
 api.MapGet("/scanner-settings/schema", ScannerSettingsEndpointHandlers.Schema);
@@ -129,12 +135,16 @@ api.MapGet("/scanners/{scannerId}/settings", async (
     string scannerId,
     IServiceProvider services,
     ILoggerFactory loggerFactory,
+    DailyFileLoggerProvider dailyLoggerProvider,
     CancellationToken cancellationToken) =>
 {
+    const string category = "WebAssistant.Http.ScannerSettings";
     return await ScannerSettingsEndpointHandlers.GetAsync(
         services.GetService<IScanAdapter>(),
         scannerId,
-        loggerFactory.CreateLogger("WebAssistant.Http.ScannerSettings"),
+        new ResilientLogger(
+            loggerFactory.CreateLogger(category),
+            dailyLoggerProvider.CreateLogger(category)),
         cancellationToken);
 });
 api.MapPost("/scan", async (
