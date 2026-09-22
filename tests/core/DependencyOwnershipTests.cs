@@ -152,7 +152,6 @@ public sealed class DependencyOwnershipTests
         foreach (var marker in new[]
                  {
                      "worker.acquire", "worker.release", "worker.exit",
-                     "outcome=forcedKill",
                      "WA_DIAG|", "twain_32.dll", "twaindsm.dll",
                      "requestedDsm", "effectiveDsm",
                      "dsOpen", "feederSetFalse", "feederGetFalse",
@@ -168,6 +167,12 @@ public sealed class DependencyOwnershipTests
                 workerBytes.AsSpan().IndexOf(encoded) >= 0,
                 $"Worker package does not contain observability marker: {marker}");
         }
+
+        var forcedKillMarker =
+            System.Text.Encoding.Unicode.GetBytes("outcome=forcedKill");
+        Assert.True(
+            sdkBytes.AsSpan().IndexOf(forcedKillMarker) >= 0,
+            "SDK package does not contain forced-kill lifecycle marker.");
     }
 
     [Fact]
