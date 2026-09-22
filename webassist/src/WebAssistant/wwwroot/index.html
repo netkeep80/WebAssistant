@@ -49,6 +49,7 @@
         <div class="row">
           <select id="scanner-select" disabled><option value="">Поиск сканеров…</option></select>
           <button id="refresh-scanners" type="button">Обновить</button>
+          <button id="scanner-capabilities" type="button" disabled>Получить возможности</button>
           <button id="scanner-info" type="button" disabled>Информация о сканере</button>
         </div>
         <p id="scanner-status" class="muted"></p>
@@ -94,6 +95,7 @@
     const scannerStatus=document.getElementById("scanner-status");
     const scannerMode=document.getElementById("scanner-mode");
     const scannerSettingsControls=document.getElementById("scanner-settings-controls");
+    const scannerCapabilitiesButton=document.getElementById("scanner-capabilities");
     const scannerInfoButton=document.getElementById("scanner-info");
     const scannerInfoOutput=document.getElementById("scanner-info-output");
     const scanButton=document.getElementById("scan-button");
@@ -153,6 +155,7 @@
       clearScanResult();
       scannerSelect.disabled=true;
       scannerMode.disabled=true;
+      scannerCapabilitiesButton.disabled=true;
       scannerInfoButton.disabled=true;
       scanButton.disabled=true;
       scannerSettingsControls.replaceChildren();
@@ -178,11 +181,29 @@
           scannerSelect.append(option);
         }
         scannerSelect.disabled=false;
-        scannerStatus.textContent=warnings.length?`Зарегистрировано scanner endpoints: ${discoveredScanners.length}. Предупреждений: ${warnings.length}.`:`Зарегистрировано scanner endpoints: ${discoveredScanners.length}. Выберите сканер для чтения capabilities.`;
+        scannerStatus.textContent=warnings.length?`Зарегистрировано scanner endpoints: ${discoveredScanners.length}. Предупреждений: ${warnings.length}.`:`Зарегистрировано scanner endpoints: ${discoveredScanners.length}. Выберите сканер.`;
       }catch(error){
         scannerSelect.replaceChildren(new Option("Ошибка обнаружения",""));
         scannerStatus.textContent=error.message;
       }
+    }
+
+    function selectScannerEndpoint(){
+      capabilitiesGeneration++;
+      scanGeneration++;
+      clearScanResult();
+      const scannerId=scannerSelect.value;
+      scannerProjection=null;
+      scannerMode.replaceChildren(new Option("—",""));
+      scannerMode.disabled=true;
+      scannerCapabilitiesButton.disabled=!scannerId;
+      scannerInfoButton.disabled=true;
+      scanButton.disabled=true;
+      scannerSettingsControls.replaceChildren();
+      scannerInfoOutput.hidden=true;
+      scannerStatus.textContent=scannerId
+        ?"Сканер выбран. Нажмите «Получить возможности» для чтения capabilities."
+        :"Выберите сканер.";
     }
 
     async function refreshSelectedScannerSettings(){
@@ -193,6 +214,7 @@
       scannerProjection=null;
       scannerMode.replaceChildren(new Option("—",""));
       scannerMode.disabled=true;
+      scannerCapabilitiesButton.disabled=true;
       scannerInfoButton.disabled=true;
       scanButton.disabled=true;
       scannerSettingsControls.replaceChildren();
@@ -207,6 +229,7 @@
         const projection=await response.json();
         if(requestGeneration!==capabilitiesGeneration||scannerSelect.value!==scannerId)return;
         scannerProjection=projection;
+        scannerCapabilitiesButton.disabled=false;
         scannerInfoButton.disabled=false;
         scannerMode.replaceChildren();
         for(const mode of scannerProjection.modes||[]){
@@ -222,6 +245,7 @@
         renderSettingsControls();
       }catch(error){
         if(requestGeneration!==capabilitiesGeneration||scannerSelect.value!==scannerId)return;
+        scannerCapabilitiesButton.disabled=false;
         scannerStatus.textContent=`Ошибка capabilities: ${error.message}`;
       }
     }
@@ -309,7 +333,8 @@
     }
 
     document.getElementById("refresh-scanners").addEventListener("click",refreshScanners);
-    scannerSelect.addEventListener("change",refreshSelectedScannerSettings);
+    scannerSelect.addEventListener("change",selectScannerEndpoint);
+    scannerCapabilitiesButton.addEventListener("click",refreshSelectedScannerSettings);
     scannerMode.addEventListener("change",renderSettingsControls);
     scannerInfoButton.addEventListener("click",showScannerInfo);
     scanButton.addEventListener("click",scan);
