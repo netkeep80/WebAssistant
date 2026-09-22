@@ -78,7 +78,7 @@ public sealed class FileSystemAdvancedUiBrowserTests
                 .Locator($"#filesystem-{side}-entries tr[data-selection-id$='/{name}']");
             async Task WaitBreadcrumb(string side, string expected) =>
                 await page.WaitForFunctionAsync(
-                    "args => document.getElementById(args.id).innerText.includes(args.expected)",
+                    "args => document.getElementById(args.id).innerText.trim() === args.expected",
                     new { id = $"filesystem-{side}-breadcrumb", expected });
             async Task AssertNoHorizontalScroll()
             {

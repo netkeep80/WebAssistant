@@ -90,7 +90,7 @@ public sealed class FileSystemBrowserTests
             async Task Visible(string side, string name) => await Row(side, name).WaitForAsync();
             async Task WaitBreadcrumb(string side, string expected) =>
                 await page.WaitForFunctionAsync(
-                    "args => document.getElementById(args.id).innerText.includes(args.expected)",
+                    "args => document.getElementById(args.id).innerText.trim() === args.expected",
                     new { id = $"filesystem-{side}-breadcrumb", expected });
             async Task Prompt(string selector, string value)
             {
@@ -151,6 +151,12 @@ public sealed class FileSystemBrowserTests
             Assert.Equal(3, await SelectedCount("left"));
             await page.ClickAsync("#filesystem-left thead th[data-sort-key='size'] .sort-button");
             Assert.Equal(3, await SelectedCount("left"));
+            Assert.Equal(
+                new[] { "a.xml", "b.xml", "c.json" },
+                await Entries("left")
+                    .Locator("tr.selected-row")
+                    .EvaluateAllAsync<string[]>(
+                        "rows => rows.map(row => row.dataset.entryName)"));
 
             foreach (var name in new[] { "a.xml", "b.xml", "c.json" })
             {
