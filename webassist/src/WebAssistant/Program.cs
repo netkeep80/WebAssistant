@@ -32,7 +32,7 @@ builder.Services.AddSingleton(serviceProvider =>
         serviceProvider.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton<FileSystemApplicationService>();
 builder.Services.AddSingleton(_ => new AgentRuntimeInfo());
-builder.Services.AddSingleton<RuntimeDiagnosticSnapshotProvider>();
+builder.Services.AddSingleton(_ => new RuntimeDiagnosticSnapshotProvider());
 builder.Services.AddSingleton(serviceProvider =>
     new DailyLogReader(
         serviceProvider.GetRequiredService<WebAssistantRuntimeOptions>().LogDirectory));
