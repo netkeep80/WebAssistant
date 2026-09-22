@@ -9,15 +9,30 @@ internal sealed class ResilientLogger(
     public IDisposable? BeginScope<TState>(TState state)
         where TState : notnull
     {
+        IDisposable? primaryScope = null;
+        IDisposable? fallbackScope = null;
+
         try
         {
-            return primary.BeginScope(state);
+            primaryScope = primary.BeginScope(state);
         }
         catch (Exception exception)
         {
             WriteSinkFailure(exception);
-            return null;
         }
+
+        try
+        {
+            fallbackScope = fallback.BeginScope(state);
+        }
+        catch
+        {
+            // Fallback diagnostics must never become a new application failure.
+        }
+
+        return primaryScope is null && fallbackScope is null
+            ? null
+            : new ResilientScope(this, primaryScope, fallbackScope);
     }
 
     public bool IsEnabled(LogLevel logLevel)
@@ -29,7 +44,14 @@ internal sealed class ResilientLogger(
         catch (Exception exception)
         {
             WriteSinkFailure(exception);
-            return fallback.IsEnabled(logLevel);
+            try
+            {
+                return fallback.IsEnabled(logLevel);
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 
@@ -50,17 +72,77 @@ internal sealed class ResilientLogger(
         }
     }
 
+    private void DisposePrimaryScope(IDisposable? scope)
+    {
+        if (scope is null)
+        {
+            return;
+        }
+
+        try
+        {
+            scope.Dispose();
+        }
+        catch (Exception exception)
+        {
+            WriteSinkFailure(exception);
+        }
+    }
+
+    private static void DisposeFallbackScope(IDisposable? scope)
+    {
+        if (scope is null)
+        {
+            return;
+        }
+
+        try
+        {
+            scope.Dispose();
+        }
+        catch
+        {
+            // Fallback diagnostics must never become a new application failure.
+        }
+    }
+
     private void WriteSinkFailure(Exception exception)
     {
         var diagnostic = UnwrapSingleAggregate(exception);
-        fallback.LogWarning(
-            "logging.sink.failure exceptionType={ExceptionType} hresult={HResult}",
-            diagnostic.GetType().Name,
-            $"0x{unchecked((uint)diagnostic.HResult):X8}");
+        try
+        {
+            fallback.LogWarning(
+                "logging.sink.failure exceptionType={ExceptionType} hresult={HResult}",
+                diagnostic.GetType().Name,
+                $"0x{unchecked((uint)diagnostic.HResult):X8}");
+        }
+        catch
+        {
+            // Logging is a secondary concern and must never mask the primary failure.
+        }
     }
 
     private static Exception UnwrapSingleAggregate(Exception exception) =>
         exception is AggregateException { InnerExceptions.Count: 1 } aggregate
             ? aggregate.InnerExceptions[0]
             : exception;
+
+    private sealed class ResilientScope(
+        ResilientLogger owner,
+        IDisposable? primaryScope,
+        IDisposable? fallbackScope) : IDisposable
+    {
+        private int disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref disposed, 1) != 0)
+            {
+                return;
+            }
+
+            owner.DisposePrimaryScope(primaryScope);
+            DisposeFallbackScope(fallbackScope);
+        }
+    }
 }
