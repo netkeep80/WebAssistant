@@ -310,6 +310,18 @@ public sealed class DependencyOwnershipTests
     }
 
     [Fact]
+    public void RebuildRecipe_RemovesHistoricalRepositoryOwnedPackagesAfterSuccessfulBuild()
+    {
+        var root = FindRepositoryRoot();
+        var rebuildPath = Path.Combine(root, "webassist", "vendor", "naps2", "rebuild-fixed-sdk.sh");
+        var rebuild = File.ReadAllText(rebuildPath);
+
+        Assert.Contains("remove_stale_repository_owned_packages", rebuild, StringComparison.Ordinal);
+        Assert.Contains("WebAssistant.NAPS2.Sdk*.nupkg", rebuild, StringComparison.Ordinal);
+        Assert.Contains("rm -f -- \"$candidate\"", rebuild, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void NuGetConfig_ExposesRepositoryOwnedFixedSdkSource()
     {
         var root = FindRepositoryRoot();
