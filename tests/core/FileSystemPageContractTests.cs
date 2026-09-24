@@ -19,13 +19,15 @@ public sealed class FileSystemPageContractTests
             "index.html"));
 
         Assert.Contains("href=\"/filesystem.html\"", index, StringComparison.Ordinal);
-        Assert.Contains("id=\"filesystem-roots\"", page, StringComparison.Ordinal);
+        Assert.Contains("id=\"filesystem-left-root\"", page, StringComparison.Ordinal);
+        Assert.Contains("id=\"filesystem-right-root\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"filesystem-left\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"filesystem-right\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"filesystem-splitter\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"filesystem-left-breadcrumb\"", page, StringComparison.Ordinal);
         Assert.Contains("id=\"filesystem-right-breadcrumb\"", page, StringComparison.Ordinal);
-        Assert.Contains("activeRoot", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("activeRoot", page, StringComparison.Ordinal);
+        Assert.Contains("root:null", page, StringComparison.Ordinal);
         Assert.Contains("currentSide", page, StringComparison.Ordinal);
         Assert.Contains("selectedNames", page, StringComparison.Ordinal);
         Assert.Contains("selectionAnchor", page, StringComparison.Ordinal);
@@ -93,7 +95,9 @@ public sealed class FileSystemPageContractTests
             Assert.Contains($"id=\"filesystem-{side}-table-wrap\"", page, StringComparison.Ordinal);
         }
 
-        Assert.Contains("value=\"*.*\"", page, StringComparison.Ordinal);
+        Assert.Contains("value=\"*\"", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("value=\"*.*\"", page, StringComparison.Ordinal);
+        Assert.Contains("postJson(api.find", page, StringComparison.Ordinal);
         Assert.Contains("ctrlKey", page, StringComparison.Ordinal);
         Assert.Contains("shiftKey", page, StringComparison.Ordinal);
         Assert.Contains("selected-row", page, StringComparison.Ordinal);
