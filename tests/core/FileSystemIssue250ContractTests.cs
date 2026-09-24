@@ -402,11 +402,11 @@ public sealed class FileSystemIssue250ContractTests : IDisposable
             api,
             StringComparison.Ordinal);
         Assert.Contains(
-            "| find batch size | `names` должен быть непустым; фиксированного WebAssistant-specific maximum нет.",
+            "| find batch size | `names` непустой; фиксированного WebAssistant-specific maximum нет.",
             api,
             StringComparison.Ordinal);
         Assert.Contains(
-            "| batch move | `fileNames` содержит 1..1000 unique single-entry names",
+            "| batch move | `fileNames` = 1..1000 unique single-entry names",
             api,
             StringComparison.Ordinal);
         Assert.Contains(
