@@ -18,7 +18,7 @@ internal sealed class FileSystemApplicationService
 {
     private const int NativePageSize = 1000;
     private const int MaximumWildcardMasks = 32;
-    private const int MaximumFindNames = 100;
+    private const int MaximumFindNames = 1000;
     private const int MaximumMoveNames = 1000;
     private readonly FileSystemRootRegistry registry;
 
@@ -30,34 +30,70 @@ internal sealed class FileSystemApplicationService
     internal async ValueTask<FileSystemListResult> ListAsync(
         string? path,
         string? wildcard,
-        int limit,
+        int? limit,
         string? cursor,
         CancellationToken cancellationToken)
     {
-        if (limit is < 1 or > NativePageSize)
+        var resolved = registry.Resolve(path, allowRoot: true);
+        var filter = WildcardFilter.Parse(wildcard);
+
+        if (limit is null)
+        {
+            if (!string.IsNullOrEmpty(cursor))
+            {
+                throw Invalid("Cursor допустим только при явном limit.");
+            }
+
+            var allEntries = new List<RootedFileSystemEntry>();
+            string? nativeCursor = null;
+            do
+            {
+                var page = await resolved.FileSystem.ListAsync(
+                    resolved.Path.RelativePath,
+                    NativePageSize,
+                    nativeCursor,
+                    cancellationToken);
+
+                foreach (var entry in page.Entries)
+                {
+                    if (filter.Includes(entry.Name))
+                    {
+                        allEntries.Add(entry);
+                    }
+                }
+
+                nativeCursor = page.NextCursor;
+            }
+            while (nativeCursor is not null);
+
+            return new FileSystemListResult(
+                resolved.Path,
+                allEntries,
+                null);
+        }
+
+        if (limit.Value is < 1 or > NativePageSize)
         {
             throw Invalid("Параметр limit должен быть от 1 до 1000.");
         }
 
-        var resolved = registry.Resolve(path, allowRoot: true);
-        var filter = WildcardFilter.Parse(wildcard);
         var offset = DecodeCursor(resolved.Path, filter.Key, cursor);
-        var entries = new List<RootedFileSystemEntry>(limit);
+        var entries = new List<RootedFileSystemEntry>(limit.Value);
         var visibleIndex = 0;
         var hasMore = false;
-        string? nativeCursor = null;
+        string? pagedNativeCursor = null;
 
         do
         {
             var page = await resolved.FileSystem.ListAsync(
                 resolved.Path.RelativePath,
                 NativePageSize,
-                nativeCursor,
+                pagedNativeCursor,
                 cancellationToken);
 
             foreach (var entry in page.Entries)
             {
-                if (!filter.IncludesForListing(entry))
+                if (!filter.Includes(entry.Name))
                 {
                     continue;
                 }
@@ -67,7 +103,7 @@ internal sealed class FileSystemApplicationService
                     continue;
                 }
 
-                if (entries.Count < limit)
+                if (entries.Count < limit.Value)
                 {
                     entries.Add(entry);
                     continue;
@@ -82,24 +118,30 @@ internal sealed class FileSystemApplicationService
                 break;
             }
 
-            nativeCursor = page.NextCursor;
+            pagedNativeCursor = page.NextCursor;
         }
-        while (nativeCursor is not null);
+        while (pagedNativeCursor is not null);
 
         return new FileSystemListResult(
             resolved.Path,
             entries,
             hasMore
-                ? EncodeCursor(resolved.Path, filter.Key, checked(offset + entries.Count))
+                ? EncodeCursor(
+                    resolved.Path,
+                    filter.Key,
+                    checked(offset + entries.Count))
                 : null);
     }
 
-    internal async ValueTask<IReadOnlyList<string>> FindAsync(
+    internal async ValueTask<IReadOnlyList<RootedFileSystemEntry>> FindAsync(
         string? directoryPath,
         IReadOnlyList<string> names,
         CancellationToken cancellationToken)
     {
-        var requested = ValidateNames(names, MaximumFindNames, ensureFileTypeAllowed: false);
+        var requested = ValidateNames(
+            names,
+            MaximumFindNames,
+            ensureFileTypeAllowed: false);
         var resolved = ResolveDirectory(directoryPath);
         var entries = await FindExactEntriesAsync(
             resolved.FileSystem,
@@ -107,14 +149,12 @@ internal sealed class FileSystemApplicationService
             requested,
             cancellationToken);
 
-        var result = new List<string>(requested.Count);
+        var result = new List<RootedFileSystemEntry>(requested.Count);
         foreach (var name in requested)
         {
-            if (entries.TryGetValue(name, out var entry) &&
-                entry.Kind == RootedEntryKind.File &&
-                entry.RestrictionCode is null)
+            if (entries.TryGetValue(name, out var entry))
             {
-                result.Add(entry.Name);
+                result.Add(entry);
             }
         }
 
@@ -132,11 +172,14 @@ internal sealed class FileSystemApplicationService
             MaximumMoveNames,
             ensureFileTypeAllowed: true);
         var source = ResolveDirectory(sourceDirectoryPath);
-        var destinationPath = ParseDirectoryPath(destinationDirectoryPath);
-        EnsureSameRoot(source.Path, destinationPath);
+        var destination = ResolveDirectory(destinationDirectoryPath);
         if (string.Equals(
+                source.Path.RootName,
+                destination.Path.RootName,
+                StringComparison.Ordinal) &&
+            string.Equals(
                 source.Path.RelativePath,
-                destinationPath.RelativePath,
+                destination.Path.RelativePath,
                 StringComparison.Ordinal))
         {
             throw Invalid("Исходный и целевой каталоги move совпадают.");
@@ -159,11 +202,14 @@ internal sealed class FileSystemApplicationService
 
             EnsureMovableOrdinaryFile(entry);
             var sourceRelativePath = Join(source.Path.RelativePath, entry.Name);
-            var destinationRelativePath = Join(destinationPath.RelativePath, entry.Name);
+            var destinationRelativePath = Join(
+                destination.Path.RelativePath,
+                entry.Name);
             try
             {
-                await source.FileSystem.MoveNoReplaceAsync(
+                await source.FileSystem.MoveNoReplaceToAsync(
                     sourceRelativePath,
+                    destination.FileSystem,
                     destinationRelativePath,
                     RootedEntryKind.File,
                     cancellationToken);
@@ -188,8 +234,7 @@ internal sealed class FileSystemApplicationService
         var sourceObject = FileSystemLogicalPath.Parse(sourcePath, allowRoot: false);
         var sourceParent = ParentOf(sourceObject, out var requestedName);
         var source = registry.Resolve(sourceParent.Value, allowRoot: true);
-        var destination = ParseDirectoryPath(destinationDirectoryPath);
-        EnsureSameRoot(source.Path, destination);
+        var destination = ResolveDirectory(destinationDirectoryPath);
 
         var sourceEntry = await FindExactEntryAsync(
             source.FileSystem,
@@ -213,17 +258,23 @@ internal sealed class FileSystemApplicationService
 
         var actualSourceRelativePath = Join(source.Path.RelativePath, sourceEntry.Name);
         if (string.Equals(
-                destination.RelativePath,
+                source.Path.RootName,
+                destination.Path.RootName,
+                StringComparison.Ordinal) &&
+            (string.Equals(
+                destination.Path.RelativePath,
                 actualSourceRelativePath,
                 StringComparison.Ordinal) ||
-            destination.RelativePath.StartsWith(
+             destination.Path.RelativePath.StartsWith(
                 string.Concat(actualSourceRelativePath, "/"),
-                StringComparison.Ordinal))
+                StringComparison.Ordinal)))
         {
             throw Invalid("Каталог нельзя перемещать в себя или своего потомка.");
         }
 
-        var destinationRelativePath = Join(destination.RelativePath, sourceEntry.Name);
+        var destinationRelativePath = Join(
+            destination.Path.RelativePath,
+            sourceEntry.Name);
         if (string.Equals(
                 destinationRelativePath,
                 actualSourceRelativePath,
@@ -232,8 +283,9 @@ internal sealed class FileSystemApplicationService
             throw Invalid("Целевой каталог совпадает с исходным.");
         }
 
-        await source.FileSystem.MoveNoReplaceAsync(
+        await source.FileSystem.MoveNoReplaceToAsync(
             actualSourceRelativePath,
+            destination.FileSystem,
             destinationRelativePath,
             RootedEntryKind.Directory,
             cancellationToken);
@@ -301,7 +353,7 @@ internal sealed class FileSystemApplicationService
             {
                 if (entry.Kind == RootedEntryKind.File &&
                     entry.RestrictionCode is null &&
-                    filter.IncludesFile(entry.Name))
+                    filter.Includes(entry.Name))
                 {
                     fileNames.Add(entry.Name);
                 }
@@ -310,14 +362,6 @@ internal sealed class FileSystemApplicationService
             nativeCursor = page.NextCursor;
         }
         while (nativeCursor is not null);
-
-        foreach (var fileName in fileNames)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await using var preflight = await resolved.FileSystem.OpenReadAsync(
-                Join(resolved.Path.RelativePath, fileName),
-                cancellationToken);
-        }
 
         return new FileSystemZipSelection(
             resolved.Path,
@@ -346,19 +390,6 @@ internal sealed class FileSystemApplicationService
         }
 
         return FileSystemLogicalPath.Parse(value, allowRoot: true);
-    }
-
-    private static void EnsureSameRoot(
-        FileSystemLogicalPath source,
-        FileSystemLogicalPath destination)
-    {
-        if (!string.Equals(
-                source.RootName,
-                destination.RootName,
-                StringComparison.Ordinal))
-        {
-            throw Invalid("Mutation между логическими корнями запрещена.");
-        }
     }
 
     private static IReadOnlyList<string> ValidateNames(
@@ -541,17 +572,12 @@ internal sealed class FileSystemApplicationService
         new(code, message);
 
     private sealed record WildcardFilter(
-        bool Enabled,
         string Key,
         IReadOnlyList<string> Masks)
     {
         internal static WildcardFilter Parse(string? value)
         {
-            if (value is null)
-            {
-                return new WildcardFilter(false, "<none>", Array.Empty<string>());
-            }
-
+            value ??= "*";
             if (value.Length == 0)
             {
                 throw Invalid("Wildcard не содержит масок.");
@@ -581,38 +607,21 @@ internal sealed class FileSystemApplicationService
                 }
             }
 
-            if (masks.Any(mask => string.Equals(mask, "*.*", StringComparison.OrdinalIgnoreCase)))
-            {
-                return new WildcardFilter(true, "*.*", new[] { "*.*" });
-            }
-
             var canonical = masks
                 .Order(StringComparer.OrdinalIgnoreCase)
                 .Select(mask => mask.ToUpperInvariant())
                 .ToArray();
             return new WildcardFilter(
-                true,
                 string.Join(',', canonical),
                 canonical);
         }
 
-        internal bool IncludesForListing(RootedFileSystemEntry entry) =>
-            entry.Kind != RootedEntryKind.File || IncludesFile(entry.Name);
-
-        internal bool IncludesFile(string name)
-        {
-            if (!Enabled)
-            {
-                return true;
-            }
-
-            if (Masks.Count == 1 && Masks[0] == "*.*")
-            {
-                return true;
-            }
-
-            return Masks.Any(mask =>
-                FileSystemName.MatchesSimpleExpression(mask, name, ignoreCase: true));
-        }
+        internal bool Includes(string name) =>
+            Masks.Any(mask =>
+                FileSystemName.MatchesSimpleExpression(
+                    mask,
+                    name,
+                    ignoreCase: true));
     }
+
 }
