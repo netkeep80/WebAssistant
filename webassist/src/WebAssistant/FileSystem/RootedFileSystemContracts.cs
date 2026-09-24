@@ -18,6 +18,7 @@ internal static class FileSystemErrorCodes
     internal const string HardlinkRejected = "hardlink_rejected";
     internal const string BlockedFileType = "blocked_file_type";
     internal const string Locked = "locked";
+    internal const string AtomicMoveUnavailable = "atomic_move_unavailable";
     internal const string FileSystemUnavailable = "filesystem_unavailable";
 }
 
@@ -87,6 +88,10 @@ internal interface IRootedFileSystem
         string relativePath,
         CancellationToken cancellationToken = default);
 
+    ValueTask<Stream> OpenStableReadAsync(
+        string relativePath,
+        CancellationToken cancellationToken = default);
+
     ValueTask PublishNewFileAsync(
         string relativePath,
         Stream source,
@@ -94,6 +99,13 @@ internal interface IRootedFileSystem
 
     ValueTask MoveNoReplaceAsync(
         string sourceRelativePath,
+        string destinationRelativePath,
+        RootedEntryKind expectedKind,
+        CancellationToken cancellationToken = default);
+
+    ValueTask MoveNoReplaceToAsync(
+        string sourceRelativePath,
+        IRootedFileSystem destinationFileSystem,
         string destinationRelativePath,
         RootedEntryKind expectedKind,
         CancellationToken cancellationToken = default);
