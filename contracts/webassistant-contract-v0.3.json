@@ -192,6 +192,16 @@
       "statement": "Новая и изменяемая product/development документация и source comments пишутся на русском языке; технические идентификаторы и термины могут оставаться нерусскими."
     },
     {
+      "id": "WA-DOC-003",
+      "kind": "required",
+      "statement": "Для semantic/runtime/package/installer/scanner/filesystem/CI/governance изменения выполняется полный аудит всех актуальных документов из repository-owned documentation map. Все устаревшие current утверждения обновляются в том же transaction; candidate contract/conformance синхронизируются, если изменение относится к их области. Исторические plans/evidence и accepted immutable contract/conformance не переписываются задним числом; смена current accepted authority выполняется отдельной promotion transaction."
+    },
+    {
+      "id": "WA-CONFIG-001",
+      "kind": "required",
+      "statement": "Runtime/package configuration имеет один current human reference webassist/docs/configuration.md и machine-readable projection webassist/docs/appsettings.schema.json. Они описывают package-time appsettings selection, полную WebAssistant configuration structure, defaults, validation, platform-specific paths, standard ASP.NET Core provider priority и compatibility boundary. Изменение WebAssistantRuntimeOptions, FileSystemRootRegistry или canonical default-appsettings требует синхронного обновления обоих configuration artifacts, product README и candidate contract/conformance."
+    },
+    {
       "id": "WA-DIST-001",
       "kind": "required",
       "statement": "Пять execution scenarios — manual Windows, GitHub Windows, manual ALT Linux 10.1, GitHub ALT Linux 10.1 и future GitLab ALT — используют только два repository-owned canonical producer entrypoints: webassist/build/windows/package.bat и webassist/build/linux/package.sh; CI-specific альтернативные product publish/package implementations запрещены."
