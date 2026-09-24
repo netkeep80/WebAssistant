@@ -62,7 +62,7 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
             "GET /v1/filesystem/list",
             "GET /v1/filesystem/file",
             "GET /v1/filesystem/files",
-            "GET /v1/filesystem/find",
+            "POST /v1/filesystem/find",
             "POST /v1/filesystem/file",
             "POST /v1/filesystem/file/delete",
             "POST /v1/filesystem/directory",
@@ -336,9 +336,9 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
     }
 
     [Fact]
-    public async Task ListingWildcard_FiltersFilesBeforePaginationButKeepsDirectories()
+    public async Task ListingWildcard_FiltersFilesAndDirectoriesBeforePagination()
     {
-        Directory.CreateDirectory(Path.Combine(root, "folder"));
+        Directory.CreateDirectory(Path.Combine(root, "folder.xml"));
         await File.WriteAllTextAsync(Path.Combine(root, "A.XML"), "a");
         await File.WriteAllTextAsync(Path.Combine(root, "b.json"), "b");
         await File.WriteAllTextAsync(Path.Combine(root, "README"), "readme");
@@ -354,7 +354,7 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
                 .EnumerateArray()
                 .Select(entry => entry.GetProperty("name").GetString())
                 .ToArray();
-            Assert.Equal(new[] { "folder" }, entries);
+            Assert.Empty(entries);
             Assert.True(
                 !document.RootElement.TryGetProperty("nextCursor", out var nextCursor) ||
                 nextCursor.ValueKind is JsonValueKind.Null ||
@@ -372,7 +372,7 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
                 .EnumerateArray()
                 .Select(entry => entry.GetProperty("name").GetString())
                 .ToArray();
-            Assert.Contains("folder", filteredNames);
+            Assert.Contains("folder.xml", filteredNames);
             Assert.Contains("A.XML", filteredNames);
             Assert.Contains("b.json", filteredNames);
             Assert.DoesNotContain("README", filteredNames);
@@ -383,7 +383,7 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
             "/v1/filesystem/list?path=archive%2F&wildcard=*.*&limit=200");
         Assert.Equal(HttpStatusCode.OK, allFiles.StatusCode);
         using var allDocument = JsonDocument.Parse(await allFiles.Content.ReadAsStringAsync());
-        Assert.Contains(
+        Assert.DoesNotContain(
             allDocument.RootElement.GetProperty("entries").EnumerateArray(),
             entry => entry.GetProperty("name").GetString() == "README");
     }
@@ -396,17 +396,22 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(root, "B.XML"), "B");
         await File.WriteAllTextAsync(Path.Combine(root, "nested", "deep.xml"), "deep");
 
-        using (var find = await client.GetAsync(
-            "/v1/filesystem/find?path=archive%2F&name=a.xml&name=b.xml&name=B.XML"))
+        using (var find = await client.PostAsJsonAsync(
+            "/v1/filesystem/find",
+            new
+            {
+                path = "archive/",
+                names = new[] { "a.xml", "b.xml", "B.XML" }
+            }))
         {
             Assert.Equal(HttpStatusCode.OK, find.StatusCode);
             using var document = JsonDocument.Parse(await find.Content.ReadAsStringAsync());
             Assert.Equal(
                 new[] { "a.xml", "B.XML" },
                 document.RootElement
-                    .GetProperty("fileNames")
+                    .GetProperty("entries")
                     .EnumerateArray()
-                    .Select(value => value.GetString())
+                    .Select(value => value.GetProperty("name").GetString())
                     .ToArray());
         }
 
@@ -496,28 +501,41 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
             Assert.Equal(HttpStatusCode.BadRequest, oversizedMove.StatusCode);
         }
 
-        using (var duplicateFind = await client.GetAsync(
-            "/v1/filesystem/find?path=archive%2F&name=a.txt&name=a.txt"))
+        using (var duplicateFind = await client.PostAsJsonAsync(
+            "/v1/filesystem/find",
+            new
+            {
+                path = "archive/",
+                names = new[] { "a.txt", "a.txt" }
+            }))
         {
             Assert.Equal(HttpStatusCode.BadRequest, duplicateFind.StatusCode);
         }
 
-        var oversizedFindQuery = string.Join(
-            "&",
-            Enumerable.Range(0, 101)
-                .Select(index => $"name={Uri.EscapeDataString($"f{index}.txt")}"));
-        using (var oversizedFind = await client.GetAsync(
-            $"/v1/filesystem/find?path=archive%2F&{oversizedFindQuery}"))
+        using (var oversizedFind = await client.PostAsJsonAsync(
+            "/v1/filesystem/find",
+            new
+            {
+                path = "archive/",
+                names = Enumerable.Range(0, 1001)
+                    .Select(index => $"f{index}.txt")
+                    .ToArray()
+            }))
         {
             Assert.Equal(HttpStatusCode.BadRequest, oversizedFind.StatusCode);
         }
 
-        using (var noneFound = await client.GetAsync(
-            "/v1/filesystem/find?path=archive%2F&name=missing-a.txt&name=missing-b.txt"))
+        using (var noneFound = await client.PostAsJsonAsync(
+            "/v1/filesystem/find",
+            new
+            {
+                path = "archive/",
+                names = new[] { "missing-a.txt", "missing-b.txt" }
+            }))
         {
             Assert.Equal(HttpStatusCode.OK, noneFound.StatusCode);
             using var document = JsonDocument.Parse(await noneFound.Content.ReadAsStringAsync());
-            Assert.Empty(document.RootElement.GetProperty("fileNames").EnumerateArray());
+            Assert.Empty(document.RootElement.GetProperty("entries").EnumerateArray());
         }
     }
 
@@ -569,7 +587,7 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
     }
 
     [Fact]
-    public async Task Zip_PreflightsSelectedFilesBeforeStartingResponse()
+    public async Task Zip_SkipsSelectedFilesWithoutStableRead()
     {
         if (!OperatingSystem.IsLinux())
         {
@@ -586,15 +604,16 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
             using var response = await client.GetAsync(
                 "/v1/filesystem/files?path=archive%2F&wildcard=*.bin");
 
-            Assert.Equal((HttpStatusCode)423, response.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             Assert.Equal(
-                "application/problem+json",
+                "application/zip",
                 response.Content.Headers.ContentType?.MediaType);
-            using var document = JsonDocument.Parse(
-                await response.Content.ReadAsStringAsync());
-            Assert.Equal(
-                "locked",
-                document.RootElement.GetProperty("code").GetString());
+            await using var zipBytes = await response.Content.ReadAsStreamAsync();
+            using var archive = new ZipArchive(
+                zipBytes,
+                ZipArchiveMode.Read,
+                leaveOpen: false);
+            Assert.Empty(archive.Entries);
         }
         finally
         {
