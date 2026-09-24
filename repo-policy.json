@@ -68,7 +68,10 @@
           "contracts/webassistant-contract-v0.2.1.json",
           "contracts/webassistant-conformance-v0.2.1.json",
           "webassist/README.md",
-          "webassist/docs/documentation-language-policy.md"
+          "webassist/docs/documentation-language-policy.md",
+          "docs/documentation-governance.md",
+          "webassist/docs/configuration.md",
+          "webassist/docs/appsettings.schema.json"
         ],
         "must_mention_change_intent_fields": ["change_type", "scope", "anchors.affects"]
       }
@@ -207,6 +210,150 @@
       ],
       "must_change_any": [
         "webassist/docs/api.md"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
+        "webassist/build/common/default-appsettings.json"
+      ],
+      "must_change_any": [
+        "webassist/docs/configuration.md"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
+        "webassist/build/common/default-appsettings.json"
+      ],
+      "must_change_any": [
+        "webassist/docs/appsettings.schema.json"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
+        "webassist/build/common/default-appsettings.json"
+      ],
+      "must_change_any": [
+        "webassist/README.md"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
+        "webassist/build/common/default-appsettings.json"
+      ],
+      "must_change_any": [
+        "contracts/webassistant-contract-v0.3.json"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
+        "webassist/build/common/default-appsettings.json"
+      ],
+      "must_change_any": [
+        "contracts/webassistant-conformance-v0.3.json"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Http/FileSystemEndpointHandlers.cs",
+        "webassist/src/WebAssistant/Http/FileSystemHttpModels.cs",
+        "webassist/src/WebAssistant/FileSystem/FileSystemApplicationService.cs"
+      ],
+      "must_change_any": [
+        "contracts/webassistant-contract-v0.3.json"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Http/FileSystemEndpointHandlers.cs",
+        "webassist/src/WebAssistant/Http/FileSystemHttpModels.cs",
+        "webassist/src/WebAssistant/FileSystem/FileSystemApplicationService.cs"
+      ],
+      "must_change_any": [
+        "contracts/webassistant-conformance-v0.3.json"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Http/ScannerEndpointHandlers.cs",
+        "webassist/src/WebAssistant/Http/ScannerSettingsEndpointHandlers.cs",
+        "webassist/src/WebAssistant/Http/ScanRequest.cs",
+        "webassist/src/WebAssistant/Http/ScanCoordinator.cs",
+        "webassist/docs/scanner-settings.schema.json"
+      ],
+      "must_change_any": [
+        "webassist/docs/api.md"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Http/ScannerEndpointHandlers.cs",
+        "webassist/src/WebAssistant/Http/ScannerSettingsEndpointHandlers.cs",
+        "webassist/src/WebAssistant/Http/ScanRequest.cs",
+        "webassist/src/WebAssistant/Http/ScanCoordinator.cs",
+        "webassist/docs/scanner-settings.schema.json"
+      ],
+      "must_change_any": [
+        "contracts/webassistant-contract-v0.3.json"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Http/ScannerEndpointHandlers.cs",
+        "webassist/src/WebAssistant/Http/ScannerSettingsEndpointHandlers.cs",
+        "webassist/src/WebAssistant/Http/ScanRequest.cs",
+        "webassist/src/WebAssistant/Http/ScanCoordinator.cs",
+        "webassist/docs/scanner-settings.schema.json"
+      ],
+      "must_change_any": [
+        "contracts/webassistant-conformance-v0.3.json"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/build/windows/installer/Package.wxs",
+        "webassist/build/windows/installer/Bundle.wxs"
+      ],
+      "must_change_any": [
+        "webassist/docs/windows-service.md"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/build/windows/installer/Package.wxs",
+        "webassist/build/windows/installer/Bundle.wxs"
+      ],
+      "must_change_any": [
+        "webassist/docs/installation-guide.md"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/install/linux/install.sh",
+        "webassist/install/linux/uninstall.sh",
+        "webassist/install/linux/webassist.service"
+      ],
+      "must_change_any": [
+        "webassist/docs/linux-service.md"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/install/linux/install.sh",
+        "webassist/install/linux/uninstall.sh",
+        "webassist/install/linux/webassist.service"
+      ],
+      "must_change_any": [
+        "webassist/docs/installation-guide.md"
       ]
     }
   ]

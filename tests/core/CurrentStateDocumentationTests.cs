@@ -11,6 +11,7 @@ public sealed class CurrentStateDocumentationTests
 
         Assert.Contains("/v1/filesystem/list", readme, StringComparison.Ordinal);
         Assert.Contains("v0.3", readme, StringComparison.Ordinal);
+        Assert.Contains("v0.2.1", readme, StringComparison.Ordinal);
         Assert.Contains("остаётся кандидатом", readme, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
             "browser-facing filesystem routes в текущем accepted baseline отсутствуют",
@@ -51,8 +52,9 @@ public sealed class CurrentStateDocumentationTests
 
         Assert.Contains("/v1/filesystem/list", readme, StringComparison.Ordinal);
         Assert.Contains("/filesystem.html", readme, StringComparison.Ordinal);
-        Assert.Contains("RootDirectory", readme, StringComparison.Ordinal);
+        Assert.Contains("logicalRootName", readme, StringComparison.Ordinal);
         Assert.Contains("no-replace", readme, StringComparison.Ordinal);
+        Assert.Contains("только `GET` и `POST`", readme, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "В текущей версии browser-facing filesystem endpoints отсутствуют",
             readme,
@@ -118,6 +120,31 @@ public sealed class CurrentStateDocumentationTests
         Assert.Contains("%ProgramData%\\WebAssistant\\data", windows, StringComparison.Ordinal);
         Assert.Contains("WebAssistant:FileSystem:RootDirectory", linux, StringComparison.Ordinal);
         Assert.Contains("/var/lib/webassistant", linux, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConfigurationDocumentation_DescribesActualRootDirectoryCompatibilityBoundary()
+    {
+        var configuration = ReadRepositoryFile("webassist/docs/configuration.md");
+        var api = ReadRepositoryFile("webassist/docs/api.md");
+        var windows = ReadRepositoryFile("webassist/docs/windows-service.md");
+        var linux = ReadRepositoryFile("webassist/docs/linux-service.md");
+
+        foreach (var document in new[] { configuration, api, windows, linux })
+        {
+            Assert.Contains(
+                "обычный логический корень",
+                document,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "RootDirectory` больше не используется файловой подсистемой",
+                document,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "RootDirectory` больше не является действующей конфигурацией",
+                document,
+                StringComparison.Ordinal);
+        }
     }
 
     [Fact]

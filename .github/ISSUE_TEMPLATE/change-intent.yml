@@ -32,6 +32,20 @@ body:
     validations:
       required: true
   - type: textarea
+    id: documentation_audit
+    attributes:
+      label: Полный аудит документации
+      description: Перечислите затронутые области из docs/documentation-governance.md и актуальные документы, которые должны быть проверены в PR.
+      value: |
+        Проверить:
+          - webassist/README.md
+        Обновить при необходимости:
+          - webassist/docs/api.md
+        `accepted immutable` документы:
+          - не изменять задним числом
+    validations:
+      required: true
+  - type: textarea
     id: governance_grant
     attributes:
       label: GovernanceGrant (только для управляющих изменений)
