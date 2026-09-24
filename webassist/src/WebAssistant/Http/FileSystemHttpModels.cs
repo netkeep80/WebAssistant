@@ -2,6 +2,10 @@ namespace WebAssistant.Http;
 
 internal sealed record FileSystemDirectoryRequest(string? Path);
 
+internal sealed record FileSystemFindRequest(
+    string? Path,
+    IReadOnlyList<string>? Names);
+
 internal sealed record FileSystemMoveRequest(
     string? SourcePath,
     string? DestinationPath,
@@ -17,6 +21,9 @@ internal sealed record FileSystemRenameRequest(
 
 internal sealed record FileSystemFileNamesResponse(
     IReadOnlyList<string> FileNames);
+
+internal sealed record FileSystemEntriesResponse(
+    IReadOnlyList<FileSystemEntryResponse> Entries);
 
 internal sealed record FileSystemListingResponse(
     string Path,
