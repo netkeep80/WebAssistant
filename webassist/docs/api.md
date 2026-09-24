@@ -445,7 +445,7 @@ POST /v1/filesystem/rename
 Пагинация opt-in:
 
 - без `limit` сервер возвращает весь отфильтрованный непосредственный listing, а `nextCursor=null`;
-- при `limit=N`, где `1 <= N <= 1000`, используется cursor pagination;
+- при явном положительном `limit=N` используется cursor pagination; WebAssistant не задаёт собственного верхнего продуктового лимита `N`;
 - `cursor` допустим только вместе с явным `limit`;
 - `cursor` связан с логическим корнем, каталогом и каноническим effective wildcard;
 - server-side sort отсутствует; порядок API не специфицирован.
@@ -522,7 +522,7 @@ Read-only batch query принимает JSON:
 }
 ```
 
-`names` содержит от 1 до 1000 уникальных имён. Каждое имя — ровно один элемент каталога без разделителей пути, `.` и `..`. Lookup exact, non-recursive и не использует wildcard. Сравнение выполняется по фактическому имени с `StringComparison.Ordinal`.
+`names` — непустой список уникальных имён без фиксированного верхнего продуктового лимита со стороны WebAssistant. Каждое имя — ровно один элемент каталога без разделителей пути, `.` и `..`. Lookup exact, non-recursive и не использует wildcard. Сравнение выполняется по фактическому имени с `StringComparison.Ordinal`.
 
 Возвращаются все реально присутствующие видимые rooted filesystem entries — обычные файлы, каталоги, restricted entries и links — с той же entry DTO, что и `list`. Отсутствующие имена пропускаются, порядок найденных entries соответствует входному `names`:
 
@@ -670,6 +670,52 @@ Symlink, junction и другие link/reparse-объекты могут быт�
 Загрузка с заблокированным расширением, перемещение такого файла и переименование файла в заблокированное имя возвращают `422 blocked_file_type`. Если ограниченный файл создан внешней программой непосредственно внутри настроенного корня, список может показать его с `restrictionCode=active_extension`, но WebAssistant не скачивает, не перемещает и не переименовывает его. Удаление разрешено для очистки.
 
 Это политика имени, а не антивирусная проверка содержимого.
+
+### Ограничения и границы filesystem API
+
+Эта таблица является обязательной частью текущего описания filesystem API. Она перечисляет не только принятые продуктовые ограничения, но и observable security/platform/transport границы. Статус `under review` означает: поведение сейчас существует и поэтому документируется, но ещё не считается окончательно утверждённым продуктовым требованием.
+
+| Область | Ограничение или граница | Тип | Основание | Observable поведение | Платформа | Статус |
+|---|---|---|---|---|---|---|
+| HTTP surface | Только `GET` и `POST`; JSON batch/mutation endpoints требуют `Content-Type: application/json`. | semantic | API contract | Неверный content type JSON-запроса даёт `400 filesystem_path_invalid`. | все | required |
+| logical roots | Root name соответствует `[A-Za-z0-9][A-Za-z0-9._-]*`; `.`/`..` и case-only duplicates запрещены. | semantic | root registry | Некорректная карта roots => `filesystem_configuration_invalid`. | все | under review |
+| logical roots | Configured root lookup регистрозависимый (`StringComparer.Ordinal`). | implementation-only | current registry lookup | `Archive/` не выбирает configured `archive`. | все | under review |
+| logical roots | Hard-coded maximum количества roots отсутствует. | semantic | multi-root design | Ограничение определяется ресурсами/configuration, не `maxRoots=N`. | все | required |
+| public path | Нужен logical-root prefix; absolute paths, `.`, `..`, empty internal segments, control chars и `\\` запрещены. | security | rooted authority | `400 filesystem_path_invalid`. | все | required |
+| Linux names | Native имя с `\\` или некоторыми control chars может быть видно через listing/find, но не выражаться public logical path. | platform | POSIX namespace vs portable path grammar | Не все path-based операции смогут адресовать такой externally-created entry. | Linux | under review |
+| internal namespace | Prefix `.webassistant-` зарезервирован и скрывается из обычного listing. | security / implementation-only | staging namespace | Такое пользовательское имя нельзя создать/адресовать через public API. | все | under review |
+| Windows names | Запрещены `CON`, `PRN`, `AUX`, `NUL`, `CLOCK$`, `COM1..9`, `LPT1..9`, invalid chars и trailing dot/space. | platform | Windows namespace | `400 filesystem_path_invalid`. | Windows | inherited |
+| active extensions | Блокируется текущий deny-list standalone active extensions из раздела выше. | security | extension policy | Upload/move/rename => `422 blocked_file_type`; externally-created restricted entry может быть удалён. | все | under review |
+| links/reparse | Link/reparse entries могут быть видимы, но traversal/read/move/rename/delete запрещены. | security | root containment | Fail-closed, обычно `409 unsafe_link`. | все | required; delete-link capability under review |
+| hard links | Файл с hard-link alias не допускается к read/move/rename/delete. | security | возможный alias вне root | `409 hardlink_rejected` или restricted listing entry. | все | required |
+| list scope | Только immediate entries; recursion/server-side sort отсутствуют; order unspecified. | semantic | API model | Сортировка — ответственность клиента. | все | required |
+| list без pagination | Без `limit` возвращается весь filtered immediate listing, `nextCursor=null`. | semantic / resource | #250 | Product count cap отсутствует. | все | required |
+| list pagination | Explicit `limit` должен быть `>0`; WebAssistant-specific upper bound отсутствует. Текущий parser использует `Int32`. | semantic / implementation-only | #256 + current representation | `limit>1000` допустим; invalid/nonrepresentable decimal => `400`. | все | required для отсутствия product cap |
+| list cursor | `cursor` только с explicit `limit`, связан с root/directory/wildcard; listing не snapshot. | semantic | cursor contract | Invalid cursor => `400`; external mutations между pages могут менять наблюдение. | все | required |
+| native listing chunk | Internal backend page/chunk <=1000 entries; это не public limit. | implementation-only | bounded enumeration | Public result/`limit>1000` собирается из нескольких chunks. | все | required boundary |
+| wildcard | Не более 32 comma-separated masks; OR; empty mask, `/`, `\\`, control chars запрещены. | transport-framework / defensive | URL/request-line boundary | Invalid/33+ masks => `400 filesystem_path_invalid`. | все | required |
+| wildcard matching | Case-insensitive на Windows/Linux, immediate-only; `*.*` literal, `*` maximal. | semantic | portable behavior | Одинаковая case policy на обеих ОС. | все | required |
+| find batch size | `names` непустой; фиксированного WebAssistant-specific maximum нет. | semantic / resource | #256 | Batch >1000 разрешён; далее действуют request/runtime resources. | все | required |
+| find duplicates | `names` сейчас должен быть unique. | semantic | current validator | Duplicate => `400 filesystem_path_invalid`. | все | under review |
+| find matching | Exact `StringComparison.Ordinal`, immediate-only, non-recursive, без wildcard. | semantic | current find contract | Регистр должен совпадать даже на Windows; missing entries omitted. | все | exact-case policy under review |
+| batch move | `fileNames` = 1..1000 unique single-entry names; только ordinary non-restricted files. | semantic / defensive | bounded mutation batch | Oversized/duplicate batch => `400`. | все | required |
+| batch move result | `not_found`/destination collision per-item пропускаются; response только successes; rollback отсутствует. | semantic | best-effort contract | Fatal error останавливает дальнейший batch. | все | required |
+| move/rename | Move сохраняет basename; rename сохраняет parent. | semantic | orthogonal operations | Move не rename; rename не move. | все | required |
+| cross-root move | Только native atomic no-replace rename; copy-delete fallback запрещён. | security / semantic | atomicity | Cross-device/volume/unsupported => `409 atomic_move_unavailable`. | все | required |
+| directory move | Один directory; root object нельзя move; same-root destination не source/descendant. | semantic / security | tree integrity | Invalid topology => `400`; existing destination => `409`. | все | required |
+| create directory | Создаётся один directory; parent должен существовать; recursive `mkdir -p` отсутствует. | semantic | minimal mutation surface | Missing parent => normalized filesystem error. | все | required |
+| delete directory | Только пустой directory; recursion отсутствует. | security / semantic | destructive fail-closed | Непустой => `409 directory_not_empty`. | все | required |
+| upload publication | Streaming create-new через private same-filesystem staging и atomic no-replace commit; overwrite/append отсутствуют. | security / semantic | partial-file isolation | Existing destination => `409 destination_exists`. | все | required |
+| upload body size | WebAssistant не переопределяет Kestrel `MaxRequestBodySize`; ASP.NET Core 10 default = 30,000,000 bytes (≈28.6 MiB). | transport-framework | Kestrel default | Более крупный body может быть отклонён transport layer. | все | under review |
+| request line | Kestrel `MaxRequestLineSize` не переопределён; default = 8192 bytes. | transport-framework | Kestrel default | Длинный GET path/wildcard target обычно => `414 URI Too Long`. | все | inherited |
+| request headers | Kestrel defaults: total headers 32,768 bytes, count <=100. | transport-framework | Kestrel default | Превышение отклоняется transport layer. | все | inherited |
+| data rate | Kestrel defaults request/response = 240 bytes/s, grace = 5 s. | transport-framework | Kestrel default | Чрезмерно медленный upload/download может быть прекращён transport layer. | все | inherited |
+| ZIP scope | Только immediate ordinary non-restricted files matching wildcard; directories/recursion отсутствуют. | semantic / security | ZIP contract | Zero candidates => valid empty ZIP. | все | required |
+| ZIP stable read | Windows restrictive share; Linux kernel read lease. | security / platform | Нельзя архивировать недописанный файл | Writer/нет доказуемого stable read => candidate skip; Linux FS без lease может не включить файл. | Windows/Linux | required |
+| ZIP late failure | Unsafe failure после начала body не заменяется JSON error. | security / transport-framework | response started | Connection abort, чтобы partial ZIP не считался success. | все | required |
+| physical paths | Physical root paths не принимаются как public authority и не выдаются в HTTP/logging. | security | information boundary | Только logical roots/relative paths. | все | required |
+
+Транспортные значения Kestrel выше — фактически используемые defaults ASP.NET Core 10: current `Program.cs` настраивает адрес/порт, но не переопределяет эти limits. Они не являются filesystem semantic laws; при изменении server configuration таблица должна обновляться вместе с runtime.
 
 ### Визуальный браузерный клиент
 

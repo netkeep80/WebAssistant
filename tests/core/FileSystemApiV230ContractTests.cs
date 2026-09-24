@@ -519,7 +519,7 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
             Assert.Equal(HttpStatusCode.BadRequest, duplicateFind.StatusCode);
         }
 
-        using (var oversizedFind = await client.PostAsJsonAsync(
+        using (var largeFind = await client.PostAsJsonAsync(
             "/v1/filesystem/find",
             new
             {
@@ -529,7 +529,9 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
                     .ToArray()
             }))
         {
-            Assert.Equal(HttpStatusCode.BadRequest, oversizedFind.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, largeFind.StatusCode);
+            using var document = JsonDocument.Parse(await largeFind.Content.ReadAsStringAsync());
+            Assert.Empty(document.RootElement.GetProperty("entries").EnumerateArray());
         }
 
         using (var noneFound = await client.PostAsJsonAsync(
