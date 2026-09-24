@@ -88,8 +88,8 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
             .ToHashSet(StringComparer.Ordinal);
         foreach (var requiredPath in new[]
         {
-            "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg",
-            "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg",
+            "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.8.450cba65.nupkg",
+            "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.Worker.Win32.1.3.0-webassistant.2.450cba65.nupkg",
             "tests/core/FileSystemApiV230ContractTests.cs",
             "webassist/src/WebAssistant/FileSystem/FileSystemApplicationService.cs",
             "webassist/src/WebAssistant/Http/FileSystemEndpointHandlers.cs",
