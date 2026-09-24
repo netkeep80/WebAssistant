@@ -18,7 +18,6 @@ internal sealed class FileSystemApplicationService
 {
     private const int NativePageSize = 1000;
     private const int MaximumWildcardMasks = 32;
-    private const int MaximumFindNames = 1000;
     private const int MaximumMoveNames = 1000;
     private readonly FileSystemRootRegistry registry;
 
@@ -72,13 +71,14 @@ internal sealed class FileSystemApplicationService
                 null);
         }
 
-        if (limit.Value is < 1 or > NativePageSize)
+        if (limit.Value < 1)
         {
-            throw Invalid("Параметр limit должен быть от 1 до 1000.");
+            throw Invalid("Параметр limit должен быть положительным.");
         }
 
         var offset = DecodeCursor(resolved.Path, filter.Key, cursor);
-        var entries = new List<RootedFileSystemEntry>(limit.Value);
+        var entries = new List<RootedFileSystemEntry>(
+            Math.Min(limit.Value, NativePageSize));
         var visibleIndex = 0;
         var hasMore = false;
         string? pagedNativeCursor = null;
@@ -138,10 +138,7 @@ internal sealed class FileSystemApplicationService
         IReadOnlyList<string> names,
         CancellationToken cancellationToken)
     {
-        var requested = ValidateNames(
-            names,
-            MaximumFindNames,
-            ensureFileTypeAllowed: false);
+        var requested = ValidateFindNames(names);
         var resolved = ResolveDirectory(directoryPath);
         var entries = await FindExactEntriesAsync(
             resolved.FileSystem,
@@ -167,10 +164,7 @@ internal sealed class FileSystemApplicationService
         IReadOnlyList<string> fileNames,
         CancellationToken cancellationToken)
     {
-        var requested = ValidateNames(
-            fileNames,
-            MaximumMoveNames,
-            ensureFileTypeAllowed: true);
+        var requested = ValidateMoveNames(fileNames);
         var source = ResolveDirectory(sourceDirectoryPath);
         var destination = ResolveDirectory(destinationDirectoryPath);
         if (string.Equals(
@@ -396,16 +390,33 @@ internal sealed class FileSystemApplicationService
         return FileSystemLogicalPath.Parse(value, allowRoot: true);
     }
 
-    private static IReadOnlyList<string> ValidateNames(
-        IReadOnlyList<string> names,
-        int maximum,
-        bool ensureFileTypeAllowed)
+    private static IReadOnlyList<string> ValidateFindNames(
+        IReadOnlyList<string> names)
     {
-        if (names.Count is < 1 || names.Count > maximum)
+        if (names.Count < 1)
         {
-            throw Invalid($"Количество имён должно быть от 1 до {maximum.ToString(CultureInfo.InvariantCulture)}.");
+            throw Invalid("Список имён find не должен быть пустым.");
         }
 
+        return ValidateUniqueNames(names, ensureFileTypeAllowed: false);
+    }
+
+    private static IReadOnlyList<string> ValidateMoveNames(
+        IReadOnlyList<string> names)
+    {
+        if (names.Count is < 1 or > MaximumMoveNames)
+        {
+            throw Invalid(
+                $"Количество имён move должно быть от 1 до {MaximumMoveNames.ToString(CultureInfo.InvariantCulture)}.");
+        }
+
+        return ValidateUniqueNames(names, ensureFileTypeAllowed: true);
+    }
+
+    private static IReadOnlyList<string> ValidateUniqueNames(
+        IReadOnlyList<string> names,
+        bool ensureFileTypeAllowed)
+    {
         var unique = new HashSet<string>(StringComparer.Ordinal);
         var validated = new List<string>(names.Count);
         foreach (var name in names)
