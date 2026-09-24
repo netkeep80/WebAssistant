@@ -984,5 +984,22 @@ finally:
     temporary.unlink(missing_ok=True)
 PY
 
+remove_stale_repository_owned_packages() {
+    local candidate
+    local candidate_name
+
+    shopt -s nullglob
+    for candidate in "$output_dir"/WebAssistant.NAPS2.Sdk*.nupkg; do
+        candidate_name="$(basename -- "$candidate")"
+        if [[ "$candidate_name" == "$PACKAGE_FILE" || "$candidate_name" == "$WORKER_PACKAGE_FILE" ]]; then
+            continue
+        fi
+        rm -f -- "$candidate"
+    done
+    shopt -u nullglob
+}
+
+remove_stale_repository_owned_packages
+
 echo "Rebuilt SDK: $package_path"
 echo "Rebuilt Win32 worker: $worker_package_path"
