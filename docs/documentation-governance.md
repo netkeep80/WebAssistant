@@ -1,79 +1,79 @@
 # Управление актуальной документацией WebAssistant
 
-Этот документ задаёт карту текущей документационной поверхности и правила полного аудита документации при изменениях WebAssistant.
+Этот документ задаёт карту актуальной документации и правила её полного аудита при изменениях WebAssistant.
 
 ## Карта актуальной документации
 
 | Область | Актуальные документы | Основные источники поведения | Блокирующая связь |
 | --- | --- | --- | --- |
-| Обзор продукта и текущая capability surface | `README.md`, `webassist/README.md` | product code, build/package entrypoints, current accepted authority, candidate v0.3 | stale-doc tests + PR audit |
-| REST API, scanner/filesystem/diagnostics/CORS | `webassist/docs/api.md` | `webassist/src/WebAssistant/Http/**`, scanner/filesystem application services | repo-guard cochange для известных API surfaces + tests |
-| Runtime/package configuration | `webassist/docs/configuration.md`, `webassist/docs/appsettings.schema.json`, соответствующие разделы `webassist/README.md` | `WebAssistantRuntimeOptions.cs`, `FileSystemRootRegistry.cs`, `build/common/default-appsettings.json` | несколько независимых blocking cochange rules: одного обновлённого документа недостаточно |
-| Windows installation/service | `webassist/docs/windows-service.md`, `webassist/docs/installation-guide.md` | Windows package/WiX/service implementation | targeted tests + document audit |
-| Linux installation/service | `webassist/docs/linux-service.md`, `webassist/docs/installation-guide.md` | Linux package/install/systemd implementation | targeted tests + document audit |
-| Scanner settings schema | `webassist/docs/scanner-settings.schema.json`, scanner settings section `webassist/docs/api.md` | scanner settings DTO/handlers/adapters | existing cochange + tests |
-| Dependency provenance | `webassist/vendor/naps2/README.md` | repository-owned NAPS2 package/provenance | dependency tests + document audit |
-| Язык документации | `webassist/docs/documentation-language-policy.md` | documentation policy | stale-language tests + PR audit |
-| Candidate semantic authority | `contracts/webassistant-contract-v0.3.json`, `contracts/webassistant-conformance-v0.3.json` | semantic/runtime changes in candidate scope | governance grant + targeted cochange/evidence |
-| Current accepted authority | пути из `contract_conformance.current` в `repo-policy.json`; сейчас v0.2.1 | accepted contract/conformance pair | immutable history; не переписывается обычным feature PR |
+| Обзор продукта и текущие возможности | `README.md`, `webassist/README.md` | код продукта, сценарии сборки и упаковки, текущая принятая пара, кандидат v0.3 | тесты на устаревшие утверждения + аудит PR |
+| REST API, сканирование, файловый обмен, диагностика, CORS | `webassist/docs/api.md` | `webassist/src/WebAssistant/Http/**`, прикладные службы сканирования и файлового обмена | `repo-guard` cochange для известных поверхностей API + тесты |
+| Конфигурация времени выполнения и пакета | `webassist/docs/configuration.md`, `webassist/docs/appsettings.schema.json`, соответствующие разделы `webassist/README.md` | `WebAssistantRuntimeOptions.cs`, `FileSystemRootRegistry.cs`, `build/common/default-appsettings.json` | несколько независимых блокирующих cochange-правил: одного обновлённого документа недостаточно |
+| Установка и служба Windows | `webassist/docs/windows-service.md`, `webassist/docs/installation-guide.md` | упаковка Windows, WiX и реализация службы | целевые тесты + аудит документации |
+| Установка и служба Linux | `webassist/docs/linux-service.md`, `webassist/docs/installation-guide.md` | упаковка Linux, install scripts и systemd | целевые тесты + аудит документации |
+| Схема настроек сканера | `webassist/docs/scanner-settings.schema.json`, раздел настроек сканера в `webassist/docs/api.md` | DTO, handlers и adapters настроек сканера | существующий cochange + тесты |
+| Происхождение зависимостей | `webassist/vendor/naps2/README.md` | принадлежащие репозиторию package/provenance NAPS2 | тесты зависимостей + аудит документации |
+| Язык документации | `webassist/docs/documentation-language-policy.md` | политика документации | тесты на устаревший язык + аудит PR |
+| Кандидатная семантическая основа | `contracts/webassistant-contract-v0.3.json`, `contracts/webassistant-conformance-v0.3.json` | семантические изменения в области кандидата | GovernanceGrant + целевой cochange/evidence |
+| Текущая принятая основа | пути из `contract_conformance.current` в `repo-policy.json`; сейчас v0.2.1 | принятая пара contract/conformance | неизменяемая история; обычный feature PR её не переписывает |
 
 ## Что не считается текущим описанием продукта
 
-`docs/superpowers/**` содержит исторические планы и design records конкретных development transactions. Они сохраняют исторический контекст, но не являются нормативным описанием текущего продукта и не должны искусственно обновляться под каждое новое состояние.
+`docs/superpowers/**` содержит исторические планы и проектные записи конкретных транзакций разработки. Они сохраняют исторический контекст, но не являются нормативным описанием текущего продукта и не должны искусственно обновляться под каждое новое состояние.
 
-Старые accepted contract/conformance пары также являются исторической authority своего момента времени. Их несовпадение с новой candidate semantics не является stale documentation: accepted документы не переписываются задним числом.
+Старые принятые пары contract/conformance также являются исторической основой своего момента времени. Их несовпадение с новой семантикой кандидата не является дефектом документации: принятые документы не переписываются задним числом.
 
 ## Обязательный полный аудит
 
-Для любого изменения поведения, API, runtime configuration, architecture, packaging/dependency policy, installer/service semantics, scanner/filesystem semantics, CI/acceptance или governance автор PR обязан:
+Для любого изменения поведения, API, конфигурации времени выполнения, архитектуры, политики упаковки или зависимостей, установщика или службы, сканирования, файлового обмена, CI/acceptance либо governance автор PR обязан:
 
 1. определить все строки этой карты, которых касается изменение;
 2. проверить каждый актуальный документ в этих строках, даже если Issue назвала только один файл;
-3. обновить все документы, где старое утверждение стало неверным или неполным;
+3. обновить все документы, где прежнее утверждение стало неверным или неполным;
 4. явно перечислить в PR проверенные документы, реально обновлённые документы и проверенные, но не затронутые документы с кратким основанием;
-5. синхронизировать candidate contract/conformance, если изменение относится к их semantic surface;
-6. не менять accepted immutable authority задним числом;
-7. при изменении accepted authority выполнять отдельную promotion transaction.
+5. синхронизировать кандидатные contract/conformance, если изменение относится к их семантической области;
+6. не менять `accepted immutable` основу задним числом;
+7. при изменении текущей принятой основы выполнять отдельную транзакцию promotion.
 
 Фраза «документ не был указан в Issue» не является основанием пропустить аудит.
 
 ## Что блокируется автоматически
 
-Текущий закреплённый repo-guard поддерживает directed `cochange_rules` с `must_change_any`, но ещё не поддерживает semantic all-or-none groups. Поэтому там, где связь точная и критичная, требование «обновить все» выражается несколькими независимыми правилами с одинаковым `if_changed` и singleton `must_change_any`.
+Текущий закреплённый `repo-guard` поддерживает направленные `cochange_rules` с `must_change_any`, но ещё не поддерживает семантические группы «всё или ничего». Поэтому там, где связь точная и критичная, требование «обновить все» выражается несколькими независимыми правилами с одинаковым `if_changed` и единственным путём в каждом `must_change_any`.
 
-Например, изменение runtime configuration model одновременно требует:
+Например, изменение модели конфигурации времени выполнения одновременно требует:
 
 - `webassist/docs/configuration.md`;
 - `webassist/docs/appsettings.schema.json`;
 - `webassist/README.md`;
-- candidate `contracts/webassistant-contract-v0.3.json`;
-- candidate `contracts/webassistant-conformance-v0.3.json`.
+- кандидат `contracts/webassistant-contract-v0.3.json`;
+- кандидат `contracts/webassistant-conformance-v0.3.json`.
 
-Обновление только одного из этих файлов не удовлетворяет остальные правила и блокируется repo-guard.
+Обновление только одного из этих файлов не удовлетворяет остальные правила и блокируется `repo-guard`.
 
-Для широких файлов, где один path содержит несколько независимых смыслов, принудительный touch всех возможных документов создавал бы ложные изменения. Там обязательность аудита обеспечивается PR checklist, текущей картой и stale-document tests. Если связь становится достаточно точной и повторяемой, её следует повышать до blocking cochange rule.
+Для широких файлов, где один путь содержит несколько независимых смыслов, принудительное изменение всех возможных документов создавало бы ложные правки. Там обязательность аудита обеспечивается шаблоном PR, текущей картой и тестами на устаревшие утверждения. Если связь становится достаточно точной и повторяемой, её следует повышать до блокирующего cochange-правила.
 
 ## Конфигурация
 
-Каноническое описание JSON-конфигурации находится в `webassist/docs/configuration.md`, а machine-readable schema — в `webassist/docs/appsettings.schema.json`.
+Каноническое человекочитаемое описание JSON-конфигурации находится в `webassist/docs/configuration.md`, а машиночитаемая схема — в `webassist/docs/appsettings.schema.json`.
 
-Любое изменение runtime configuration model, defaults, package-time selection, provider priority или validation должно рассматриваться как изменение этой пары и соответствующих обзорных/candidate документов.
+Любое изменение модели конфигурации времени выполнения, значений по умолчанию, выбора конфигурации при упаковке, приоритета источников или проверки значений должно рассматриваться как изменение этой пары и соответствующих обзорных и кандидатных документов.
 
-## Accepted и candidate
+## Принятые документы и кандидат
 
-`repo-policy.json` определяет current accepted contract/conformance. Accepted pair является неизменяемой исторической authority.
+`repo-policy.json` определяет текущую принятую пару contract/conformance. Принятая пара является неизменяемой исторической основой.
 
-Candidate документы могут обновляться вместе с реализацией при наличии GovernanceGrant. Когда новая semantics должна стать current accepted authority, выполняется отдельная promotion transaction: создаётся/проверяется новая accepted pair, current pointer переводится на неё, а предыдущая accepted pair остаётся неизменной.
+Кандидатные документы могут обновляться вместе с реализацией при наличии GovernanceGrant. Когда новая семантика должна стать текущей принятой основой, выполняется отдельная транзакция promotion: создаётся и проверяется новая принятая пара, указатель текущей основы переводится на неё, а предыдущая принятая пара остаётся неизменной.
 
 ## Проверка самого механизма
 
 `tests/core/DocumentationGovernanceTests.cs` проверяет:
 
-- наличие карты и configuration reference/schema;
-- соответствие schema безопасному default;
-- наличие независимых blocking cochange obligations;
-- отрицательный witness: изменение runtime model плюс только одного документа оставляет другие обязательства неудовлетворёнными;
-- обязательный раздел полного аудита в PR template;
-- отсутствие уже известных stale filesystem methods в product README.
+- наличие карты, описания конфигурации и схемы;
+- соответствие схемы безопасной конфигурации по умолчанию;
+- наличие независимых блокирующих cochange-обязательств;
+- отрицательный свидетель: изменение модели времени выполнения вместе с обновлением только одного документа оставляет остальные обязательства неудовлетворёнными;
+- обязательный раздел полного аудита в шаблоне PR;
+- отсутствие уже известных устаревших методов filesystem API в `webassist/README.md`.
 
-Дополнительные предметные stale assertions остаются в `tests/core/CurrentStateDocumentationTests.cs` и специализированных contract tests.
+Дополнительные предметные проверки устаревших утверждений остаются в `tests/core/CurrentStateDocumentationTests.cs` и специализированных contract tests.
