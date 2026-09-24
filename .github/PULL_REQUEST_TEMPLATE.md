@@ -18,7 +18,7 @@
 - Не затронуты (почему):
   - <!-- перечислите проверенные current docs, не требующие изменения, с кратким основанием -->
 - [ ] Candidate contract/conformance проверены и синхронизированы, если изменение входит в их semantic surface.
-- [ ] Accepted immutable contract/conformance и историческое evidence не переписаны задним числом.
+- [ ] `accepted immutable` contract/conformance и историческое evidence не переписаны задним числом.
 
 ## Намерение изменения
 
