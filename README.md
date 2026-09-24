@@ -14,11 +14,13 @@ WebAssistant — локальная общесистемная служба дл
 
 Каталог `docs/superpowers/**` содержит датированные исторические материалы разработки — планы и проектные решения конкретных транзакций. Они не являются нормативным описанием текущего продукта; актуальное поведение определяется текущим кодом, принятой парой contract/conformance и канонической документацией продукта.
 
-Версионированные артефакты контракта и соответствия сохраняются монотонно; какая пара является текущей, определяет только `contract_conformance.current` в [`repo-policy.json`](repo-policy.json). Текущая принятая пара — v0.2:
+Версионированные артефакты контракта и соответствия сохраняются монотонно; какая пара является текущей, определяет только `contract_conformance.current` в [`repo-policy.json`](repo-policy.json). Текущая принятая пара — v0.2.1:
 - [`contracts/webassistant-contract-v0.1.json`](contracts/webassistant-contract-v0.1.json)
 - [`contracts/webassistant-conformance-v0.1.json`](contracts/webassistant-conformance-v0.1.json)
 - [`contracts/webassistant-contract-v0.2.json`](contracts/webassistant-contract-v0.2.json)
 - [`contracts/webassistant-conformance-v0.2.json`](contracts/webassistant-conformance-v0.2.json)
+- [`contracts/webassistant-contract-v0.2.1.json`](contracts/webassistant-contract-v0.2.1.json)
+- [`contracts/webassistant-conformance-v0.2.1.json`](contracts/webassistant-conformance-v0.2.1.json)
 
 Цепочка «требование → вектор соответствия → граф доказательств» проверяется валидатором репозитория в `tests/core`; автоматизированное доказательство должно быть связано со стабильной поверхностью CI, а физическое или ручное доказательство не считается автоматически принятым без явного факта приёмки.
 

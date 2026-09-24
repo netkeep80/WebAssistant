@@ -7,9 +7,12 @@ public sealed class DistributionContractCandidateTests
 {
     private const string BaselineContractPath = "contracts/webassistant-contract-v0.2.json";
     private const string BaselineConformancePath = "contracts/webassistant-conformance-v0.2.json";
+    private const string CurrentContractPath = "contracts/webassistant-contract-v0.2.1.json";
+    private const string CurrentConformancePath = "contracts/webassistant-conformance-v0.2.1.json";
     private const string CandidateContractPath = "contracts/webassistant-contract-v0.3.json";
     private const string CandidateConformancePath = "contracts/webassistant-conformance-v0.3.json";
-    private const string PatchedSdkPath = "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg";
+    private const string PatchedSdkPath = "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.8.450cba65.nupkg";
+    private const string PatchedWorkerPath = "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.Worker.Win32.1.3.0-webassistant.2.450cba65.nupkg";
     private const string SupersededSdkPath = "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.1.450cba65.nupkg";
 
     private static readonly HashSet<string> SupersededRequirementIds =
@@ -89,7 +92,7 @@ public sealed class DistributionContractCandidateTests
             RequiredString(candidateContract.RootElement, "schema"),
             RequiredString(candidateConformance.RootElement, "contract"));
 
-        AssertCurrentAuthorityRemainsV02(policy.RootElement);
+        AssertCurrentAuthorityIsMaintenanceV021(policy.RootElement);
         AssertBaselineRequirementsArePreservedExceptExplicitSupersession(
             baselineContract.RootElement,
             candidateContract.RootElement);
@@ -170,6 +173,7 @@ public sealed class DistributionContractCandidateTests
         var requiredPaths = ReadStringArray(candidateConformance.RootElement, "requiredRepositoryPaths")
             .ToHashSet(StringComparer.Ordinal);
         Assert.Contains(PatchedSdkPath, requiredPaths);
+        Assert.Contains(PatchedWorkerPath, requiredPaths);
         Assert.DoesNotContain(SupersededSdkPath, requiredPaths);
         Assert.Contains("tests/core/ScannerIdentityTests.cs", requiredPaths);
         Assert.Contains("tests/core/ScanSourcePolicyTests.cs", requiredPaths);
@@ -223,17 +227,17 @@ public sealed class DistributionContractCandidateTests
         Assert.DoesNotContain("Опциональный query parameter", api, StringComparison.Ordinal);
     }
 
-    private static void AssertCurrentAuthorityRemainsV02(JsonElement policy)
+    private static void AssertCurrentAuthorityIsMaintenanceV021(JsonElement policy)
     {
         var current = policy
             .GetProperty("contract_conformance")
             .GetProperty("current");
 
         Assert.Equal(
-            BaselineContractPath,
+            CurrentContractPath,
             RequiredString(current.GetProperty("contract"), "path"));
         Assert.Equal(
-            BaselineConformancePath,
+            CurrentConformancePath,
             RequiredString(current.GetProperty("conformance"), "path"));
     }
 
