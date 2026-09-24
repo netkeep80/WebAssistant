@@ -8,7 +8,6 @@ namespace WebAssistant.Http;
 
 internal static class FileSystemEndpointHandlers
 {
-    private const int DefaultListLimit = 200;
     private const string LoggerCategory = "WebAssistant.Http.FileSystem";
 
     internal static void Map(RouteGroupBuilder api)
@@ -17,7 +16,7 @@ internal static class FileSystemEndpointHandlers
         api.MapGet("/filesystem/list", ListAsync);
         api.MapGet("/filesystem/file", DownloadAsync);
         api.MapGet("/filesystem/files", DownloadZipAsync);
-        api.MapGet("/filesystem/find", FindAsync);
+        api.MapPost("/filesystem/find", FindAsync);
         api.MapPost("/filesystem/file", UploadAsync);
         api.MapPost("/filesystem/file/delete", DeleteFileAsync);
         api.MapPost("/filesystem/directory", CreateDirectoryAsync);
@@ -60,19 +59,24 @@ internal static class FileSystemEndpointHandlers
             ? QueryValue(request, "wildcard")
             : null;
         var cursor = QueryValue(request, "cursor");
-        var rawLimit = QueryValue(request, "limit");
-        var limit = DefaultListLimit;
-        if (!string.IsNullOrEmpty(rawLimit) &&
-            !int.TryParse(
-                rawLimit,
-                NumberStyles.None,
-                CultureInfo.InvariantCulture,
-                out limit))
+        int? limit = null;
+        if (request.Query.ContainsKey("limit"))
         {
-            return Problem(
-                FileSystemErrorCodes.FileSystemPathInvalid,
-                StatusCodes.Status400BadRequest,
-                "Некорректный limit каталога");
+            var rawLimit = QueryValue(request, "limit");
+            if (string.IsNullOrEmpty(rawLimit) ||
+                !int.TryParse(
+                    rawLimit,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var parsedLimit))
+            {
+                return Problem(
+                    FileSystemErrorCodes.FileSystemPathInvalid,
+                    StatusCodes.Status400BadRequest,
+                    "Некорректный limit каталога");
+            }
+
+            limit = parsedLimit;
         }
 
         FileSystemLogicalPath? logicalPath = null;
@@ -178,30 +182,36 @@ internal static class FileSystemEndpointHandlers
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
+        var parsed = await ReadJsonAsync<FileSystemFindRequest>(
+            request,
+            cancellationToken);
+        if (parsed.Error is not null)
+        {
+            return parsed.Error;
+        }
+
         var started = Stopwatch.GetTimestamp();
-        var rawPath = QueryValue(request, "path");
-        var names = request.Query.TryGetValue("name", out var values)
-            ? values.ToArray()
-            : Array.Empty<string>();
         try
         {
             var found = await service.FindAsync(
-                rawPath,
-                names,
+                parsed.Value!.Path,
+                parsed.Value.Names ?? Array.Empty<string>(),
                 cancellationToken);
-            var path = TryParsePath(rawPath, allowRoot: true);
+            var path = TryParsePath(parsed.Value.Path, allowRoot: true);
             if (path is not null)
             {
                 LogSuccess(loggerFactory, "find", path, started);
             }
-            return Results.Ok(new FileSystemFileNamesResponse(found));
+
+            return Results.Ok(new FileSystemEntriesResponse(
+                found.Select(MapEntry).ToArray()));
         }
         catch (FileSystemOperationException exception)
         {
             LogFailure(
                 loggerFactory,
                 "find",
-                TryParsePath(rawPath, allowRoot: true),
+                TryParsePath(parsed.Value!.Path, allowRoot: true),
                 exception,
                 started);
             return MapError(exception);
@@ -602,7 +612,8 @@ internal static class FileSystemEndpointHandlers
             FileSystemErrorCodes.DestinationExists or
             FileSystemErrorCodes.DirectoryNotEmpty or
             FileSystemErrorCodes.UnsafeLink or
-            FileSystemErrorCodes.HardlinkRejected => Problem(
+            FileSystemErrorCodes.HardlinkRejected or
+            FileSystemErrorCodes.AtomicMoveUnavailable => Problem(
                 publicCode,
                 StatusCodes.Status409Conflict,
                 "Filesystem operation conflict"),
@@ -673,19 +684,32 @@ internal static class FileSystemEndpointHandlers
                     foreach (var fileName in selection.FileNames)
                     {
                         httpContext.RequestAborted.ThrowIfCancellationRequested();
-                        await using var source = await selection.FileSystem.OpenReadAsync(
-                            FileSystemApplicationService.Join(
-                                selection.Path.RelativePath,
-                                fileName),
-                            httpContext.RequestAborted);
-                        var zipEntry = archive.CreateEntry(
-                            fileName,
-                            CompressionLevel.Fastest);
-                        await using var destination = zipEntry.Open();
-                        await source.CopyToAsync(
-                            destination,
-                            64 * 1024,
-                            httpContext.RequestAborted);
+                        Stream source;
+                        try
+                        {
+                            source = await selection.FileSystem.OpenStableReadAsync(
+                                FileSystemApplicationService.Join(
+                                    selection.Path.RelativePath,
+                                    fileName),
+                                httpContext.RequestAborted);
+                        }
+                        catch (FileSystemOperationException exception) when (
+                            exception.Code == FileSystemErrorCodes.Locked)
+                        {
+                            continue;
+                        }
+
+                        await using (source)
+                        {
+                            var zipEntry = archive.CreateEntry(
+                                fileName,
+                                CompressionLevel.Fastest);
+                            await using var destination = zipEntry.Open();
+                            await source.CopyToAsync(
+                                destination,
+                                64 * 1024,
+                                httpContext.RequestAborted);
+                        }
                     }
                 }
 
