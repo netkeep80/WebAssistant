@@ -74,11 +74,11 @@ public sealed class CurrentStateDocumentationTests
         var api = ReadRepositoryFile("webassist/docs/api.md");
 
         Assert.Contains(
-            "Выбранный логический корень общий для обеих панелей",
+            "LEFT и RIGHT имеют независимое состояние",
             api,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
-            "У каждой панели собственные логический корень",
+            "Выбранный логический корень общий для обеих панелей",
             api,
             StringComparison.Ordinal);
         Assert.Contains("Действия →", api, StringComparison.Ordinal);

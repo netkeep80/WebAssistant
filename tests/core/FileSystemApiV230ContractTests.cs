@@ -75,8 +75,8 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
             Assert.Contains(route, statement, StringComparison.Ordinal);
         }
 
-        Assert.DoesNotContain("PUT", statement, StringComparison.Ordinal);
-        Assert.DoesNotContain("DELETE", statement, StringComparison.Ordinal);
+        Assert.Contains("PUT/DELETE/PATCH", statement, StringComparison.Ordinal);
+        Assert.Contains("отсутств", statement, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("move", statement, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("сохраняет имя", statement, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("rename", statement, StringComparison.OrdinalIgnoreCase);

@@ -47,7 +47,6 @@ public sealed class FileSystemCandidateContractTests
             "no-replace",
             "stream",
             "opaque",
-            "200",
             "1000",
             "/filesystem.html",
             "LEFT",

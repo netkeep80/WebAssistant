@@ -68,8 +68,10 @@ public sealed class FileSystemAdvancedUiBrowserTests
             page.PageError += (_, error) => pageErrors.Add(error);
 
             await page.GotoAsync(baseUrl + "/filesystem.html");
-            await page.Locator("#filesystem-left-root option[value='archive']").WaitForAsync();
-            await page.Locator("#filesystem-left-root option[value='nfs']").WaitForAsync();
+            await page.Locator("#filesystem-left-root option[value='archive']").WaitForAsync(
+                new() { State = WaitForSelectorState.Attached });
+            await page.Locator("#filesystem-left-root option[value='nfs']").WaitForAsync(
+                new() { State = WaitForSelectorState.Attached });
             await page.WaitForFunctionAsync(
                 "() => document.querySelectorAll('#filesystem-left-entries tr').length >= 80");
 

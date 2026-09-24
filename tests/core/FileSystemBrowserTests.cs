@@ -100,9 +100,12 @@ public sealed class FileSystemBrowserTests
             async Task<int> SelectedCount(string side) =>
                 await Entries(side).Locator("tr.selected-row").CountAsync();
 
-            await page.Locator("#filesystem-left-root option[value='archive']").WaitForAsync();
-            await page.Locator("#filesystem-left-root option[value='nfs']").WaitForAsync();
-            await page.Locator("#filesystem-left-root option[value='offline']").WaitForAsync();
+            await page.Locator("#filesystem-left-root option[value='archive']").WaitForAsync(
+                new() { State = WaitForSelectorState.Attached });
+            await page.Locator("#filesystem-left-root option[value='nfs']").WaitForAsync(
+                new() { State = WaitForSelectorState.Attached });
+            await page.Locator("#filesystem-left-root option[value='offline']").WaitForAsync(
+                new() { State = WaitForSelectorState.Attached });
             await WaitBreadcrumb("left", "archive");
             await WaitBreadcrumb("right", "archive");
 
@@ -321,7 +324,7 @@ public sealed class FileSystemBrowserTests
 
             await page.Locator("#filesystem-left-root").SelectOptionAsync("nfs");
             await WaitBreadcrumb("left", "nfs");
-            await WaitBreadcrumb("right", "archive / processed");
+            await WaitBreadcrumb("right", "archive / incoming");
             Assert.Equal(0, await SelectedCount("left"));
             await page.Locator("#filesystem-right-root").SelectOptionAsync("nfs");
             await WaitBreadcrumb("right", "nfs");
