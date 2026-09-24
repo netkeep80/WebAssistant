@@ -284,7 +284,7 @@ public sealed class DependencyOwnershipTests
         Assert.Contains("Пакет `.8` сохраняет CLR identity", provenance, StringComparison.Ordinal);
         Assert.Contains("FileVersion=8.3.0.8", provenance, StringComparison.Ordinal);
         Assert.Contains("AssemblyVersion=8.3.0.0", provenance, StringComparison.Ordinal);
-        Assert.Contains("остаётся неизменяемым", provenance, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("никогда не пересобираются и не перезаписываются", provenance, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
