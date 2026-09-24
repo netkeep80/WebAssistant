@@ -57,7 +57,7 @@ src/WebAssistant/appsettings.json существует
 }
 ```
 
-Имя `RootDirectory` больше не имеет специальной однокорневой семантики. Если `WebAssistant:FileSystem:RootDirectory` присутствует с допустимым абсолютным путём, текущая multi-root модель трактует его как обычный logical root с именем `RootDirectory`; при миграции следует явно выбрать желаемое имя. Полная структура и приоритет источников конфигурации описаны в [`configuration.md`](configuration.md).
+Имя `RootDirectory` больше не имеет специальной однокорневой семантики. Если `WebAssistant:FileSystem:RootDirectory` присутствует с допустимым абсолютным путём, текущая модель нескольких корней трактует его как обычный logical root с именем `RootDirectory`; при миграции следует явно выбрать желаемое имя. Полная структура и приоритет источников конфигурации описаны в [`configuration.md`](configuration.md).
 
 ## Установка на ALT Linux 10.1
 
