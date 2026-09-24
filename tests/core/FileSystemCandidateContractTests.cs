@@ -74,7 +74,11 @@ public sealed class FileSystemCandidateContractTests
             contractText,
             StringComparison.OrdinalIgnoreCase);
         Assert.Contains(
-            "cross-root mutation",
+            "cross-root move",
+            contractText,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "atomic_move_unavailable",
             contractText,
             StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
@@ -116,7 +120,8 @@ public sealed class FileSystemCandidateContractTests
             "case-only",
             "unknown logical root",
             "filesystem_root_unavailable",
-            "cross-root mutation",
+            "cross-root move",
+            "atomic_move_unavailable",
             "two-panel",
             "LEFT",
             "RIGHT",
