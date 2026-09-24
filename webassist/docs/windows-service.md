@@ -53,7 +53,7 @@ src/WebAssistant/appsettings.json существует
 }
 ```
 
-Старая настройка `WebAssistant:FileSystem:RootDirectory` больше не используется файловой подсистемой и при обновлении должна быть заменена именованным корнем вручную.
+Имя `RootDirectory` больше не имеет специальной однокорневой семантики. Если `WebAssistant:FileSystem:RootDirectory` присутствует с допустимым абсолютным путём, текущая multi-root модель трактует его как обычный logical root с именем `RootDirectory`; при миграции следует явно выбрать желаемое имя. Полная структура и приоритет источников конфигурации описаны в [`configuration.md`](configuration.md).
 
 ## Установка
 
