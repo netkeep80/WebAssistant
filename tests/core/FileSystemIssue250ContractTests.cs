@@ -145,11 +145,11 @@ public sealed class FileSystemIssue250ContractTests : IDisposable
     }
 
     [Fact]
-    public async Task Find_AcceptsUpToOneThousandNames()
+    public async Task Find_AcceptsMoreThanOneThousandNames()
     {
         await File.WriteAllTextAsync(Path.Combine(leftRoot, "present.bin"), "x");
-        var names = Enumerable.Range(0, 999)
-            .Select(index => $"missing-{index:D3}")
+        var names = Enumerable.Range(0, 1000)
+            .Select(index => $"missing-{index:D4}")
             .Append("present.bin")
             .ToArray();
 
@@ -163,6 +163,25 @@ public sealed class FileSystemIssue250ContractTests : IDisposable
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var entry = Assert.Single(document.RootElement.GetProperty("entries").EnumerateArray());
         Assert.Equal("present.bin", entry.GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task List_ExplicitLimitAboveOneThousand_IsAccepted()
+    {
+        await File.WriteAllTextAsync(Path.Combine(leftRoot, "present.bin"), "x");
+
+        using var factory = CreateFactory(leftRoot);
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync(
+            "/v1/filesystem/list?path=archive%2F&wildcard=*&limit=1001");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var entry = Assert.Single(document.RootElement.GetProperty("entries").EnumerateArray());
+        Assert.Equal("present.bin", entry.GetProperty("name").GetString());
+        Assert.Equal(
+            JsonValueKind.Null,
+            document.RootElement.GetProperty("nextCursor").ValueKind);
     }
 
     [Fact]
