@@ -19,11 +19,7 @@ public sealed class DependencyOwnershipTests
     private const string WorkerPackageVersion = "1.3.0-webassistant.2.450cba65";
     private const string WorkerPackageFile = "WebAssistant.NAPS2.Sdk.Worker.Win32.1.3.0-webassistant.2.450cba65.nupkg";
     private const string WorkerPackageSha256 = "dab042ae1a25a2d963dfe96e111bd3d1fba3148547a22a319907f6d270d4fa15";
-    private const string PreviousPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.6.450cba65.nupkg";
-    private const string OlderPackageFile = "WebAssistant.NAPS2.Sdk.1.3.0-webassistant.5.450cba65.nupkg";
     private const string UpstreamCommit = "450cba65aaffe6387041050a573051a64cd80fe9";
-    private const string PreviousPackageSha256 = "391e592f39ba8a0f8c030ea50e5dbf858bc2eaf9121b4f1b4cfbc2bf0e711e84";
-    private const string OlderPackageSha256 = "d2f53f57535f892df023c2e7cffeb4ad091d107e1192ada0d532be51d48fb88f";
     private const string CurrentPackageSha256 = "2cd775d953b23ba50467b65ccf615c9f94a1eeeb9c5e40145cd5c93eec837769";
     private const long MaxPackageBytes = 1024L * 1024L;
 
@@ -41,22 +37,29 @@ public sealed class DependencyOwnershipTests
     }
 
     [Fact]
-    public void FixedSdkPackage_AndPredecessorsMatchPinnedSha256()
+    public void RepositoryOwnedNuGetDirectory_ContainsOnlyCurrentPackages()
     {
-        foreach (var (packageFile, expectedSha256) in new[]
-        {
-            (PackageFile, CurrentPackageSha256),
-            (PreviousPackageFile, PreviousPackageSha256),
-            (OlderPackageFile, OlderPackageSha256)
-        })
-        {
-            var packagePath = GetPackagePath(packageFile);
-            Assert.True(File.Exists(packagePath), $"Не найден pinned SDK package: {packagePath}");
+        var root = FindRepositoryRoot();
+        var nugetDirectory = Path.Combine(root, "webassist", "vendor", "nuget");
+        var packageFiles = Directory
+            .EnumerateFiles(nugetDirectory, "*.nupkg", SearchOption.TopDirectoryOnly)
+            .Select(Path.GetFileName)
+            .OrderBy(file => file, StringComparer.Ordinal)
+            .ToArray();
 
-            using var package = File.OpenRead(packagePath);
-            var actualSha256 = Convert.ToHexString(SHA256.HashData(package)).ToLowerInvariant();
-            Assert.Equal(expectedSha256, actualSha256);
-        }
+        Assert.Equal(
+            new[] { PackageFile, WorkerPackageFile }.OrderBy(file => file, StringComparer.Ordinal),
+            packageFiles);
+    }
+
+    [Fact]
+    public void FixedSdkPackage_MatchesPinnedSha256()
+    {
+        var packagePath = GetPackagePath(PackageFile);
+        using var package = File.OpenRead(packagePath);
+        var actualSha256 = Convert.ToHexString(SHA256.HashData(package)).ToLowerInvariant();
+
+        Assert.Equal(CurrentPackageSha256, actualSha256);
     }
 
     [Fact]
@@ -276,8 +279,8 @@ public sealed class DependencyOwnershipTests
         Assert.Contains($"`../nuget/{PackageFile}`", provenance, StringComparison.Ordinal);
         Assert.Contains($"`{UpstreamCommit}`", provenance, StringComparison.Ordinal);
         Assert.Contains($"`{CurrentPackageSha256}`", provenance, StringComparison.Ordinal);
-        Assert.Contains($"`{PreviousPackageSha256}`", provenance, StringComparison.Ordinal);
-        Assert.Contains($"`{OlderPackageSha256}`", provenance, StringComparison.Ordinal);
+        Assert.Contains("истории Git", provenance, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("только текущие", provenance, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Пакет `.8` сохраняет CLR identity", provenance, StringComparison.Ordinal);
         Assert.Contains("FileVersion=8.3.0.8", provenance, StringComparison.Ordinal);
         Assert.Contains("AssemblyVersion=8.3.0.0", provenance, StringComparison.Ordinal);
