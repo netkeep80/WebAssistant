@@ -149,7 +149,7 @@
     {
       "id": "WA-FS-006",
       "kind": "required",
-      "statement": "Directory listing возвращает name, kind, size, createdAt, lastModifiedAt и restrictionCode. Wildcard default = *; comma-separated masks объединяются OR; один matcher применяется одинаково к именам immediate files и directories, case-insensitive на Windows/Linux; *.* не имеет специальной all-семантики. Без limit сервер возвращает весь отфильтрованный immediate listing и nextCursor=null. При явном limit от 1 до 1000 включается cursor pagination; cursor без limit запрещён и связан с logical root, directory и effective canonical wildcard. Server-side sort и recursion отсутствуют; API order unspecified."
+      "statement": "Directory listing возвращает name, kind, size, createdAt, lastModifiedAt и restrictionCode. Wildcard default = *; comma-separated masks объединяются OR; один matcher применяется одинаково к именам immediate files и directories, case-insensitive на Windows/Linux; *.* не имеет специальной all-семантики. Без limit сервер возвращает весь отфильтрованный immediate listing и nextCursor=null. При явном положительном limit включается cursor pagination без WebAssistant-specific upper bound; cursor без limit запрещён и связан с logical root, directory и effective canonical wildcard. Server-side sort и recursion отсутствуют; API order unspecified."
     },
     {
       "id": "WA-FS-007",
@@ -169,7 +169,7 @@
     {
       "id": "WA-FS-010",
       "kind": "required",
-      "statement": "POST /v1/filesystem/move принимает sourcePath directory, destinationPath directory и непустой fileNames array до 1000 unique single-entry names; wildcard, recursion и destination filename отсутствуют. Source/destination независимо resolve через configured roots; одинаковые logical root names не требуются. Ответ содержит только действительно успешно перемещённые имена в input order; not_found и destination_exists конкретного элемента пропускаются, fatal security/native error останавливает дальнейший batch без rollback. POST /v1/filesystem/find является read-only JSON batch query с path + names[1..1000], выполняет exact StringComparison.Ordinal immediate lookup без wildcard/recursion и возвращает в request order ту же entry DTO, что list, для existing file/directory/restricted/link entries; missing names отсутствуют. Старый GET /filesystem/find отсутствует."
+      "statement": "POST /v1/filesystem/move принимает sourcePath directory, destinationPath directory и непустой fileNames array до 1000 unique single-entry names; wildcard, recursion и destination filename отсутствуют. Source/destination независимо resolve через configured roots; одинаковые logical root names не требуются. Ответ содержит только действительно успешно перемещённые имена в input order; not_found и destination_exists конкретного элемента пропускаются, fatal security/native error останавливает дальнейший batch без rollback. POST /v1/filesystem/find является read-only JSON batch query с path + непустым unique names array без WebAssistant-specific upper bound, выполняет exact StringComparison.Ordinal immediate lookup без wildcard/recursion и возвращает в request order ту же entry DTO, что list, для existing file/directory/restricted/link entries; missing names отсутствуют. Старый GET /filesystem/find отсутствует."
     },
     {
       "id": "WA-FS-011",
@@ -184,7 +184,7 @@
     {
       "id": "WA-DOC-001",
       "kind": "required",
-      "statement": "Документация о сборке, установке, runtime configuration и current API находится внутри webassist и описывает только фактически существующее поведение."
+      "statement": "Документация о сборке, установке, runtime configuration и current API находится внутри webassist и описывает только фактически существующее поведение. Current API documentation явно перечисляет observable filesystem limitations/boundaries и различает product/security requirements, platform constraints, transport/framework defaults и implementation-only границы."
     },
     {
       "id": "WA-DOC-002",
