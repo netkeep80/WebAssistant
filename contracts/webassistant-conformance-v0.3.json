@@ -127,7 +127,11 @@
     "ci/release/verify-installer-assets.sh",
     "ci/release/stage-draft-release.sh",
     "ci/release/finalize-release.sh",
-    "tests/core/FileSystemIssue250ContractTests.cs"
+    "tests/core/FileSystemIssue250ContractTests.cs",
+    "docs/documentation-governance.md",
+    "webassist/docs/configuration.md",
+    "webassist/docs/appsettings.schema.json",
+    "tests/core/DocumentationGovernanceTests.cs"
   ],
   "vectors": [
     {
@@ -545,6 +549,45 @@
         "README.md",
         "webassist/README.md",
         "webassist/docs/api.md"
+      ]
+    },
+    {
+      "id": "WA-C-DOCUMENT-CONVERGENCE-001",
+      "kind": "positive",
+      "assertion": "Current documentation surface явно картирована; PR обязан перечислить проверенные, обновлённые и проверенные-неизменённые документы. Для точных критичных связей repo-guard блокирует partial documentation update несколькими независимыми cochange obligations, а accepted historical authority остаётся immutable.",
+      "requirements": [
+        "WA-DOC-001",
+        "WA-DOC-002",
+        "WA-DOC-003"
+      ],
+      "evidence": [
+        "docs/documentation-governance.md",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        ".github/ISSUE_TEMPLATE/change-intent.yml",
+        "repo-policy.json",
+        "tests/core/DocumentationGovernanceTests.cs",
+        "tests/core/CurrentStateDocumentationTests.cs"
+      ]
+    },
+    {
+      "id": "WA-C-CONFIG-DOCUMENTATION-001",
+      "kind": "positive",
+      "assertion": "Canonical runtime/package configuration reference и JSON schema согласованы с safe default и current runtime validation/provider semantics; изменение config model не может удовлетворить policy обновлением только одного документа.",
+      "requirements": [
+        "WA-CONFIG-001",
+        "WA-DIST-003",
+        "WA-CORS-001",
+        "WA-FS-001"
+      ],
+      "evidence": [
+        "webassist/docs/configuration.md",
+        "webassist/docs/appsettings.schema.json",
+        "webassist/build/common/default-appsettings.json",
+        "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
+        "tests/core/DocumentationGovernanceTests.cs",
+        "tests/core/ConfigurationOwnershipTests.cs",
+        "tests/core/RuntimeOptionsTests.cs"
       ]
     },
     {
