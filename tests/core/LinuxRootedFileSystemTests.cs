@@ -75,6 +75,32 @@ public sealed class LinuxRootedFileSystemTests : IDisposable
     }
 
     [Fact]
+    public async Task LinuxRootedFileSystem_StableReadRejectsExistingWriter()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var path = Path.Combine(root, "writing.bin");
+        await File.WriteAllTextAsync(path, "in-progress");
+        await using var writer = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Write,
+            FileShare.ReadWrite | FileShare.Delete);
+        using var fileSystem = new LinuxRootedFileSystem(root);
+
+        var error = await Assert.ThrowsAsync<FileSystemOperationException>(
+            async () =>
+            {
+                await using var stream = await fileSystem.OpenStableReadAsync("writing.bin");
+            });
+
+        Assert.Equal(FileSystemErrorCodes.Locked, error.Code);
+    }
+
+    [Fact]
     public async Task LinuxRootedFileSystem_MoveFailsClosedOnExpectedKindMismatch()
     {
         if (!OperatingSystem.IsLinux())
