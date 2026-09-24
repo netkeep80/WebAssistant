@@ -133,7 +133,7 @@ public sealed class CurrentStateDocumentationTests
         foreach (var document in new[] { configuration, api, windows, linux })
         {
             Assert.Contains(
-                "обычный logical root",
+                "обычный логический корень",
                 document,
                 StringComparison.Ordinal);
             Assert.DoesNotContain(
