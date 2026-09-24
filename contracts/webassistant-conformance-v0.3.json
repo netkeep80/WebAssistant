@@ -521,7 +521,7 @@
     {
       "id": "WA-C-PRODUCT-DOCS-001",
       "kind": "positive",
-      "assertion": "Canonical product documentation находится внутри autonomous product root и описывает current API/build/install/runtime surfaces; filesystem API documentation содержит явную таблицу observable limitations/boundaries с основаниями и различением product/security, platform, transport/framework и implementation-only границ.",
+      "assertion": "Canonical product documentation находится внутри autonomous product root и описывает current API/build/install/runtime surfaces.",
       "requirements": [
         "WA-DOC-001",
         "WA-REPO-002"
