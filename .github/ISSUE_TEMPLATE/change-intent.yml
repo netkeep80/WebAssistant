@@ -41,7 +41,7 @@ body:
           - webassist/README.md
         Обновить при необходимости:
           - webassist/docs/api.md
-        Accepted immutable документы:
+        `accepted immutable` документы:
           - не изменять задним числом
     validations:
       required: true
