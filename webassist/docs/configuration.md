@@ -149,10 +149,11 @@ WebAssistant может запускаться без секции `WebAssistant
 Приложение создаётся через стандартный `WebApplication.CreateBuilder(args)`, поэтому effective configuration формируется стандартными провайдерами ASP.NET Core. Для application configuration более поздний источник переопределяет более ранний:
 
 1. `appsettings.json`;
-2. `appsettings.{Environment}.json`, если файл существует;
-3. user secrets в Development-сценарии, если они подключены стандартным builder;
-4. environment variables;
-5. command-line arguments.
+2. `appsettings.{Environment}.json`, если такой файл дополнительно присутствует рядом с приложением;
+3. environment variables;
+4. command-line arguments.
+
+Public WebAssistant project не задаёт `UserSecretsId`, поэтому user secrets не являются поддерживаемым repository-owned источником конфигурации.
 
 Для environment variables вложенные ключи задаются через двойное подчёркивание, например `WebAssistant__Port=17655`. Для command line применяется стандартная форма ASP.NET Core, например `--WebAssistant:Port 17655`.
 
