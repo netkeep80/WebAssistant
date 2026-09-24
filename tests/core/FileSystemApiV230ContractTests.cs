@@ -99,6 +99,13 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
             Assert.Contains(requiredPath, requiredPaths);
         }
 
+        Assert.DoesNotContain(
+            "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.2.450cba65.nupkg",
+            requiredPaths);
+        Assert.DoesNotContain(
+            "webassist/vendor/nuget/WebAssistant.NAPS2.Sdk.1.3.0-webassistant.3.450cba65.nupkg",
+            requiredPaths);
+
         var vectors = conformance["vectors"]!
             .AsArray()
             .Select(node => node!.AsObject())
