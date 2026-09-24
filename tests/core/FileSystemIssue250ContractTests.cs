@@ -398,7 +398,7 @@ public sealed class FileSystemIssue250ContractTests : IDisposable
             api,
             StringComparison.Ordinal);
         Assert.Contains(
-            "| wildcard | Не более 32 comma-separated масок",
+            "| wildcard | Не более 32 comma-separated masks",
             api,
             StringComparison.Ordinal);
         Assert.Contains(
