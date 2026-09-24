@@ -184,7 +184,7 @@
     {
       "id": "WA-DOC-001",
       "kind": "required",
-      "statement": "Документация о сборке, установке, runtime configuration и current API находится внутри webassist и описывает только фактически существующее поведение. Current API documentation явно перечисляет observable filesystem limitations/boundaries и различает product/security requirements, platform constraints, transport/framework defaults и implementation-only границы."
+      "statement": "Документация о сборке, установке, runtime configuration и current API находится внутри webassist и описывает только фактически существующее поведение."
     },
     {
       "id": "WA-DOC-002",
