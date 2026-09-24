@@ -155,9 +155,11 @@ public sealed class DocumentationGovernanceTests
         Assert.DoesNotContain("DELETE /v1/filesystem/file", readme, StringComparison.Ordinal);
         Assert.DoesNotContain("DELETE /v1/filesystem/directory", readme, StringComparison.Ordinal);
         Assert.Contains(
-            "публичная filesystem API использует только GET и POST",
+            "Публичная filesystem API использует только",
             readme,
-            StringComparison.OrdinalIgnoreCase);
+            StringComparison.Ordinal);
+        Assert.Contains("`GET`", readme, StringComparison.Ordinal);
+        Assert.Contains("`POST`", readme, StringComparison.Ordinal);
     }
 
     private static bool RuleTriggered(JsonElement rule, IReadOnlySet<string> changed) =>
