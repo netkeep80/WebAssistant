@@ -48,6 +48,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
     private const int ERROR_FILE_NOT_FOUND = 2;
     private const int ERROR_PATH_NOT_FOUND = 3;
     private const int ERROR_ACCESS_DENIED = 5;
+    private const int ERROR_NOT_SAME_DEVICE = 17;
     private const int ERROR_NO_MORE_FILES = 18;
     private const int ERROR_SHARING_VIOLATION = 32;
     private const int ERROR_LOCK_VIOLATION = 33;
@@ -190,6 +191,46 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         }
     }
 
+    public ValueTask<Stream> OpenStableReadAsync(
+        string relativePath,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+        var parsed = FileSystemPathPolicy.Parse(relativePath, allowRoot: false);
+        FileSystemPathPolicy.EnsureFileTypeAllowed(parsed.Segments[^1]);
+
+        using var parent = OpenParent(parsed, out var name);
+        var file = OpenRelativeWithShare(
+            parent,
+            name,
+            FILE_READ_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_SHARE_READ,
+            FILE_OPEN,
+            0,
+            FILE_NON_DIRECTORY_FILE |
+            FILE_OPEN_REPARSE_POINT |
+            FILE_SYNCHRONOUS_IO_NONALERT,
+            "Не удалось установить стабильное чтение файла.");
+
+        try
+        {
+            EnsureNotReparse(file, "Стабильное чтение через reparse point запрещено.");
+            EnsureSingleLink(file);
+            Stream stream = new FileStream(
+                file,
+                FileAccess.Read,
+                bufferSize: StreamBufferSize,
+                isAsync: false);
+            file = null!;
+            return ValueTask.FromResult(stream);
+        }
+        finally
+        {
+            file?.Dispose();
+        }
+    }
+
     public async ValueTask PublishNewFileAsync(
         string relativePath,
         Stream source,
@@ -293,15 +334,38 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         string sourceRelativePath,
         string destinationRelativePath,
         RootedEntryKind expectedKind,
+        CancellationToken cancellationToken = default) =>
+        MoveNoReplaceToAsync(
+            sourceRelativePath,
+            this,
+            destinationRelativePath,
+            expectedKind,
+            cancellationToken);
+
+    public ValueTask MoveNoReplaceToAsync(
+        string sourceRelativePath,
+        IRootedFileSystem destinationFileSystem,
+        string destinationRelativePath,
+        RootedEntryKind expectedKind,
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
+        if (destinationFileSystem is not WindowsRootedFileSystem destination)
+        {
+            throw new FileSystemOperationException(
+                FileSystemErrorCodes.AtomicMoveUnavailable,
+                "Atomic move между разными native filesystem implementations недоступен.");
+        }
+
+        destination.ThrowIfDisposed();
         var source = FileSystemPathPolicy.Parse(sourceRelativePath, allowRoot: false);
-        var destination = FileSystemPathPolicy.Parse(destinationRelativePath, allowRoot: false);
+        var destinationPath = FileSystemPathPolicy.Parse(destinationRelativePath, allowRoot: false);
 
         using var sourceParent = OpenParent(source, out var sourceName);
-        using var destinationParent = OpenParent(destination, out var destinationName);
+        using var destinationParent = destination.OpenParent(
+            destinationPath,
+            out var destinationName);
         using var sourceHandle = OpenAnyEntry(
             sourceParent,
             sourceName,
@@ -693,6 +757,25 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         uint disposition,
         uint fileAttributes,
         uint createOptions,
+        string message) =>
+        OpenRelativeWithShare(
+            parent,
+            name,
+            desiredAccess,
+            ShareAll,
+            disposition,
+            fileAttributes,
+            createOptions,
+            message);
+
+    private static SafeFileHandle OpenRelativeWithShare(
+        SafeFileHandle parent,
+        string name,
+        uint desiredAccess,
+        uint shareAccess,
+        uint disposition,
+        uint fileAttributes,
+        uint createOptions,
         string message)
     {
         FileSystemPathPolicy.ValidateEntryName(name);
@@ -700,6 +783,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
             parent,
             name,
             desiredAccess,
+            shareAccess,
             disposition,
             fileAttributes,
             createOptions,
@@ -728,6 +812,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
             parent,
             name,
             desiredAccess,
+            ShareAll,
             disposition,
             fileAttributes,
             createOptions,
@@ -738,6 +823,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         SafeFileHandle parent,
         string name,
         uint desiredAccess,
+        uint shareAccess,
         uint disposition,
         uint fileAttributes,
         uint createOptions,
@@ -771,7 +857,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
                 out _,
                 IntPtr.Zero,
                 fileAttributes,
-                ShareAll,
+                shareAccess,
                 disposition,
                 createOptions,
                 IntPtr.Zero,
@@ -975,6 +1061,10 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
             ERROR_FILE_EXISTS or ERROR_ALREADY_EXISTS =>
                 new FileSystemOperationException(
                     FileSystemErrorCodes.DestinationExists,
+                    message),
+            ERROR_NOT_SAME_DEVICE =>
+                new FileSystemOperationException(
+                    FileSystemErrorCodes.AtomicMoveUnavailable,
                     message),
             ERROR_DIR_NOT_EMPTY =>
                 new FileSystemOperationException(

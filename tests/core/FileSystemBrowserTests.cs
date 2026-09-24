@@ -100,10 +100,12 @@ public sealed class FileSystemBrowserTests
             async Task<int> SelectedCount(string side) =>
                 await Entries(side).Locator("tr.selected-row").CountAsync();
 
-            await page.Locator("#filesystem-roots [data-root='archive']").WaitForAsync();
-            await page.Locator("#filesystem-roots [data-root='nfs']").WaitForAsync();
-            await page.Locator("#filesystem-roots [data-root='offline']").WaitForAsync();
-            await page.ClickAsync("#filesystem-roots [data-root='archive']");
+            await page.Locator("#filesystem-left-root option[value='archive']").WaitForAsync(
+                new() { State = WaitForSelectorState.Attached });
+            await page.Locator("#filesystem-left-root option[value='nfs']").WaitForAsync(
+                new() { State = WaitForSelectorState.Attached });
+            await page.Locator("#filesystem-left-root option[value='offline']").WaitForAsync(
+                new() { State = WaitForSelectorState.Attached });
             await WaitBreadcrumb("left", "archive");
             await WaitBreadcrumb("right", "archive");
 
@@ -112,14 +114,14 @@ public sealed class FileSystemBrowserTests
             await Row("right", "processed").Locator("[data-entry-open]").ClickAsync();
             await WaitBreadcrumb("right", "archive / processed");
 
-            Assert.Equal("*.*", await page.Locator("#filesystem-left-wildcard").InputValueAsync());
-            Assert.Equal("*.*", await page.Locator("#filesystem-right-wildcard").InputValueAsync());
+            Assert.Equal("*", await page.Locator("#filesystem-left-wildcard").InputValueAsync());
+            Assert.Equal("*", await page.Locator("#filesystem-right-wildcard").InputValueAsync());
 
             await page.Locator("#filesystem-left-wildcard").FillAsync("*.xml");
             await page.ClickAsync("#filesystem-left-apply-wildcard");
             await Visible("left", "a.xml");
             await Visible("left", "b.xml");
-            await Visible("left", "nested");
+            Assert.Equal(0, await Row("left", "nested").CountAsync());
             Assert.Equal(0, await Row("left", "c.json").CountAsync());
 
             var zipDownload = await page.RunAndWaitForDownloadAsync(
@@ -132,7 +134,7 @@ public sealed class FileSystemBrowserTests
                     zip.Entries.Select(entry => entry.FullName).Order(StringComparer.Ordinal).ToArray());
             }
 
-            await page.Locator("#filesystem-left-wildcard").FillAsync("*.*");
+            await page.Locator("#filesystem-left-wildcard").FillAsync("*");
             await page.ClickAsync("#filesystem-left-apply-wildcard");
             await Visible("left", "c.json");
 
@@ -320,10 +322,12 @@ public sealed class FileSystemBrowserTests
             await Visible("left", "external-renamed.txt");
             Assert.Equal(0, await SelectedCount("left"));
 
-            await page.ClickAsync("#filesystem-roots [data-root='nfs']");
+            await page.Locator("#filesystem-left-root").SelectOptionAsync("nfs");
             await WaitBreadcrumb("left", "nfs");
-            await WaitBreadcrumb("right", "nfs");
+            await WaitBreadcrumb("right", "archive / incoming");
             Assert.Equal(0, await SelectedCount("left"));
+            await page.Locator("#filesystem-right-root").SelectOptionAsync("nfs");
+            await WaitBreadcrumb("right", "nfs");
             Assert.Equal(0, await SelectedCount("right"));
 
             var nfsExternal = Path.Combine(nfs, "nfs-external.txt");
@@ -331,10 +335,12 @@ public sealed class FileSystemBrowserTests
             await page.ClickAsync("#filesystem-right-refresh");
             await Visible("right", "nfs-external.txt");
 
-            await page.ClickAsync("#filesystem-roots [data-root='offline']");
+            await page.Locator("#filesystem-left-root").SelectOptionAsync("offline");
             await page.Locator("#filesystem-left-status")
                 .GetByText("filesystem_root_unavailable", new() { Exact = false })
                 .WaitForAsync();
+            await WaitBreadcrumb("right", "nfs");
+            await page.Locator("#filesystem-right-root").SelectOptionAsync("offline");
             await page.Locator("#filesystem-right-status")
                 .GetByText("filesystem_root_unavailable", new() { Exact = false })
                 .WaitForAsync();

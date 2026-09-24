@@ -186,7 +186,7 @@ public sealed class MultiRootHttpContractTests : IDisposable
     }
 
     [Fact]
-    public async Task CrossRootMove_IsRejectedWithoutMovingOrCopying()
+    public async Task CrossRootMove_OnSameFilesystem_UsesAtomicRename()
     {
         await File.WriteAllTextAsync(Path.Combine(archiveRoot, "a.txt"), "original");
         using var factory = CreateFactory(new Dictionary<string, string?>
@@ -205,16 +205,15 @@ public sealed class MultiRootHttpContractTests : IDisposable
                 fileNames = new[] { "a.txt" }
             });
 
-        await AssertProblemCodeAsync(
-            response,
-            HttpStatusCode.BadRequest,
-            "filesystem_path_invalid");
-        Assert.Equal("original", await File.ReadAllTextAsync(Path.Combine(archiveRoot, "a.txt")));
-        Assert.False(File.Exists(Path.Combine(nfsRoot, "a.txt")));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.False(File.Exists(Path.Combine(archiveRoot, "a.txt")));
+        Assert.Equal(
+            "original",
+            await File.ReadAllTextAsync(Path.Combine(nfsRoot, "a.txt")));
     }
 
     [Fact]
-    public async Task CrossRootMove_IsRejectedBeforeDestinationAuthorityAcquisition()
+    public async Task CrossRootMove_RequiresDestinationAuthorityBeforeNativeRename()
     {
         var unavailable = Path.Combine(tempRoot, "offline");
         await File.WriteAllTextAsync(Path.Combine(archiveRoot, "a.txt"), "original");
@@ -236,9 +235,11 @@ public sealed class MultiRootHttpContractTests : IDisposable
 
         await AssertProblemCodeAsync(
             response,
-            HttpStatusCode.BadRequest,
-            "filesystem_path_invalid");
-        Assert.Equal("original", await File.ReadAllTextAsync(Path.Combine(archiveRoot, "a.txt")));
+            HttpStatusCode.ServiceUnavailable,
+            "filesystem_root_unavailable");
+        Assert.Equal(
+            "original",
+            await File.ReadAllTextAsync(Path.Combine(archiveRoot, "a.txt")));
         Assert.False(Directory.Exists(unavailable));
     }
 

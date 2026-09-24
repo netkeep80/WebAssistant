@@ -27,6 +27,14 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
     private const uint STATX_BTIME = 0x800;
     private const uint RENAME_NOREPLACE = 1;
 
+    private const int F_SETOWN = 8;
+    private const int F_SETSIG = 10;
+    private const int F_SETLEASE = 1024;
+    private const int F_GETLEASE = 1025;
+    private const int F_RDLCK = 0;
+    private const int F_UNLCK = 2;
+    private const int SIGURG = 23;
+
     private const uint S_IFMT = 0xF000;
     private const uint S_IFDIR = 0x4000;
     private const uint S_IFREG = 0x8000;
@@ -175,6 +183,52 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         }
     }
 
+    public ValueTask<Stream> OpenStableReadAsync(
+        string relativePath,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var parsed = FileSystemPathPolicy.Parse(relativePath, allowRoot: false);
+        FileSystemPathPolicy.EnsureFileTypeAllowed(parsed.Segments[^1]);
+
+        var descriptor = OpenAt2(
+            GetFd(rootHandle),
+            parsed.Value,
+            O_RDONLY | O_CLOEXEC | O_NOFOLLOW,
+            SecureResolveFlags);
+
+        if (descriptor < 0)
+        {
+            throw MapOpenError(
+                Marshal.GetLastPInvokeError(),
+                "Не удалось открыть файл для стабильного чтения.");
+        }
+
+        var handle = Own(descriptor);
+        try
+        {
+            var stat = ReadStat(handle);
+            EnsureRegularFile(stat);
+            EnsureSingleLink(stat);
+            ConfigureStableReadLease(descriptor);
+
+            var fileStream = new FileStream(
+                handle,
+                FileAccess.Read,
+                bufferSize: StreamBufferSize,
+                isAsync: false);
+            handle = null!;
+            return ValueTask.FromResult<Stream>(
+                new LinuxStableReadStream(fileStream, descriptor));
+        }
+        finally
+        {
+            handle?.Dispose();
+        }
+    }
+
     public async ValueTask PublishNewFileAsync(
         string relativePath,
         Stream source,
@@ -267,20 +321,42 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         string sourceRelativePath,
         string destinationRelativePath,
         RootedEntryKind expectedKind,
+        CancellationToken cancellationToken = default) =>
+        MoveNoReplaceToAsync(
+            sourceRelativePath,
+            this,
+            destinationRelativePath,
+            expectedKind,
+            cancellationToken);
+
+    public ValueTask MoveNoReplaceToAsync(
+        string sourceRelativePath,
+        IRootedFileSystem destinationFileSystem,
+        string destinationRelativePath,
+        RootedEntryKind expectedKind,
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
+        if (destinationFileSystem is not LinuxRootedFileSystem destination)
+        {
+            throw new FileSystemOperationException(
+                FileSystemErrorCodes.AtomicMoveUnavailable,
+                "Atomic move между разными native filesystem implementations недоступен.");
+        }
 
+        destination.ThrowIfDisposed();
         var source = FileSystemPathPolicy.Parse(
             sourceRelativePath,
             allowRoot: false);
-        var destination = FileSystemPathPolicy.Parse(
+        var destinationPath = FileSystemPathPolicy.Parse(
             destinationRelativePath,
             allowRoot: false);
 
         using var sourceParent = OpenParent(source, out var sourceName);
-        using var destinationParent = OpenParent(destination, out var destinationName);
+        using var destinationParent = destination.OpenParent(
+            destinationPath,
+            out var destinationName);
 
         var sourceStat = ReadEntryStat(GetFd(sourceParent), sourceName);
         var sourceKind = sourceStat.StMode & S_IFMT;
@@ -793,6 +869,134 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
             $"RootDirectory недоступен (errno={errno}).");
     }
 
+    private static void ConfigureStableReadLease(int descriptor)
+    {
+        if (Fcntl(descriptor, F_SETOWN, GetPid()) == -1 ||
+            Fcntl(descriptor, F_SETSIG, SIGURG) == -1 ||
+            Fcntl(descriptor, F_SETLEASE, F_RDLCK) == -1)
+        {
+            throw new FileSystemOperationException(
+                FileSystemErrorCodes.Locked,
+                "Не удалось установить kernel-enforced stable-read lease.");
+        }
+    }
+
+    private static void EnsureStableReadLease(int descriptor)
+    {
+        var lease = Fcntl(descriptor, F_GETLEASE, 0);
+        if (lease != F_RDLCK)
+        {
+            throw new FileSystemOperationException(
+                FileSystemErrorCodes.Locked,
+                "Stable-read lease был снят или сломан во время чтения.");
+        }
+    }
+
+    private sealed class LinuxStableReadStream : Stream
+    {
+        private readonly FileStream inner;
+        private readonly int descriptor;
+        private bool disposed;
+
+        internal LinuxStableReadStream(FileStream inner, int descriptor)
+        {
+            this.inner = inner;
+            this.descriptor = descriptor;
+        }
+
+        public override bool CanRead => inner.CanRead;
+        public override bool CanSeek => inner.CanSeek;
+        public override bool CanWrite => false;
+        public override long Length => inner.Length;
+        public override long Position
+        {
+            get => inner.Position;
+            set => inner.Position = value;
+        }
+
+        public override void Flush() => inner.Flush();
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            EnsureLease();
+            var read = inner.Read(buffer, offset, count);
+            EnsureLease();
+            return read;
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            EnsureLease();
+            var read = inner.Read(buffer);
+            EnsureLease();
+            return read;
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            EnsureLease();
+            var read = await inner.ReadAsync(buffer, cancellationToken);
+            EnsureLease();
+            return read;
+        }
+
+        public override async Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken)
+        {
+            EnsureLease();
+            var read = await inner.ReadAsync(buffer, offset, count, cancellationToken);
+            EnsureLease();
+            return read;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            inner.Seek(offset, origin);
+
+        public override void SetLength(long value) =>
+            throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (!disposed)
+            {
+                disposed = true;
+                _ = Fcntl(descriptor, F_SETLEASE, F_UNLCK);
+                if (disposing)
+                {
+                    inner.Dispose();
+                }
+            }
+
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            if (!disposed)
+            {
+                disposed = true;
+                _ = Fcntl(descriptor, F_SETLEASE, F_UNLCK);
+                await inner.DisposeAsync();
+            }
+
+            GC.SuppressFinalize(this);
+        }
+
+        private void EnsureLease()
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            EnsureStableReadLease(descriptor);
+        }
+    }
+
     private static FileSystemOperationException MapOpenError(
         int errno,
         string message)
@@ -851,8 +1055,8 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
                 message),
             ELOOP => UnsafeLink(message),
             EXDEV => new FileSystemOperationException(
-                FileSystemErrorCodes.FileSystemUnavailable,
-                "Move разрешён только как atomic rename внутри одного filesystem."),
+                FileSystemErrorCodes.AtomicMoveUnavailable,
+                "Native filesystem не может выполнить atomic no-replace move между этими roots."),
             EACCES or EPERM or EBUSY or ETXTBSY => new FileSystemOperationException(
                 FileSystemErrorCodes.Locked,
                 message),
@@ -943,6 +1147,12 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
 
     [DllImport("libc", SetLastError = true, EntryPoint = "open")]
     private static extern int Open(string path, int flags);
+
+    [DllImport("libc", SetLastError = true, EntryPoint = "fcntl")]
+    private static extern int Fcntl(int fd, int command, int argument);
+
+    [DllImport("libc", EntryPoint = "getpid")]
+    private static extern int GetPid();
 
     [DllImport("libc", SetLastError = true, EntryPoint = "dup")]
     private static extern int Dup(int oldFd);
