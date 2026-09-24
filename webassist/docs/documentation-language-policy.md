@@ -30,13 +30,13 @@
 Недопустимо:
 
 ```text
-WebAssistant не определяет rendering behavior по filename extension и не отображает RootDirectory как static web tree.
+WebAssistant не определяет rendering behavior по filename extension и не отображает configured physical roots как static web tree.
 ```
 
 Допустимо:
 
 ```text
-WebAssistant не определяет способ отображения по расширению имени файла и не предоставляет `RootDirectory` как дерево статических веб-ресурсов.
+WebAssistant не определяет способ отображения по расширению имени файла и не предоставляет настроенные физические корни как дерево статических веб-ресурсов.
 ```
 
 ## Область действия
