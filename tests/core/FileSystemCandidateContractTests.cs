@@ -25,6 +25,10 @@ public sealed class FileSystemCandidateContractTests
             "/v1/filesystem/file",
             "/v1/filesystem/directory",
             "/v1/filesystem/move",
+            "POST /v1/filesystem/find",
+            "wildcard default = *",
+            "pagination",
+            "atomic_move_unavailable",
             "logicalRootName",
             "[A-Za-z0-9][A-Za-z0-9._-]*",
             "filesystem_not_configured",
@@ -130,7 +134,8 @@ public sealed class FileSystemCandidateContractTests
             "tests/core/MultiRootFileSystemTests.cs",
             "tests/core/HttpFileSystemContractTests.cs",
             "tests/core/FileSystemPageContractTests.cs",
-            "tests/core/FileSystemBrowserTests.cs"
+            "tests/core/FileSystemBrowserTests.cs",
+            "tests/core/FileSystemIssue250ContractTests.cs"
         };
 
         foreach (var fragment in requiredFragments)
