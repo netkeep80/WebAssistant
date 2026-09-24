@@ -384,6 +384,38 @@ public sealed class FileSystemIssue250ContractTests : IDisposable
     }
 
     [Fact]
+    public void Documentation_ExposesFilesystemLimitsAndRetainedBounds()
+    {
+        var repository = FindRepositoryRoot();
+        var api = File.ReadAllText(Path.Combine(
+            repository,
+            "webassist",
+            "docs",
+            "api.md"));
+
+        Assert.Contains(
+            "### Ограничения и границы filesystem API",
+            api,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "| wildcard | Не более 32 comma-separated масок",
+            api,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "| find batch size | `names` должен быть непустым; фиксированного WebAssistant-specific maximum нет.",
+            api,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "| batch move | `fileNames` содержит 1..1000 unique single-entry names",
+            api,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "30,000,000 bytes",
+            api,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Browser_PanelsOwnRootAndWildcardIndependently()
     {
         var repository = FindRepositoryRoot();
