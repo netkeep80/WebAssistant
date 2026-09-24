@@ -45,8 +45,8 @@ public sealed class DocumentationGovernanceTests
         Assert.Contains("WebAssistant:Cors:AllowedOrigins", configuration, StringComparison.Ordinal);
         Assert.Contains("WebAssistant:FileSystem", configuration, StringComparison.Ordinal);
         Assert.Contains("build/common/default-appsettings.json", configuration, StringComparison.Ordinal);
-        Assert.Contains("environment", configuration, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("command", configuration, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("переменные окружения", configuration, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("командной строки", configuration, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("неизвест", configuration, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Windows", configuration, StringComparison.Ordinal);
         Assert.Contains("Linux", configuration, StringComparison.Ordinal);
@@ -155,7 +155,7 @@ public sealed class DocumentationGovernanceTests
         Assert.DoesNotContain("DELETE /v1/filesystem/file", readme, StringComparison.Ordinal);
         Assert.DoesNotContain("DELETE /v1/filesystem/directory", readme, StringComparison.Ordinal);
         Assert.Contains(
-            "Публичная filesystem API использует только",
+            "Публичный API файловой системы использует только",
             readme,
             StringComparison.Ordinal);
         Assert.Contains("`GET`", readme, StringComparison.Ordinal);
