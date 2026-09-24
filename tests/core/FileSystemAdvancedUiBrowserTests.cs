@@ -68,9 +68,8 @@ public sealed class FileSystemAdvancedUiBrowserTests
             page.PageError += (_, error) => pageErrors.Add(error);
 
             await page.GotoAsync(baseUrl + "/filesystem.html");
-            await page.Locator("#filesystem-roots [data-root='archive']").WaitForAsync();
-            await page.Locator("#filesystem-roots [data-root='nfs']").WaitForAsync();
-            await page.ClickAsync("#filesystem-roots [data-root='archive']");
+            await page.Locator("#filesystem-left-root option[value='archive']").WaitForAsync();
+            await page.Locator("#filesystem-left-root option[value='nfs']").WaitForAsync();
             await page.WaitForFunctionAsync(
                 "() => document.querySelectorAll('#filesystem-left-entries tr').length >= 80");
 
@@ -332,10 +331,12 @@ public sealed class FileSystemAdvancedUiBrowserTests
 
             await Row("left", "filler-000.txt").Locator("td").Nth(1).ClickAsync();
             Assert.Equal(1, await page.Locator("#filesystem-left-entries tr.current-row").CountAsync());
-            await page.ClickAsync("#filesystem-roots [data-root='nfs']");
+            await page.Locator("#filesystem-left-root").SelectOptionAsync("nfs");
             await WaitBreadcrumb("left", "nfs");
-            await WaitBreadcrumb("right", "nfs");
+            await WaitBreadcrumb("right", "archive");
             Assert.Equal(0, await page.Locator("#filesystem-left-entries tr.current-row").CountAsync());
+            await page.Locator("#filesystem-right-root").SelectOptionAsync("nfs");
+            await WaitBreadcrumb("right", "nfs");
             Assert.Equal(0, await page.Locator("#filesystem-right-entries tr.current-row").CountAsync());
             Assert.Equal(0, await page.Locator(".panel.drop-target,.panel.drop-forbidden").CountAsync());
 
