@@ -30,7 +30,7 @@ Windows и Linux используют один принадлежащий реп
 src/WebAssistant/product-metadata.json
 ```
 
-Файл находится рядом с `src/WebAssistant/appsettings.json`, используемым во время выполнения, но имеет другую семантику: `appsettings.json` управляет конфигурацией времени выполнения, а `product-metadata.json` — только отображаемой идентичностью продукта на этапе сборки.
+`product-metadata.json` и необязательный environment-specific `src/WebAssistant/appsettings.json` располагаются в одном source-каталоге, но имеют разную семантику: первый влияет только на отображаемую идентичность продукта при сборке, а второй при наличии выбирается упаковщиком как package `appsettings.json`. Во время выполнения используется уже упакованный `appsettings.json` рядом с приложением с учётом стандартного provider priority, описанного в [`docs/configuration.md`](docs/configuration.md).
 
 Допустимые поля переопределения:
 
