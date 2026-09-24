@@ -276,6 +276,10 @@ internal sealed class FileSystemApplicationService
             destination.Path.RelativePath,
             sourceEntry.Name);
         if (string.Equals(
+                source.Path.RootName,
+                destination.Path.RootName,
+                StringComparison.Ordinal) &&
+            string.Equals(
                 destinationRelativePath,
                 actualSourceRelativePath,
                 StringComparison.Ordinal))
