@@ -334,7 +334,36 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         IRootedFileSystem destinationFileSystem,
         string destinationRelativePath,
         RootedEntryKind expectedKind,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        MoveToAsync(
+            sourceRelativePath,
+            destinationFileSystem,
+            destinationRelativePath,
+            expectedKind,
+            replaceExisting: false,
+            cancellationToken);
+
+    public ValueTask MoveReplaceToAsync(
+        string sourceRelativePath,
+        IRootedFileSystem destinationFileSystem,
+        string destinationRelativePath,
+        RootedEntryKind expectedKind,
+        CancellationToken cancellationToken = default) =>
+        MoveToAsync(
+            sourceRelativePath,
+            destinationFileSystem,
+            destinationRelativePath,
+            expectedKind,
+            replaceExisting: true,
+            cancellationToken);
+
+    private ValueTask MoveToAsync(
+        string sourceRelativePath,
+        IRootedFileSystem destinationFileSystem,
+        string destinationRelativePath,
+        RootedEntryKind expectedKind,
+        bool replaceExisting,
+        CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
@@ -343,6 +372,11 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
             throw new FileSystemOperationException(
                 FileSystemErrorCodes.AtomicMoveUnavailable,
                 "Atomic move между разными native filesystem implementations недоступен.");
+        }
+
+        if (replaceExisting && expectedKind != RootedEntryKind.File)
+        {
+            throw InvalidPath("Atomic replace разрешён только для обычных файлов.");
         }
 
         destination.ThrowIfDisposed();
@@ -376,6 +410,12 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
             FileSystemPathPolicy.EnsureFileTypeAllowed(sourceName);
             FileSystemPathPolicy.EnsureFileTypeAllowed(destinationName);
             EnsureSingleLink(sourceStat);
+            if (replaceExisting)
+            {
+                EnsureReplaceableDestinationFile(
+                    GetFd(destinationParent),
+                    destinationName);
+            }
         }
         else if (expectedKind == RootedEntryKind.Directory)
         {
@@ -395,7 +435,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
                 sourceName,
                 GetFd(destinationParent),
                 destinationName,
-                RENAME_NOREPLACE) != 0)
+                replaceExisting ? 0u : RENAME_NOREPLACE) != 0)
         {
             throw MapRenameError(
                 Marshal.GetLastPInvokeError(),
@@ -797,6 +837,41 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         return ToTimestamp(older);
     }
 
+    private static void EnsureReplaceableDestinationFile(
+        int destinationDirectoryFd,
+        string destinationName)
+    {
+        if (FStatAt(
+                destinationDirectoryFd,
+                destinationName,
+                out var stat,
+                AT_SYMLINK_NOFOLLOW) != 0)
+        {
+            var errno = Marshal.GetLastPInvokeError();
+            if (errno is ENOENT or ENOTDIR)
+            {
+                return;
+            }
+
+            throw MapOpenError(
+                errno,
+                "Не удалось проверить существующий целевой файл для atomic replace.");
+        }
+
+        var kind = stat.StMode & S_IFMT;
+        if (kind == S_IFLNK)
+        {
+            throw UnsafeLink("Atomic replace поверх ссылки запрещён.");
+        }
+
+        if (kind != S_IFREG)
+        {
+            throw InvalidPath("Atomic replace разрешён только поверх обычного файла.");
+        }
+
+        EnsureSingleLink(stat);
+    }
+
     private static LinuxStat ReadEntryStat(int directoryFd, string name)
     {
         if (FStatAt(
@@ -1056,7 +1131,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
             ELOOP => UnsafeLink(message),
             EXDEV => new FileSystemOperationException(
                 FileSystemErrorCodes.AtomicMoveUnavailable,
-                "Native filesystem не может выполнить atomic no-replace move между этими roots."),
+                "Native filesystem не может выполнить atomic move между этими roots."),
             EACCES or EPERM or EBUSY or ETXTBSY => new FileSystemOperationException(
                 FileSystemErrorCodes.Locked,
                 message),
