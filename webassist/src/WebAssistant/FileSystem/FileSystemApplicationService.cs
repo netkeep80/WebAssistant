@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.IO.Enumeration;
 using System.Text;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace WebAssistant.FileSystem;
 
@@ -20,10 +22,14 @@ internal sealed class FileSystemApplicationService
     private const int MaximumWildcardMasks = 32;
     private const int MaximumMoveNames = 1000;
     private readonly FileSystemRootRegistry registry;
+    private readonly ILogger<FileSystemApplicationService> logger;
 
-    public FileSystemApplicationService(FileSystemRootRegistry registry)
+    public FileSystemApplicationService(
+        FileSystemRootRegistry registry,
+        ILogger<FileSystemApplicationService>? logger = null)
     {
         this.registry = registry;
+        this.logger = logger ?? NullLogger<FileSystemApplicationService>.Instance;
     }
 
     internal async ValueTask<FileSystemListResult> ListAsync(
@@ -162,6 +168,7 @@ internal sealed class FileSystemApplicationService
         string? sourceDirectoryPath,
         string? destinationDirectoryPath,
         IReadOnlyList<string> fileNames,
+        bool overwriteExisting,
         CancellationToken cancellationToken)
     {
         var requested = ValidateMoveNames(fileNames);
@@ -201,19 +208,42 @@ internal sealed class FileSystemApplicationService
                 entry.Name);
             try
             {
-                await source.FileSystem.MoveNoReplaceToAsync(
-                    sourceRelativePath,
-                    destination.FileSystem,
-                    destinationRelativePath,
-                    RootedEntryKind.File,
-                    cancellationToken);
+                if (overwriteExisting)
+                {
+                    await source.FileSystem.MoveReplaceToAsync(
+                        sourceRelativePath,
+                        destination.FileSystem,
+                        destinationRelativePath,
+                        RootedEntryKind.File,
+                        cancellationToken);
+                }
+                else
+                {
+                    await source.FileSystem.MoveNoReplaceToAsync(
+                        sourceRelativePath,
+                        destination.FileSystem,
+                        destinationRelativePath,
+                        RootedEntryKind.File,
+                        cancellationToken);
+                }
+
                 moved.Add(entry.Name);
             }
             catch (FileSystemOperationException exception) when (
-                exception.Code is FileSystemErrorCodes.NotFound or
-                FileSystemErrorCodes.DestinationExists)
+                exception.Code == FileSystemErrorCodes.NotFound ||
+                (!overwriteExisting &&
+                 exception.Code == FileSystemErrorCodes.DestinationExists))
             {
-                // Batch semantics: missing source и destination conflict пропускаются.
+                // Batch semantics: missing source и no-replace destination conflict пропускаются.
+            }
+            catch (FileSystemOperationException exception) when (
+                overwriteExisting &&
+                exception.Code == FileSystemErrorCodes.Locked)
+            {
+                logger.LogWarning(
+                    "filesystem.move item skipped operation=move-files fileName={FileName} errorCode={ErrorCode} overwriteExisting=true",
+                    entry.Name,
+                    exception.Code);
             }
         }
 
