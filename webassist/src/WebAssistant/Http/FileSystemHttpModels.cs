@@ -9,7 +9,8 @@ internal sealed record FileSystemFindRequest(
 internal sealed record FileSystemMoveRequest(
     string? SourcePath,
     string? DestinationPath,
-    IReadOnlyList<string>? FileNames);
+    IReadOnlyList<string>? FileNames,
+    bool OverwriteExisting = false);
 
 internal sealed record FileSystemDirectoryMoveRequest(
     string? SourcePath,
