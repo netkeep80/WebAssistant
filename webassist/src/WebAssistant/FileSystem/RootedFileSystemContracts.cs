@@ -110,6 +110,13 @@ internal interface IRootedFileSystem
         RootedEntryKind expectedKind,
         CancellationToken cancellationToken = default);
 
+    ValueTask MoveReplaceToAsync(
+        string sourceRelativePath,
+        IRootedFileSystem destinationFileSystem,
+        string destinationRelativePath,
+        RootedEntryKind expectedKind,
+        CancellationToken cancellationToken = default);
+
     ValueTask DeleteFileAsync(
         string relativePath,
         CancellationToken cancellationToken = default);

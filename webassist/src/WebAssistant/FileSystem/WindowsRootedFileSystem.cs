@@ -315,10 +315,11 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
                 "Не удалось открыть staging-файл для публикации.");
             EnsureNotReparse(readyToCommit, "Staging-файл изменился на reparse point.");
             EnsureSingleLink(readyToCommit);
-            RenameRelativeNoReplace(
+            RenameRelative(
                 readyToCommit,
                 destinationParent,
-                destinationName);
+                destinationName,
+                replaceExisting: false);
             committed = true;
         }
         finally
@@ -347,7 +348,36 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         IRootedFileSystem destinationFileSystem,
         string destinationRelativePath,
         RootedEntryKind expectedKind,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        MoveToAsync(
+            sourceRelativePath,
+            destinationFileSystem,
+            destinationRelativePath,
+            expectedKind,
+            replaceExisting: false,
+            cancellationToken);
+
+    public ValueTask MoveReplaceToAsync(
+        string sourceRelativePath,
+        IRootedFileSystem destinationFileSystem,
+        string destinationRelativePath,
+        RootedEntryKind expectedKind,
+        CancellationToken cancellationToken = default) =>
+        MoveToAsync(
+            sourceRelativePath,
+            destinationFileSystem,
+            destinationRelativePath,
+            expectedKind,
+            replaceExisting: true,
+            cancellationToken);
+
+    private ValueTask MoveToAsync(
+        string sourceRelativePath,
+        IRootedFileSystem destinationFileSystem,
+        string destinationRelativePath,
+        RootedEntryKind expectedKind,
+        bool replaceExisting,
+        CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
@@ -356,6 +386,11 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
             throw new FileSystemOperationException(
                 FileSystemErrorCodes.AtomicMoveUnavailable,
                 "Atomic move между разными native filesystem implementations недоступен.");
+        }
+
+        if (replaceExisting && expectedKind != RootedEntryKind.File)
+        {
+            throw InvalidPath("Atomic replace разрешён только для обычных файлов.");
         }
 
         destination.ThrowIfDisposed();
@@ -385,6 +420,10 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
             FileSystemPathPolicy.EnsureFileTypeAllowed(sourceName);
             FileSystemPathPolicy.EnsureFileTypeAllowed(destinationName);
             EnsureSingleLink(standard);
+            if (replaceExisting)
+            {
+                EnsureReplaceableDestinationFile(destinationParent, destinationName);
+            }
         }
         else if (expectedKind == RootedEntryKind.Directory)
         {
@@ -399,10 +438,11 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
             throw InvalidPath("Atomic move поддерживает только файл или каталог.");
         }
 
-        RenameRelativeNoReplace(
+        RenameRelative(
             sourceHandle,
             destinationParent,
-            destinationName);
+            destinationName,
+            replaceExisting);
         return ValueTask.CompletedTask;
     }
 
@@ -876,10 +916,38 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         }
     }
 
-    private static void RenameRelativeNoReplace(
-        SafeFileHandle source,
+    private static void EnsureReplaceableDestinationFile(
         SafeFileHandle destinationParent,
         string destinationName)
+    {
+        try
+        {
+            using var destination = OpenAnyEntry(
+                destinationParent,
+                destinationName,
+                FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+                "Не удалось проверить существующий целевой файл для atomic replace.");
+            EnsureNotReparse(destination, "Atomic replace поверх reparse point запрещён.");
+            var standard = ReadStandardInfo(destination);
+            if (standard.Directory)
+            {
+                throw InvalidPath("Atomic replace разрешён только поверх обычного файла.");
+            }
+
+            EnsureSingleLink(standard);
+        }
+        catch (FileSystemOperationException exception) when (
+            exception.Code == FileSystemErrorCodes.NotFound)
+        {
+            // Destination отсутствует: replace-capable rename создаст его атомарно.
+        }
+    }
+
+    private static void RenameRelative(
+        SafeFileHandle source,
+        SafeFileHandle destinationParent,
+        string destinationName,
+        bool replaceExisting)
     {
         FileSystemPathPolicy.ValidateEntryName(destinationName);
         var nameBytes = Encoding.Unicode.GetBytes(destinationName);
@@ -891,7 +959,7 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
         try
         {
             Marshal.Copy(bytes, 0, buffer, bytes.Length);
-            Marshal.WriteByte(buffer, 0, 0);
+            Marshal.WriteByte(buffer, 0, replaceExisting ? (byte)1 : (byte)0);
             Marshal.WriteIntPtr(
                 IntPtr.Add(buffer, rootOffset),
                 destinationParent.DangerousGetHandle());

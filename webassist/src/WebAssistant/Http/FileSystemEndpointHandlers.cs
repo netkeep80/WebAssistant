@@ -363,6 +363,7 @@ internal static class FileSystemEndpointHandlers
                 parsed.Value!.SourcePath,
                 parsed.Value.DestinationPath,
                 parsed.Value.FileNames ?? Array.Empty<string>(),
+                parsed.Value.OverwriteExisting,
                 cancellationToken);
             var source = TryParsePath(parsed.Value.SourcePath, allowRoot: true);
             if (source is not null)

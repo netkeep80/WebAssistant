@@ -343,6 +343,74 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
     }
 
     [Fact]
+    public async Task BatchMove_OverwriteExisting_ReplacesDestinationAndReturnsOnlyMovedNames()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "incoming"));
+        Directory.CreateDirectory(Path.Combine(root, "processed"));
+        await File.WriteAllTextAsync(Path.Combine(root, "incoming", "replace.xml"), "new");
+        await File.WriteAllTextAsync(Path.Combine(root, "incoming", "fresh.xml"), "fresh");
+        await File.WriteAllTextAsync(Path.Combine(root, "processed", "replace.xml"), "old");
+
+        using var response = await client.PostAsJsonAsync(
+            "/v1/filesystem/move",
+            new
+            {
+                sourcePath = "archive/incoming/",
+                destinationPath = "archive/processed/",
+                fileNames = new[] { "replace.xml", "missing.xml", "fresh.xml" },
+                overwriteExisting = true
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            new[] { "replace.xml", "fresh.xml" },
+            document.RootElement
+                .GetProperty("fileNames")
+                .EnumerateArray()
+                .Select(value => value.GetString())
+                .ToArray());
+
+        Assert.False(File.Exists(Path.Combine(root, "incoming", "replace.xml")));
+        Assert.Equal(
+            "new",
+            await File.ReadAllTextAsync(Path.Combine(root, "processed", "replace.xml")));
+        Assert.False(File.Exists(Path.Combine(root, "incoming", "fresh.xml")));
+        Assert.Equal(
+            "fresh",
+            await File.ReadAllTextAsync(Path.Combine(root, "processed", "fresh.xml")));
+    }
+
+    [Fact]
+    public async Task BatchMove_ExplicitFalse_PreservesNoReplaceCollisionBehavior()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "incoming"));
+        Directory.CreateDirectory(Path.Combine(root, "processed"));
+        await File.WriteAllTextAsync(Path.Combine(root, "incoming", "same.xml"), "new");
+        await File.WriteAllTextAsync(Path.Combine(root, "processed", "same.xml"), "old");
+
+        using var response = await client.PostAsJsonAsync(
+            "/v1/filesystem/move",
+            new
+            {
+                sourcePath = "archive/incoming/",
+                destinationPath = "archive/processed/",
+                fileNames = new[] { "same.xml" },
+                overwriteExisting = false
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Empty(document.RootElement.GetProperty("fileNames").EnumerateArray());
+        Assert.Equal(
+            "new",
+            await File.ReadAllTextAsync(Path.Combine(root, "incoming", "same.xml")));
+        Assert.Equal(
+            "old",
+            await File.ReadAllTextAsync(Path.Combine(root, "processed", "same.xml")));
+    }
+
+    [Fact]
     public async Task ListingWildcard_FiltersFilesAndDirectoriesBeforePagination()
     {
         Directory.CreateDirectory(Path.Combine(root, "folder.xml"));
@@ -576,6 +644,32 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
         Assert.True(File.Exists(Path.Combine(root, "processed", "a.txt")));
         Assert.True(Directory.Exists(Path.Combine(root, "incoming", "b.txt")));
         Assert.False(Directory.Exists(Path.Combine(root, "processed", "b.txt")));
+        Assert.True(File.Exists(Path.Combine(root, "incoming", "after.txt")));
+        Assert.False(File.Exists(Path.Combine(root, "processed", "after.txt")));
+    }
+
+    [Fact]
+    public async Task BatchMove_OverwriteExisting_NonFileDestinationIsFatalAndStopsFurtherBatch()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "incoming"));
+        Directory.CreateDirectory(Path.Combine(root, "processed"));
+        await File.WriteAllTextAsync(Path.Combine(root, "incoming", "blocked.txt"), "new");
+        await File.WriteAllTextAsync(Path.Combine(root, "incoming", "after.txt"), "after");
+        Directory.CreateDirectory(Path.Combine(root, "processed", "blocked.txt"));
+
+        using var response = await client.PostAsJsonAsync(
+            "/v1/filesystem/move",
+            new
+            {
+                sourcePath = "archive/incoming/",
+                destinationPath = "archive/processed/",
+                fileNames = new[] { "blocked.txt", "after.txt" },
+                overwriteExisting = true
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True(File.Exists(Path.Combine(root, "incoming", "blocked.txt")));
+        Assert.True(Directory.Exists(Path.Combine(root, "processed", "blocked.txt")));
         Assert.True(File.Exists(Path.Combine(root, "incoming", "after.txt")));
         Assert.False(File.Exists(Path.Combine(root, "processed", "after.txt")));
     }

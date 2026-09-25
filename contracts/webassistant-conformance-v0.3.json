@@ -454,7 +454,7 @@
     {
       "id": "WA-C-FILESYSTEM-API-001",
       "kind": "positive",
-      "assertion": "Candidate multi-root filesystem API использует только GET и POST: GET /v1/filesystem/roots, GET /v1/filesystem/list, GET /v1/filesystem/file, GET /v1/filesystem/files; POST /v1/filesystem/find является read-only JSON batch; mutations остаются POST. Wildcard default * одним matcher фильтрует immediate files и directories; *.* literal, list без limit unpaged, pagination только при explicit positive limit без WebAssistant-specific upper bound. POST find exact lookup непустого unique names batch без WebAssistant-specific upper bound возвращает list-compatible file/directory/restricted/link entry DTOs в input order. ZIP использует current wildcard, включает только ordinary files со стабильным native read и пропускает writer-locked candidates без скрытия security failures. Batch ordinary-file move и directory move сохраняют actual source basename и могут пересекать logical roots только через native atomic no-replace rename; cross-device/cross-volume даёт explicit atomic_move_unavailable без copy-delete fallback. Batch response содержит только реально перемещённые имена; rename сохраняет parent directory.",
+      "assertion": "Candidate multi-root filesystem API использует только GET и POST: GET /v1/filesystem/roots, GET /v1/filesystem/list, GET /v1/filesystem/file, GET /v1/filesystem/files; POST /v1/filesystem/find является read-only JSON batch; mutations остаются POST. Wildcard default * одним matcher фильтрует immediate files и directories; *.* literal, list без limit unpaged, pagination только при explicit positive limit без WebAssistant-specific upper bound. POST find exact lookup непустого unique names batch без WebAssistant-specific upper bound возвращает list-compatible file/directory/restricted/link entry DTOs в input order. ZIP использует current wildcard, включает только ordinary files со стабильным native read и пропускает writer-locked candidates без скрытия security failures. Batch ordinary-file move и directory move сохраняют actual source basename и могут пересекать logical roots только через native atomic rename; directory move всегда no-replace, file move default no-replace, optional overwriteExisting=true атомарно заменяет существующий ordinary destination file. Cross-device/cross-volume даёт explicit atomic_move_unavailable без copy-delete fallback. Batch response содержит только реально перемещённые имена; rename сохраняет parent directory.",
       "requirements": [
         "WA-FS-002",
         "WA-FS-005",
@@ -482,7 +482,7 @@
     {
       "id": "WA-C-FILESYSTEM-ATOMIC-001",
       "kind": "negative",
-      "assertion": "Upload publication, same-root и cross-root batch file move, directory move и rename используют native atomic no-replace namespace semantics: final upload name отсутствует до complete commit, existing destination bytes/entries никогда не заменяются, staging namespace не public, cross-device/cross-volume move завершается atomic_move_unavailable, а copy-delete fallback, recursive delete, append и implicit replace отсутствуют.",
+      "assertion": "Upload publication, directory move и rename используют native atomic no-replace namespace semantics. Batch file move по умолчанию также no-replace; explicit overwriteExisting=true является единственным опубликованным replace mode и только для ordinary files: существующий ordinary destination заменяется одной native atomic rename operation после fail-closed destination inspection. Delete+move и copy+delete отсутствуют. При replace lock/sharing/access/busy failure конкретный file остаётся unmoved, warning логируется и batch продолжается; security/authority/unknown native failures остаются fatal. Cross-device/cross-volume move завершается atomic_move_unavailable; staging namespace не public, recursive delete и append отсутствуют.",
       "requirements": [
         "WA-FS-003",
         "WA-FS-004"
@@ -492,7 +492,9 @@
         "tests/core/HttpFileSystemContractTests.cs",
         "tests/core/FileSystemApiV230ContractTests.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemApplicationService.cs",
-        "tests/core/FileSystemIssue250ContractTests.cs"
+        "tests/core/FileSystemIssue250ContractTests.cs",
+        "tests/core/LinuxRootedFileSystemTests.cs",
+        "tests/core/WindowsRootedFileSystemTests.cs"
       ]
     },
     {

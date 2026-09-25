@@ -579,17 +579,24 @@ Read-only batch query принимает JSON:
 {
   "sourcePath": "import/incoming/",
   "destinationPath": "import/processed/",
-  "fileNames": ["a.xml", "b.xml"]
+  "fileNames": ["a.xml", "b.xml"],
+  "overwriteExisting": false
 }
 ```
 
-`sourcePath` и `destinationPath` — независимо разрешаемые логические каталоги настроенных roots. `fileNames` обязателен и содержит от 1 до 1000 уникальных имён. Каждое имя — один элемент каталога без разделителей пути, абсолютного пути, `.` и `..`.
+`sourcePath` и `destinationPath` — независимо разрешаемые логические каталоги настроенных roots. `fileNames` обязателен и содержит от 1 до 1000 уникальных имён. Каждое имя — один элемент каталога без разделителей пути, абсолютного пути, `.` и `..`. `overwriteExisting` необязателен и по умолчанию равен `false`.
 
-Операция принимает только обычные файлы. Wildcard и рекурсия не используются. Исходный и целевой каталоги не могут быть одним и тем же логическим каталогом. Разные logical root names разрешены: backend пытается выполнить настоящий native atomic no-replace move между independently rooted authorities. Если underlying filesystem/volume не допускает такую операцию, возвращается `409 atomic_move_unavailable`. Fallback `copy -> delete` запрещён.
+Операция принимает только обычные файлы. Wildcard и рекурсия не используются. Исходный и целевой каталоги не могут быть одним и тем же логическим каталогом. Разные logical root names разрешены. Во всех режимах backend использует только настоящий native atomic rename между independently rooted authorities; `copy -> delete` запрещён. Если underlying filesystem/volume не допускает такую операцию, возвращается `409 atomic_move_unavailable`.
 
 Ключевой инвариант: `move` не умеет переименовывать. Итоговое имя в целевом каталоге всегда выводится из фактического basename исходной записи. API не принимает новое имя назначения.
 
-Каждый фактически выполненный перенос — native atomic `no-replace` без схемы copy-delete. Отсутствующий source и уже существующий destination для конкретного имени пропускаются. Ответ содержит только действительно перемещённые имена в порядке запроса:
+При отсутствующем `overwriteExisting` или `overwriteExisting=false` сохраняется прежняя семантика: каждый перенос — native atomic `no-replace`; отсутствующий source и уже существующий destination для конкретного имени пропускаются, а source при конфликте остаётся на месте.
+
+При `overwriteExisting=true` существующий обычный destination file может быть заменён **одной native atomic rename operation**. WebAssistant сначала проверяет, что существующая destination entry не является ссылкой/reparse, каталогом или hard-link alias. Схемы `delete destination -> move source` и `copy -> delete` запрещены.
+
+Если при `overwriteExisting=true` конкретный destination file нельзя заменить из-за lock/sharing/access/busy condition, WebAssistant пишет warning без physical path, оставляет source и старый destination на месте, не включает имя в response и продолжает batch со следующим файлом. Отсутствующий source также пропускается.
+
+Ответ в обоих режимах содержит только действительно перемещённые имена в порядке запроса:
 
 ```json
 {
@@ -597,7 +604,9 @@ Read-only batch query принимает JSON:
 }
 ```
 
-Небезопасная ссылка/reparse-объект, hard-link, ограниченный файл, неверный путь/имя, недоступный корень, неожиданная нативная/I/O-ошибка или неопределённое состояние безопасности являются фатальной ошибкой запроса. Уже выполненные переносы не откатываются; обещания транзакционного rollback всего batch нет.
+Небезопасная ссылка/reparse-объект, hard-link, ограниченный файл, неверный путь/имя, недоступный корень, `atomic_move_unavailable`, неожиданная нативная/I/O-ошибка или неопределённое состояние безопасности являются фатальной ошибкой запроса. Уже выполненные переносы не откатываются; обещания транзакционного rollback всего batch нет.
+
+`overwriteExisting` относится только к batch file move. `directory/move`, `rename` и upload сохраняют no-replace/create-new semantics.
 
 ### Перемещение каталога
 
@@ -698,10 +707,10 @@ Symlink, junction и другие link/reparse-объекты могут быт�
 | find batch size | `names` непустой; фиксированного WebAssistant-specific maximum нет. | semantic / resource | #256 | Batch >1000 разрешён; далее действуют request/runtime resources. | все | required |
 | find duplicates | `names` сейчас должен быть unique. | semantic | current validator | Duplicate => `400 filesystem_path_invalid`. | все | under review |
 | find matching | Exact `StringComparison.Ordinal`, immediate-only, non-recursive, без wildcard. | semantic | current find contract | Регистр должен совпадать даже на Windows; missing entries omitted. | все | exact-case policy under review |
-| batch move | `fileNames` = 1..1000 unique single-entry names; только ordinary non-restricted files. | semantic / defensive | bounded mutation batch | Oversized/duplicate batch => `400`. | все | required |
-| batch move result | `not_found`/destination collision per-item пропускаются; response только successes; rollback отсутствует. | semantic | best-effort contract | Fatal error останавливает дальнейший batch. | все | required |
+| batch move | `fileNames` = 1..1000 unique single-entry names; только ordinary non-restricted files; optional `overwriteExisting` default `false`. | semantic / defensive | bounded mutation batch | Oversized/duplicate batch => `400`; overwrite влияет только на file move. | все | required |
+| batch move result | `not_found` пропускается; при overwrite=false destination collision пропускается; при overwrite=true lock/sharing/access/busy replace failure логируется и пропускается; response только successes; rollback отсутствует. | semantic | best-effort contract | Security/authority/unknown native error останавливает дальнейший batch. | все | required |
 | move/rename | Move сохраняет basename; rename сохраняет parent. | semantic | orthogonal operations | Move не rename; rename не move. | все | required |
-| cross-root move | Только native atomic no-replace rename; copy-delete fallback запрещён. | security / semantic | atomicity | Cross-device/volume/unsupported => `409 atomic_move_unavailable`. | все | required |
+| cross-root move | Только native atomic rename; file move default no-replace и может atomic-replace только при `overwriteExisting=true`; directory move всегда no-replace; copy-delete fallback запрещён. | security / semantic | atomicity | Cross-device/volume/unsupported => `409 atomic_move_unavailable`. | все | required |
 | directory move | Один directory; root object нельзя move; same-root destination не source/descendant. | semantic / security | tree integrity | Invalid topology => `400`; existing destination => `409`. | все | required |
 | create directory | Создаётся один directory; parent должен существовать; recursive `mkdir -p` отсутствует. | semantic | minimal mutation surface | Missing parent => normalized filesystem error. | все | required |
 | delete directory | Только пустой directory; recursion отсутствует. | security / semantic | destructive fail-closed | Непустой => `409 directory_not_empty`. | все | required |
@@ -751,7 +760,7 @@ LEFT и RIGHT имеют независимое состояние `root`, те�
 503 filesystem_root_unavailable
 ```
 
-`filesystem_not_configured` означает отсутствующую или пустую карту `WebAssistant:FileSystem`. `filesystem_configuration_invalid` означает некорректность карты. `filesystem_root_not_found` означает синтаксически корректное, но неизвестное логическое имя. `filesystem_root_unavailable` относится только к выбранному настроенному корню. `filesystem_path_invalid` покрывает некорректный логический путь/имя, cursor без явного paged mode и неправильный wildcard. `atomic_move_unavailable` означает, что independently resolved source/destination roots не могут быть соединены native atomic no-replace move на текущем filesystem/volume; copy-delete fallback не выполняется.
+`filesystem_not_configured` означает отсутствующую или пустую карту `WebAssistant:FileSystem`. `filesystem_configuration_invalid` означает некорректность карты. `filesystem_root_not_found` означает синтаксически корректное, но неизвестное логическое имя. `filesystem_root_unavailable` относится только к выбранному настроенному корню. `filesystem_path_invalid` покрывает некорректный логический путь/имя, cursor без явного paged mode и неправильный wildcard. `atomic_move_unavailable` означает, что independently resolved source/destination roots не могут быть соединены требуемой native atomic move/replace operation на текущем filesystem/volume; copy-delete fallback не выполняется.
 
 После начала потоковой передачи ZIP поздняя ошибка чтения не заменяется фиктивным `problem+json`: соединение прерывается, чтобы клиент не принял повреждённый архив за успешно завершённый.
 

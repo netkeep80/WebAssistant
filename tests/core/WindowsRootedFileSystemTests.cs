@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Win32.SafeHandles;
 using WebAssistant.FileSystem;
 using Xunit;
@@ -119,10 +121,78 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
             "original",
             await File.ReadAllTextAsync(Path.Combine(root, "incoming", "occupied.bin")));
 
-        await fileSystem.DeleteFileAsync("incoming/b.bin");
+        await fileSystem.MoveReplaceToAsync(
+            "incoming/b.bin",
+            fileSystem,
+            "incoming/occupied.bin",
+            RootedEntryKind.File);
+        Assert.False(File.Exists(Path.Combine(root, "incoming", "b.bin")));
+        Assert.Equal(
+            "payload",
+            await File.ReadAllTextAsync(Path.Combine(root, "incoming", "occupied.bin")));
+
         await fileSystem.DeleteFileAsync("incoming/occupied.bin");
         await fileSystem.DeleteEmptyDirectoryAsync("incoming");
         Assert.False(Directory.Exists(Path.Combine(root, "incoming")));
+    }
+
+    [Fact]
+    public async Task BatchMove_OverwriteLockedDestination_LogsSkipsAndContinues()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var incoming = Path.Combine(root, "incoming");
+        var processed = Path.Combine(root, "processed");
+        Directory.CreateDirectory(incoming);
+        Directory.CreateDirectory(processed);
+        await File.WriteAllTextAsync(Path.Combine(incoming, "locked.bin"), "new");
+        await File.WriteAllTextAsync(Path.Combine(incoming, "after.bin"), "after");
+        await File.WriteAllTextAsync(Path.Combine(processed, "locked.bin"), "old");
+
+        using var registry = FileSystemRootRegistry.Load(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["WebAssistant:FileSystem:archive"] = root
+                })
+                .Build());
+        var logger = new CapturingLogger<FileSystemApplicationService>();
+        var service = new FileSystemApplicationService(registry, logger);
+
+        await using var heldDestination = new FileStream(
+            Path.Combine(processed, "locked.bin"),
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read);
+
+        var moved = await service.MoveFilesAsync(
+            "archive/incoming/",
+            "archive/processed/",
+            new[] { "locked.bin", "after.bin" },
+            overwriteExisting: true,
+            CancellationToken.None);
+
+        Assert.Equal(new[] { "after.bin" }, moved);
+        Assert.Equal(
+            "new",
+            await File.ReadAllTextAsync(Path.Combine(incoming, "locked.bin")));
+        Assert.Equal(
+            "old",
+            await File.ReadAllTextAsync(Path.Combine(processed, "locked.bin")));
+        Assert.False(File.Exists(Path.Combine(incoming, "after.bin")));
+        Assert.Equal(
+            "after",
+            await File.ReadAllTextAsync(Path.Combine(processed, "after.bin")));
+        Assert.Contains(
+            logger.Messages,
+            message =>
+                message.Level == LogLevel.Warning &&
+                message.Text.Contains("fileName=locked.bin", StringComparison.Ordinal) &&
+                message.Text.Contains("errorCode=locked", StringComparison.Ordinal) &&
+                message.Text.Contains("overwriteExisting=true", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -354,6 +424,23 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
         uint creationDisposition,
         uint flagsAndAttributes,
         IntPtr templateFile);
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        internal List<(LogLevel Level, string Text)> Messages { get; } = new();
+
+        IDisposable? ILogger.BeginScope<TState>(TState state) => null;
+
+        bool ILogger.IsEnabled(LogLevel logLevel) => true;
+
+        void ILogger.Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Messages.Add((logLevel, formatter(state, exception)));
+    }
 
     public void Dispose()
     {

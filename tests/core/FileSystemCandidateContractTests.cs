@@ -45,6 +45,7 @@ public sealed class FileSystemCandidateContractTests
             "cross-root",
             "atomic",
             "no-replace",
+            "overwriteExisting",
             "stream",
             "opaque",
             "1000",

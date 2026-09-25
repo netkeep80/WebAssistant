@@ -273,6 +273,45 @@ public sealed class FileSystemIssue250ContractTests : IDisposable
     }
 
     [Fact]
+    public async Task CrossRootBatchMove_OverwriteExisting_AtomicallyReplacesFile()
+    {
+        await File.WriteAllTextAsync(Path.Combine(leftRoot, "replace.bin"), "new");
+        await File.WriteAllTextAsync(Path.Combine(rightRoot, "replace.bin"), "old");
+
+        using var factory = CreateFactory(new Dictionary<string, string?>
+        {
+            ["WebAssistant:FileSystem:left"] = leftRoot,
+            ["WebAssistant:FileSystem:right"] = rightRoot
+        });
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsJsonAsync(
+            "/v1/filesystem/move",
+            new
+            {
+                sourcePath = "left/",
+                destinationPath = "right/",
+                fileNames = new[] { "replace.bin" },
+                overwriteExisting = true
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            new[] { "replace.bin" },
+            document.RootElement
+                .GetProperty("fileNames")
+                .EnumerateArray()
+                .Select(value => value.GetString())
+                .ToArray());
+
+        Assert.False(File.Exists(Path.Combine(leftRoot, "replace.bin")));
+        Assert.Equal(
+            "new",
+            await File.ReadAllTextAsync(Path.Combine(rightRoot, "replace.bin")));
+    }
+
+    [Fact]
     public async Task CrossRootDirectoryMove_OnSameFilesystem_PreservesActualBasename()
     {
         var folder = Path.Combine(leftRoot, "folder");
