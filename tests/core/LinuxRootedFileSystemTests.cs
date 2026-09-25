@@ -78,7 +78,6 @@ public sealed class LinuxRootedFileSystemTests : IDisposable
             "payload",
             await File.ReadAllTextAsync(Path.Combine(root, "incoming", "occupied.bin")));
 
-        await fileSystem.DeleteFileAsync("incoming/b.bin");
         await fileSystem.DeleteFileAsync("incoming/occupied.bin");
         await fileSystem.DeleteEmptyDirectoryAsync("incoming");
         Assert.False(Directory.Exists(Path.Combine(root, "incoming")));
