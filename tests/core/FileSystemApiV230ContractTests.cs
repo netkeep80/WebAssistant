@@ -649,6 +649,32 @@ public sealed class FileSystemApiV230ContractTests : IDisposable
     }
 
     [Fact]
+    public async Task BatchMove_OverwriteExisting_NonFileDestinationIsFatalAndStopsFurtherBatch()
+    {
+        Directory.CreateDirectory(Path.Combine(root, "incoming"));
+        Directory.CreateDirectory(Path.Combine(root, "processed"));
+        await File.WriteAllTextAsync(Path.Combine(root, "incoming", "blocked.txt"), "new");
+        await File.WriteAllTextAsync(Path.Combine(root, "incoming", "after.txt"), "after");
+        Directory.CreateDirectory(Path.Combine(root, "processed", "blocked.txt"));
+
+        using var response = await client.PostAsJsonAsync(
+            "/v1/filesystem/move",
+            new
+            {
+                sourcePath = "archive/incoming/",
+                destinationPath = "archive/processed/",
+                fileNames = new[] { "blocked.txt", "after.txt" },
+                overwriteExisting = true
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.True(File.Exists(Path.Combine(root, "incoming", "blocked.txt")));
+        Assert.True(Directory.Exists(Path.Combine(root, "processed", "blocked.txt")));
+        Assert.True(File.Exists(Path.Combine(root, "incoming", "after.txt")));
+        Assert.False(File.Exists(Path.Combine(root, "processed", "after.txt")));
+    }
+
+    [Fact]
     public async Task Zip_ZeroMatches_ReturnsValidEmptyArchive()
     {
         using var response = await client.GetAsync(
