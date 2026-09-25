@@ -1,113 +1,56 @@
-using WebAssistant.FileSystem;
 using Xunit;
 
 namespace WebAssistant.CoreTests;
 
-public sealed class RootedPathResolverTests : IDisposable
+// Имя файла временно сохраняется как evidence-path current accepted v0.2.1.
+// Candidate v0.3 этот legacy path больше не требует.
+public sealed class RootedContainmentCompatibilityTests
 {
-    private readonly string root;
-    private readonly string outside;
-
-    public RootedPathResolverTests()
-    {
-        var testRoot = Path.Combine(
-            Path.GetTempPath(),
-            "webassistant-root-tests",
-            Guid.NewGuid().ToString("N"));
-        root = Path.Combine(testRoot, "root");
-        outside = Path.Combine(testRoot, "outside");
-        Directory.CreateDirectory(root);
-        Directory.CreateDirectory(outside);
-    }
-
     [Fact]
-    public void Resolve_ValidNestedRelativePath_StaysInsideRoot()
+    public void ObsoleteRootedPathResolverSource_IsAbsent()
     {
-        var resolver = new RootedPathResolver(root);
+        var repository = FindRepositoryRoot();
 
-        var resolved = resolver.Resolve("documents/report.pdf");
+        Assert.False(File.Exists(Path.Combine(
+            repository,
+            "webassist",
+            "src",
+            "WebAssistant",
+            "FileSystem",
+            "RootedPathResolver.cs")));
 
-        var expected = Path.Combine(root, "documents", "report.pdf");
-        Assert.Equal(Path.GetFullPath(expected), resolved);
+        Assert.True(File.Exists(Path.Combine(
+            repository,
+            "webassist",
+            "src",
+            "WebAssistant",
+            "FileSystem",
+            "WindowsRootedFileSystem.cs")));
+
+        Assert.True(File.Exists(Path.Combine(
+            repository,
+            "webassist",
+            "src",
+            "WebAssistant",
+            "FileSystem",
+            "LinuxRootedFileSystem.cs")));
     }
 
-    [Theory]
-    [InlineData("../outside.txt")]
-    [InlineData("folder/../../outside.txt")]
-    [InlineData("./file.txt")]
-    [InlineData("folder/../file.txt")]
-    [InlineData("folder\\..\\file.txt")]
-    public void Resolve_TraversalSegments_AreRejected(string relativePath)
+    private static string FindRepositoryRoot()
     {
-        var resolver = new RootedPathResolver(root);
-
-        Assert.Throws<InvalidOperationException>(() =>
-            resolver.Resolve(relativePath));
-    }
-
-    [Theory]
-    [InlineData("/outside.txt")]
-    [InlineData("C:\\outside.txt")]
-    [InlineData("\\\\server\\share\\outside.txt")]
-    public void Resolve_RootedOrForeignAbsolutePath_AreRejected(string path)
-    {
-        var resolver = new RootedPathResolver(root);
-
-        Assert.Throws<InvalidOperationException>(() =>
-            resolver.Resolve(path));
-    }
-
-    [Fact]
-    public void Resolve_ExistingSymlinkEscape_IsRejected()
-    {
-        var link = Path.Combine(root, "escape");
-        try
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
         {
-            Directory.CreateSymbolicLink(link, outside);
-        }
-        catch (Exception exception) when (
-            exception is UnauthorizedAccessException or
-            PlatformNotSupportedException or
-            IOException)
-        {
-            return;
+            if (File.Exists(Path.Combine(directory.FullName, "repo-policy.json")) &&
+                Directory.Exists(Path.Combine(directory.FullName, "webassist")) &&
+                Directory.Exists(Path.Combine(directory.FullName, "tests")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
         }
 
-        var resolver = new RootedPathResolver(root);
-
-        Assert.Throws<InvalidOperationException>(() =>
-            resolver.Resolve("escape/document.txt"));
-    }
-
-    [Fact]
-    public void Resolve_RootItselfAsSymlink_IsRejected()
-    {
-        var linkedRoot = Path.Combine(Path.GetDirectoryName(root)!, "linked-root");
-        try
-        {
-            Directory.CreateSymbolicLink(linkedRoot, outside);
-        }
-        catch (Exception exception) when (
-            exception is UnauthorizedAccessException or
-            PlatformNotSupportedException or
-            IOException)
-        {
-            return;
-        }
-
-        Assert.Throws<InvalidOperationException>(() =>
-            new RootedPathResolver(linkedRoot));
-    }
-
-    public void Dispose()
-    {
-        var testRoot = Directory.GetParent(root)!.FullName;
-        try
-        {
-            Directory.Delete(testRoot, recursive: true);
-        }
-        catch
-        {
-        }
+        throw new DirectoryNotFoundException("Не найден корень репозитория WebAssistant.");
     }
 }

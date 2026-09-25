@@ -82,7 +82,6 @@
     "webassist/src/WebAssistant/Logging/DailyFileLoggerProvider.cs",
     "tests/core/CorsConfigurationTests.cs",
     "tests/core/ConfigurationOwnershipTests.cs",
-    "tests/core/RootedPathResolverTests.cs",
     "tests/core/FileSystemCandidateContractTests.cs",
     "tests/core/FileSystemRootRegistryTests.cs",
     "tests/core/MultiRootFileSystemTests.cs",
@@ -443,7 +442,6 @@
         "WA-FS-009"
       ],
       "evidence": [
-        "tests/core/RootedPathResolverTests.cs",
         "tests/core/FileSystemRootRegistryTests.cs",
         "tests/core/MultiRootFileSystemTests.cs",
         "tests/core/FileSystemPolicyTests.cs",
