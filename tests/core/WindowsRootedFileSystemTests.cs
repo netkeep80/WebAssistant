@@ -429,7 +429,8 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
     {
         internal List<(LogLevel Level, string Text)> Messages { get; } = new();
 
-        IDisposable? ILogger.BeginScope<TState>(TState state) => null;
+        IDisposable? ILogger.BeginScope<TState>(TState state)
+            where TState : notnull => null;
 
         bool ILogger.IsEnabled(LogLevel logLevel) => true;
 
