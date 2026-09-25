@@ -315,10 +315,11 @@ internal sealed class WindowsRootedFileSystem : IRootedFileSystem, IDisposable
                 "Не удалось открыть staging-файл для публикации.");
             EnsureNotReparse(readyToCommit, "Staging-файл изменился на reparse point.");
             EnsureSingleLink(readyToCommit);
-            RenameRelativeNoReplace(
+            RenameRelative(
                 readyToCommit,
                 destinationParent,
-                destinationName);
+                destinationName,
+                replaceExisting: false);
             committed = true;
         }
         finally
