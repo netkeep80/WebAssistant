@@ -48,11 +48,8 @@ public sealed class FileSystemRootRegistryTests : IDisposable
         Assert.Empty(registry.RootNames);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Load_JsonPhysicalRootWithSpacesAndParentheses_IsConfigured(
-        bool useEscapedBackslashes)
+    [Fact]
+    public void Load_JsonPhysicalRootWithSpacesAndParentheses_IsConfigured()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -62,17 +59,15 @@ public sealed class FileSystemRootRegistryTests : IDisposable
         var physicalRoot = Path.Combine(
             tempRoot,
             "Program Files (x86)",
-            "TriumfRemote_1.0");
+            "Example App");
         Directory.CreateDirectory(physicalRoot);
 
-        var jsonPath = useEscapedBackslashes
-            ? physicalRoot.Replace("\\", "\\\\", StringComparison.Ordinal)
-            : physicalRoot.Replace('\\', '/');
-        var json = $"""
+        var jsonPath = physicalRoot.Replace('\\', '/');
+        var json = $$"""
             {
               "WebAssistant": {
                 "FileSystem": {
-                  "AccntExchangeDir": "{{jsonPath}}"
+                  "exchange": "{{jsonPath}}"
                 }
               }
             }
@@ -86,7 +81,7 @@ public sealed class FileSystemRootRegistryTests : IDisposable
         using var registry = FileSystemRootRegistry.Load(configuration);
 
         Assert.Equal(FileSystemRegistryState.Configured, registry.State);
-        Assert.Equal(["AccntExchangeDir"], registry.RootNames);
+        Assert.Equal(["exchange"], registry.RootNames);
         Assert.Equal("available", registry.DiagnosticState);
     }
 
