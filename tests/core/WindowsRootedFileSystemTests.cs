@@ -90,7 +90,7 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
             "test");
         Directory.CreateDirectory(physicalRoot);
 
-        var source = $"""
+        var source = $$"""
             {
               // copied native Windows path
               "WebAssistant": {
