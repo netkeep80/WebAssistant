@@ -212,7 +212,7 @@ internal sealed class AppSettingsBootstrap : IDisposable
                 var sourceFiles = EnumerateAppSettingsFiles(
                     OriginalContentRoot);
                 var sourceNames = new HashSet<string>(
-                    sourceFiles.Select(Path.GetFileName),
+                    sourceFiles.Select(path => Path.GetFileName(path)!),
                     StringComparer.OrdinalIgnoreCase);
 
                 foreach (var sourceFile in sourceFiles)
@@ -378,7 +378,7 @@ internal sealed class AppSettingsBootstrap : IDisposable
     {
         if (!OperatingSystem.IsWindows())
         {
-            Directory.SetUnixFileMode(
+            File.SetUnixFileMode(
                 path,
                 UnixFileMode.UserRead |
                 UnixFileMode.UserWrite |
