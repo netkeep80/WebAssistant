@@ -48,8 +48,11 @@ public sealed class FileSystemRootRegistryTests : IDisposable
         Assert.Empty(registry.RootNames);
     }
 
-    [Fact]
-    public void Load_JsonPhysicalRootWithSpacesAndParentheses_IsConfigured()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Load_JsonPhysicalRootWithSpacesAndParentheses_IsConfigured(
+        bool useEscapedBackslashes)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -62,7 +65,9 @@ public sealed class FileSystemRootRegistryTests : IDisposable
             "Example App");
         Directory.CreateDirectory(physicalRoot);
 
-        var jsonPath = physicalRoot.Replace('\\', '/');
+        var jsonPath = useEscapedBackslashes
+            ? physicalRoot.Replace("\\", "\\\\", StringComparison.Ordinal)
+            : physicalRoot.Replace('\\', '/');
         var json = $$"""
             {
               "WebAssistant": {
