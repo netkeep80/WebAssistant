@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32.SafeHandles;
@@ -31,6 +32,46 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
         outside = Path.Combine(testRoot, "outside");
         Directory.CreateDirectory(root);
         Directory.CreateDirectory(outside);
+    }
+
+    [Fact]
+    public void FileSystemRegistry_LoadsJsonEscapedWindowsBackslashes()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var physicalRoot = Path.Combine(
+            testRoot,
+            "Program Files (x86)",
+            "Example App");
+        Directory.CreateDirectory(physicalRoot);
+
+        var escapedJsonPath = physicalRoot.Replace(
+            "\\",
+            "\\\\",
+            StringComparison.Ordinal);
+        var json = $"""
+            {
+              "WebAssistant": {
+                "FileSystem": {
+                  "exchange": "{{escapedJsonPath}}"
+                }
+              }
+            }
+            """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        var configuration = new ConfigurationBuilder()
+            .AddJsonStream(stream)
+            .Build();
+        using var registry = FileSystemRootRegistry.Load(configuration);
+
+        Assert.Equal(FileSystemRegistryState.Configured, registry.State);
+        Assert.Equal(["exchange"], registry.RootNames);
+        Assert.Equal("available", registry.DiagnosticState);
+        Assert.NotNull(registry.Resolve("exchange/", allowRoot: true).FileSystem);
     }
 
     [Fact]
