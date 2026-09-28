@@ -10,7 +10,8 @@ using WebAssistant.Logging;
 using WebAssistant.Runtime;
 using WebAssistant.Scanning;
 
-var builder = WebApplication.CreateBuilder(args);
+using var appSettingsBootstrap = AppSettingsBootstrap.Prepare(args);
+var builder = appSettingsBootstrap.CreateBuilder(args);
 
 builder.Host.UseSystemd();
 
