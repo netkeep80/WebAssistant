@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32.SafeHandles;
 using WebAssistant.FileSystem;
+using WebAssistant.Runtime;
 using Xunit;
 
 namespace WebAssistant.CoreTests;
@@ -72,6 +73,59 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
         Assert.Equal(["exchange"], registry.RootNames);
         Assert.Equal("available", registry.DiagnosticState);
         Assert.NotNull(registry.Resolve("exchange/", allowRoot: true).FileSystem);
+    }
+
+    [Fact]
+    public void FileSystemRegistry_LoadsNativeSingleBackslashPathThroughBootstrap()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var physicalRoot = Path.Combine(
+            testRoot,
+            "Program Files (x86)",
+            "new",
+            "test");
+        Directory.CreateDirectory(physicalRoot);
+
+        var source = $$"""
+            {
+              // copied native Windows path
+              "WebAssistant": {
+                "FileSystem": {
+                  "exchange": "{{physicalRoot}}"
+                }
+              }
+            }
+            """;
+        var appSettingsPath = Path.Combine(
+            testRoot,
+            "appsettings.json");
+        File.WriteAllText(appSettingsPath, source);
+
+        using var bootstrap = AppSettingsBootstrap.Prepare(
+            Array.Empty<string>(),
+            testRoot);
+        var builder = bootstrap.CreateBuilder(
+            Array.Empty<string>());
+        using var registry = FileSystemRootRegistry.Load(
+            builder.Configuration);
+
+        Assert.True(bootstrap.IsPreprocessed);
+        Assert.Equal(
+            FileSystemRegistryState.Configured,
+            registry.State);
+        Assert.Equal(["exchange"], registry.RootNames);
+        Assert.Equal("available", registry.DiagnosticState);
+        Assert.NotNull(
+            registry.Resolve(
+                "exchange/",
+                allowRoot: true).FileSystem);
+        Assert.Equal(
+            source,
+            File.ReadAllText(appSettingsPath));
     }
 
     [Fact]
