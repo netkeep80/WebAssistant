@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Primitives;
 using WebAssistant.FileSystem;
@@ -45,6 +46,48 @@ public sealed class FileSystemRootRegistryTests : IDisposable
 
         Assert.Equal(FileSystemRegistryState.ConfigurationInvalid, registry.State);
         Assert.Empty(registry.RootNames);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Load_JsonPhysicalRootWithSpacesAndParentheses_IsConfigured(
+        bool useEscapedBackslashes)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var physicalRoot = Path.Combine(
+            tempRoot,
+            "Program Files (x86)",
+            "TriumfRemote_1.0");
+        Directory.CreateDirectory(physicalRoot);
+
+        var jsonPath = useEscapedBackslashes
+            ? physicalRoot.Replace("\\", "\\\\", StringComparison.Ordinal)
+            : physicalRoot.Replace('\\', '/');
+        var json = $"""
+            {
+              "WebAssistant": {
+                "FileSystem": {
+                  "AccntExchangeDir": "{{jsonPath}}"
+                }
+              }
+            }
+            """;
+
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        var configuration = new ConfigurationBuilder()
+            .AddJsonStream(stream)
+            .Build();
+
+        using var registry = FileSystemRootRegistry.Load(configuration);
+
+        Assert.Equal(FileSystemRegistryState.Configured, registry.State);
+        Assert.Equal(["AccntExchangeDir"], registry.RootNames);
+        Assert.Equal("available", registry.DiagnosticState);
     }
 
     [Theory]
