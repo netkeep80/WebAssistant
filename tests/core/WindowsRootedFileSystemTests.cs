@@ -52,7 +52,7 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
             "\\",
             "\\\\",
             StringComparison.Ordinal);
-        var json = $"""
+        var json = $$"""
             {
               "WebAssistant": {
                 "FileSystem": {
