@@ -35,7 +35,7 @@ public sealed class WindowsRootedFileSystemTests : IDisposable
     }
 
     [Fact]
-    public void FileSystemRegistry_LoadsJsonEscapedWindowsBackslashes()
+    public void FileSystemRegistry_LoadsJsonEscapedWindowsBackslashesWithSpaces()
     {
         if (!OperatingSystem.IsWindows())
         {
