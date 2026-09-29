@@ -72,7 +72,7 @@ public sealed class WindowsInstallerPresentationContractTests
         }
 
         var generatorIndex = producer.IndexOf("--project $iconGeneratorProject", StringComparison.Ordinal);
-        var bundleBuildIndex = producer.IndexOf("& dotnet build $bundleProject", StringComparison.Ordinal);
+        var bundleBuildIndex = producer.IndexOf("& $dotnetExecutable build $bundleProject", StringComparison.Ordinal);
         Assert.True(generatorIndex >= 0 && bundleBuildIndex > generatorIndex,
             "Presentation generator must run before the WiX bundle build.");
     }
