@@ -10,7 +10,7 @@ if ([string]::IsNullOrWhiteSpace($dotnetExecutable)) {
     $dotnetCommand = Get-Command dotnet -CommandType Application -ErrorAction SilentlyContinue |
         Select-Object -First 1
     if ($null -eq $dotnetCommand) {
-        throw ".NET SDK 10 не найден. Запускайте canonical build через build\\windows\\package.bat."
+        throw ".NET SDK 10 не найден. Запускайте canonical build через build\windows\package.bat."
     }
     $dotnetExecutable = $dotnetCommand.Source
 }
