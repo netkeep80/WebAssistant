@@ -20,7 +20,7 @@ if (-not (Test-Path -LiteralPath $dotnetExecutable -PathType Leaf)) {
 }
 
 $resolvedSdkList = @(& $dotnetExecutable --list-sdks)
-if ($LASTEXITCODE -ne 0 -or -not ($resolvedSdkList | Where-Object { $_ -match '^10\\.' })) {
+if ($LASTEXITCODE -ne 0 -or -not ($resolvedSdkList | Where-Object { $_ -match '^10\.' })) {
     throw "Resolved dotnet executable не содержит .NET SDK 10: $dotnetExecutable"
 }
 
