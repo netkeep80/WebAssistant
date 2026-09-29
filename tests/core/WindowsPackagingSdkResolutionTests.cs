@@ -15,6 +15,7 @@ public sealed class WindowsPackagingSdkResolutionTests
 
         Assert.Contains("WEBASSISTANT_DOTNET_EXE", powershell, StringComparison.Ordinal);
         Assert.Contains("$dotnetExecutable", powershell, StringComparison.Ordinal);
+        Assert.Contains("& $dotnetExecutable --version", powershell, StringComparison.Ordinal);
         Assert.Contains("-match '^10\\.'", powershell, StringComparison.Ordinal);
         Assert.DoesNotContain("& dotnet ", powershell, StringComparison.Ordinal);
         Assert.DoesNotContain("(& dotnet ", powershell, StringComparison.Ordinal);
