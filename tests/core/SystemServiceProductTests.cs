@@ -188,7 +188,9 @@ public sealed class SystemServiceProductTests
 
         var packageBatText = File.ReadAllText(packageBatch);
         Assert.Contains("%~dp0", packageBatText, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("dotnet --list-sdks", packageBatText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("--list-sdks", packageBatText, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("WEBASSISTANT_DOTNET_EXE", packageBatText, StringComparison.Ordinal);
+        Assert.Contains("%ProgramFiles%\\dotnet\\dotnet.exe", packageBatText, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("winget install", packageBatText, StringComparison.OrdinalIgnoreCase);
 
         var acceptanceText = File.ReadAllText(acceptance);
