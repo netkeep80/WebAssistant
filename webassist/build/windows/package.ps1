@@ -5,6 +5,26 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$dotnetExecutable = $env:WEBASSISTANT_DOTNET_EXE
+if ([string]::IsNullOrWhiteSpace($dotnetExecutable)) {
+    $dotnetCommand = Get-Command dotnet -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($null -eq $dotnetCommand) {
+        throw ".NET SDK 10 не найден. Запускайте canonical build через build\\windows\\package.bat."
+    }
+    $dotnetExecutable = $dotnetCommand.Source
+}
+
+if (-not (Test-Path -LiteralPath $dotnetExecutable -PathType Leaf)) {
+    throw "Resolved dotnet executable не найден: $dotnetExecutable"
+}
+
+$resolvedSdkList = @(& $dotnetExecutable --list-sdks)
+if ($LASTEXITCODE -ne 0 -or -not ($resolvedSdkList | Where-Object { $_ -match '^10\\.' })) {
+    throw "Resolved dotnet executable не содержит .NET SDK 10: $dotnetExecutable"
+}
+
+
 function Get-Sha256Hex {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -115,7 +135,7 @@ foreach ($name in $metadataPropertyNames) {
 }
 
 try {
-    & dotnet run `
+    & $dotnetExecutable run `
         --project $metadataResolverProject `
         --configuration Release `
         -- `
@@ -187,7 +207,7 @@ try {
     New-Item $bundleOutput -ItemType Directory -Force | Out-Null
     New-Item $brandingOutput -ItemType Directory -Force | Out-Null
 
-    & dotnet run `
+    & $dotnetExecutable run `
         --project $iconGeneratorProject `
         --configuration Release `
         -- `
@@ -204,7 +224,7 @@ try {
         }
     }
 
-    & dotnet publish $preflightProject `
+    & $dotnetExecutable publish $preflightProject `
         --configuration Release `
         --runtime win-x64 `
         --self-contained true `
@@ -223,7 +243,7 @@ try {
     }
     $preflightPath = $preflightCandidates[0].FullName
 
-    & dotnet publish $projectPath `
+    & $dotnetExecutable publish $projectPath `
         --configuration Release `
         --runtime win-x64 `
         --self-contained true `
@@ -251,7 +271,7 @@ try {
         throw "В staged payload отсутствует appsettings.json."
     }
 
-    & dotnet build $packageProject `
+    & $dotnetExecutable build $packageProject `
         --configuration Release `
         "-p:PayloadRoot=$appDirectory" `
         "-p:ProductVersion=$version" `
@@ -266,7 +286,7 @@ try {
     }
     $msiPath = $msiCandidates[0].FullName
 
-    & dotnet build $bundleProject `
+    & $dotnetExecutable build $bundleProject `
         --configuration Release `
         "-p:MsiPath=$msiPath" `
         "-p:PreflightPath=$preflightPath" `
@@ -289,7 +309,7 @@ try {
         throw "Не создан canonical Windows artifact: $artifactPath"
     }
 
-    $sdkVersion = (& dotnet --version).Trim()
+    $sdkVersion = (& $dotnetExecutable --version).Trim()
     if ([string]::IsNullOrWhiteSpace($sdkVersion)) {
         $sdkVersion = "unknown"
     }
