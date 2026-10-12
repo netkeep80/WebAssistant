@@ -134,7 +134,8 @@
     "tests/core/CurrentStateDocumentationTests.cs",
     "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
     "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
-    "webassist/src/WebAssistant/Http/FileSystemMutationOriginPolicy.cs"
+    "webassist/src/WebAssistant/Http/FileSystemMutationOriginPolicy.cs",
+    "webassist/src/WebAssistant/Http/LoopbackHostGuard.cs"
   ],
   "vectors": [
     {
@@ -810,6 +811,25 @@
         "webassist/src/WebAssistant/Http/FileSystemEndpointHandlers.cs",
         "webassist/src/WebAssistant/Http/FileSystemMutationOriginPolicy.cs",
         "webassist/docs/api.md"
+      ]
+    },
+    {
+      "id": "WA-C-LOOPBACK-HOST-001",
+      "kind": "negative",
+      "assertion": "DNS rebinding через произвольный HTTP Host не предоставляет полномочий читать файловые/диагностические GET или выполнять mutating POST, несмотря на loopback-only TCP listener. Перед любой статикой и API неверный Host / DNS alias / wrong port получает 421 invalid_local_host; exact localhost/127.0.0.1 с действующим портом и совместимые клиенты без явного порта продолжают работать. CORS allowlist не расширяет Host authority.",
+      "requirements": [
+        "WA-NET-001",
+        "WA-NET-002",
+        "WA-CORS-001",
+        "WA-FS-001"
+      ],
+      "evidence": [
+        "tests/core/HttpFileSystemContractTests.cs",
+        "tests/core/FileSystemBrowserTests.cs",
+        "webassist/src/WebAssistant/Http/LoopbackHostGuard.cs",
+        "webassist/src/WebAssistant/Program.cs",
+        "webassist/docs/api.md",
+        "webassist/README.md"
       ]
     }
   ]
