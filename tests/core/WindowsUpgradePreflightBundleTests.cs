@@ -94,7 +94,7 @@ public sealed class WindowsUpgradePreflightBundleTests
 
         Assert.Contains("Write-PreflightDiagnosticEvidence", script, StringComparison.Ordinal);
         Assert.Contains("-SinceLineCount $repairPreflightBaselineLineCount", script, StringComparison.Ordinal);
-        Assert.Contains("preflight-fail\b", script, StringComparison.Ordinal);
+        Assert.Contains(@"preflight-fail\b", script, StringComparison.Ordinal);
         Assert.DoesNotContain("preflight-fail:", script, StringComparison.Ordinal);
     }
 
