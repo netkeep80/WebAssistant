@@ -124,11 +124,23 @@ function Get-ProcessIdentityById {
 function Test-SameProcessIdentityAlive {
     param([Parameter(Mandatory = $true)]$Identity)
 
-    $current = Get-ProcessIdentityById -ProcessId $Identity.ProcessId
-    if ($null -eq $current) {
+    $snapshot = Get-CimInstance Win32_Process -Filter "ProcessId=$($Identity.ProcessId)" -ErrorAction SilentlyContinue
+    if ($null -eq $snapshot) {
         return $false
     }
 
+    # CIM может вернуть строку завершившегося процесса без ExecutablePath.
+    # Исключать процесс разрешено лишь после независимого подтверждения завершения.
+    if ([string]::IsNullOrWhiteSpace([string]$snapshot.ExecutablePath)) {
+        $processState = Get-Process -Id $Identity.ProcessId -ErrorAction SilentlyContinue
+        if ($null -eq $processState -or $processState.HasExited) {
+            return $false
+        }
+
+        throw "Путь работающего процесса не подтверждён: PID=$($Identity.ProcessId)."
+    }
+
+    $current = ConvertTo-ProcessIdentity -Process $snapshot
     return `
         $current.CreationDate.Ticks -eq $Identity.CreationDate.Ticks -and `
         [string]::Equals($current.ImagePath, $Identity.ImagePath, [StringComparison]::OrdinalIgnoreCase)
