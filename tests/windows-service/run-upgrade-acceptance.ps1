@@ -324,7 +324,7 @@ function Assert-UpgradePreflightBeforeMsi {
     if ($preflightDiagnostic -notmatch '(?m)^\S+\s+preflight-pass\s*$') {
         throw "UpgradePreflight diagnostic log has no preflight-pass evidence."
     }
-    if ($preflightDiagnostic -match '(?m)^\S+\s+preflight-fail:') {
+    if ($preflightDiagnostic -match '(?m)^\S+\s+preflight-fail\b') {
         throw "UpgradePreflight diagnostic log contains preflight-fail evidence."
     }
 }
@@ -404,6 +404,32 @@ function Write-BundleFailureEvidence {
         foreach ($match in $matches) {
             Write-Host "bundle_failure_evidence=$($match.LineNumber):$($match.Line.Trim())"
         }
+    }
+}
+
+function Write-PreflightDiagnosticEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$DiagnosticLog,
+        [Parameter(Mandatory = $true)][string]$Stage,
+        [int]$SinceLineCount = 0
+    )
+
+    if (-not (Test-Path -LiteralPath $DiagnosticLog -PathType Leaf)) {
+        Write-Host "preflight_diagnostic_missing stage=$Stage"
+        return
+    }
+
+    $allLines = @(Get-Content -LiteralPath $DiagnosticLog)
+    if ($allLines.Count -lt $SinceLineCount) {
+        Write-Host "preflight_diagnostic_truncated stage=$Stage previousLines=$SinceLineCount currentLines=$($allLines.Count)"
+        return
+    }
+
+    $stageLines = @($allLines | Select-Object -Skip $SinceLineCount)
+    Write-Host "preflight_diagnostic_line_count stage=$Stage count=$($stageLines.Count)"
+    foreach ($line in $stageLines) {
+        Write-Host "preflight_diagnostic_evidence stage=$Stage line=$line"
+        $line
     }
 }
 
@@ -652,14 +678,113 @@ try {
     if (Test-Path -LiteralPath $repairLog) {
         Remove-Item -LiteralPath $repairLog -Force
     }
-    $repairExitCode = Invoke-Bundle `
+    $repairPreflightBaselineLineCount = if (Test-Path -LiteralPath $preflightDiagnosticLog -PathType Leaf) {
+        @(Get-Content -LiteralPath $preflightDiagnosticLog).Count
+    } else {
+        0
+    }
+    $repairExitCode = Invoke-Bundle 
         -Executable $candidate.Path `
         -Arguments @('/repair', '/quiet', '/norestart', '/log', $repairLog) `
         -Operation "same-version repair $($candidate.Version)" `
         -AllowFailure
+    $repairDiagnostic = @(Write-PreflightDiagnosticEvidence -DiagnosticLog $preflightDiagnosticLog -SinceLineCount $repairPreflightBaselineLineCount -Stage 'same-version repair')
     if ($repairExitCode -ne 0) {
         Write-BundleFailureEvidence -PrimaryLog $repairLog -Stage 'same-version repair'
         throw "WebAssistant bundle same-version repair $($candidate.Version) failed with exit code $repairExitCode."
+    }
+    if (@($repairDiagnostic | Where-Object { $_ -match '^\S+\s+preflight-fail\b' }).Count -gt 0 -or
+        @($repairDiagnostic | Where-Object { $_ -match '^\S+\s+preflight-start\b' }).Count -ne 1 -or
+        @($repairDiagnostic | Where-Object { $_ -match '^\S+\s+preflight-pass\s*
+    Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
+    Assert-InstalledNaps2SdkMatchesCandidate `
+        -InstallDirectory $installDirectoryFull `
+        -ExpectedSha256 $candidateSdk.Sha256 `
+        -Stage 'same-version repair'
+    Invoke-Scanners -ExpectedPort $Port | Out-Null
+    Assert-ProgramDataSentinels
+    Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'same-version repair'
+
+    # Downgrade must be rejected and leave the candidate intact.
+    if (Test-Path -LiteralPath $downgradeLog) {
+        Remove-Item -LiteralPath $downgradeLog -Force
+    }
+    $downgradeExitCode = Invoke-Bundle `
+        -Executable $historical.Path `
+        -Arguments @('/quiet', '/norestart', '/log', $downgradeLog) `
+        -Operation "downgrade $($candidate.Version) -> $historicalVersion" `
+        -AllowFailure
+    if ($downgradeExitCode -eq 0) {
+        throw "Historical $historicalVersion installer did not reject downgrade from candidate $($candidate.Version)."
+    }
+    Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
+    Invoke-Scanners -ExpectedPort $Port | Out-Null
+    Assert-ProgramDataSentinels
+    Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'rejected downgrade'
+
+    $finalCandidateSha = (Get-FileHash -LiteralPath $candidate.Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($finalCandidateSha -ne $candidate.Sha256) {
+        throw "Candidate artifact bytes changed during upgrade acceptance."
+    }
+
+    # Uninstall the candidate from a live scanner state, then prove product removal and ProgramData preservation.
+    $uninstallServiceInfo = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
+    $uninstallServicePid = [int]$uninstallServiceInfo.ProcessId
+    $uninstallWorkers = @(Wait-PackageOwnedWorker -ParentProcessId $uninstallServicePid)
+    $uninstallWorkerIdentities = @($uninstallWorkers | ForEach-Object {
+        Get-ProcessIdentity -ProcessId ([int]$_.ProcessId)
+    })
+
+    if (Test-Path -LiteralPath $uninstallLog) {
+        Remove-Item -LiteralPath $uninstallLog -Force
+    }
+    Invoke-Bundle `
+        -Executable $candidate.Path `
+        -Arguments @('/uninstall', '/quiet', '/norestart', '/log', $uninstallLog) `
+        -Operation 'candidate uninstall' | Out-Null
+    $candidateInstalled = $false
+
+    Wait-ServiceAbsent
+    if (Test-Path -LiteralPath $installDirectoryFull) {
+        throw "Program Files WebAssistant payload remained after candidate uninstall."
+    }
+    if ((Get-WebAssistantBundleEntries).Count -ne 0) {
+        throw "WebAssistant Installed Apps entry remained after candidate uninstall."
+    }
+    foreach ($workerIdentity in $uninstallWorkerIdentities) {
+        Assert-ProcessIdentityGone -Identity $workerIdentity -Description 'Candidate NAPS2.Worker after uninstall'
+    }
+    Assert-ProgramDataSentinels
+
+    Write-Host "windows_live_worker_upgrade_acceptance=PASS from=$historicalVersion to=$($candidate.Version)"
+}
+finally {
+    $ErrorActionPreference = 'Continue'
+
+    if ($candidateInstalled) {
+        Invoke-Bundle `
+            -Executable $candidate.Path `
+            -Arguments @('/uninstall', '/quiet', '/norestart') `
+            -Operation 'candidate cleanup uninstall' `
+            -AllowFailure | Out-Null
+    }
+    elseif ($historicalInstalled) {
+        Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
+        foreach ($capturedIdentity in $capturedHistoricalIdentities) {
+            $process = Get-Process -Id ([int]$capturedIdentity.ProcessId) -ErrorAction SilentlyContinue
+            if ($process -and $process.StartTime.ToUniversalTime() -eq $capturedIdentity.StartTimeUtc) {
+                Stop-Process -Id ([int]$capturedIdentity.ProcessId) -Force -ErrorAction SilentlyContinue
+            }
+        }
+        Invoke-Bundle `
+            -Executable $historical.Path `
+            -Arguments @('/uninstall', '/quiet', '/norestart') `
+            -Operation 'historical cleanup uninstall' `
+            -AllowFailure | Out-Null
+    }
+}
+ }).Count -ne 1) {
+        throw "Same-version repair lacks a single successful, failure-free UpgradePreflight execution."
     }
     Assert-NoFilesInUseEvidence -PrimaryLog $repairLog
     Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
