@@ -98,6 +98,17 @@ public sealed class WindowsUpgradePreflightBundleTests
         Assert.DoesNotContain("preflight-fail:", script, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void WindowsServiceAcceptance_HandlesMissingExitedProcessPathWithoutMaskingLiveProcess()
+    {
+        var script = ReadRequired("tests/windows-service/run-service-acceptance.ps1");
+
+        Assert.Contains("function Test-SameProcessIdentityAlive", script, StringComparison.Ordinal);
+        Assert.Contains("Get-Process -Id $Identity.ProcessId", script, StringComparison.Ordinal);
+        Assert.Contains("$processState.HasExited", script, StringComparison.Ordinal);
+        Assert.Contains("Путь работающего процесса не подтверждён", script, StringComparison.Ordinal);
+    }
+
     private static string ReadRequired(string relativePath)
     {
         var path = ToFullPath(relativePath);
