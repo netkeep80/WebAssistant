@@ -133,7 +133,8 @@
     "tests/core/DocumentationGovernanceTests.cs",
     "tests/core/CurrentStateDocumentationTests.cs",
     "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
-    "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs"
+    "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
+    "webassist/src/WebAssistant/Http/FileSystemMutationOriginPolicy.cs"
   ],
   "vectors": [
     {
@@ -793,6 +794,22 @@
         "webassist/docs/installation-guide/evidence.py",
         "webassist/docs/installation-guide/build.sh",
         "webassist/docs/installation-guide/verify.sh"
+      ]
+    },
+    {
+      "id": "WA-C-FILESYSTEM-ORIGIN-001",
+      "kind": "negative",
+      "assertion": "Недоверенный браузерный Origin не может отправить простой POST для удаления или загрузки файлов при выключенном либо включённом CORS. Изменяющие endpoints проверяют точные локальные origins либо разрешённые CORS origins до доступа к файловому корню; nullable/malformed/foreign Origin и cross-site/same-site fetch metadata не получают полномочий. Отказ выдаёт 403 filesystem_origin_forbidden, а совместимые programmatic HTTP-запросы без Origin и read-only POST /find сохраняют поведение.",
+      "requirements": [
+        "WA-FS-012",
+        "WA-CORS-001"
+      ],
+      "evidence": [
+        "tests/core/HttpFileSystemContractTests.cs",
+        "tests/core/CorsConfigurationTests.cs",
+        "webassist/src/WebAssistant/Http/FileSystemEndpointHandlers.cs",
+        "webassist/src/WebAssistant/Http/FileSystemMutationOriginPolicy.cs",
+        "webassist/docs/api.md"
       ]
     }
   ]
