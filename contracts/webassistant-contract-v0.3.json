@@ -47,6 +47,11 @@
       "statement": "Browser-facing listener привязывается только к loopback. Текущий default endpoint — http://127.0.0.1:17654; публикация на LAN или 0.0.0.0 запрещена."
     },
     {
+      "id": "WA-NET-002",
+      "kind": "required",
+      "statement": "Независимо от loopback-only TCP listener и настроек CORS, перед любым HTTP-ресурсом WebAssistant (static pages, v1 API, scanner, diagnostics, filesystem) сервер проверяет HTTP Host. Допустимы только точные 127.0.0.1 и localhost; если Host содержит явный порт, он должен совпадать с WebAssistant:Port. Отсутствующий порт допускается для программных клиентов/TestServer. DNS-алиасы, другие адреса loopback, суффиксные имена, неверные порты и невалидный Host отклоняются до обработки запроса с 421 application/problem+json, code invalid_local_host и без раскрытия физических путей. CORS AllowedOrigins не расширяет разрешённые значения Host; собственные localhost/127.0.0.1 GET/POST сохраняют работу."
+    },
+    {
       "id": "WA-API-001",
       "kind": "required",
       "statement": "Текущие machine REST operations имеют major-version prefix /v1; production service panel доступна по /."
