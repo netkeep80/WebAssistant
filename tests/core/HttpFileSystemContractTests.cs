@@ -426,6 +426,68 @@ public sealed class HttpFileSystemContractTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("/v1/filesystem/roots")]
+    [InlineData("/v1/filesystem/list?path=archive%2F")]
+    [InlineData("/v1/diag/info")]
+    [InlineData("/filesystem.html")]
+    public async Task HostSpoofing_CannotReadApiDiagnosticsOrStaticPage(string route)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, route);
+        request.Headers.Host = "attacker.test:17654";
+
+        using var response = await client.SendAsync(request);
+
+        await AssertProblemCodeAsync(
+            response, (HttpStatusCode)421, "invalid_local_host");
+        Assert.DoesNotContain(
+            root, await response.Content.ReadAsStringAsync(),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("localhost.attacker.test:17654")]
+    [InlineData("127.0.0.1.attacker.test:17654")]
+    [InlineData("127.0.0.2:17654")]
+    [InlineData("localhost:17655")]
+    [InlineData("127.0.0.1:17653")]
+    public async Task MaliciousOrWrongPortHost_CannotMutateFile(string host)
+    {
+        var victim = Path.Combine(root, "host-probe.txt");
+        await File.WriteAllTextAsync(victim, "original");
+        using var delete = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/v1/filesystem/file/delete?path=archive%2Fhost-probe.txt");
+        delete.Headers.Host = host;
+
+        using var response = await client.SendAsync(delete);
+
+        await AssertProblemCodeAsync(
+            response, (HttpStatusCode)421, "invalid_local_host");
+        Assert.Equal("original", await File.ReadAllTextAsync(victim));
+    }
+
+    [Theory]
+    [InlineData("localhost")]
+    [InlineData("127.0.0.1")]
+    [InlineData("localhost:17654")]
+    [InlineData("127.0.0.1:17654")]
+    public async Task ExactLocalHost_CanListConfiguredRoots(string host)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, "/v1/filesystem/roots");
+        request.Headers.Host = host;
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Contains(
+            "archive",
+            json.RootElement.GetProperty("roots")
+                .EnumerateArray().Select(x => x.GetString()));
+    }
+
     private static WebApplicationFactory<Program> CreateFactory(string rootDirectory, string? corsOrigin = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
