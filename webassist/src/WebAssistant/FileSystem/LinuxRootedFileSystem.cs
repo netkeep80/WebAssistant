@@ -10,6 +10,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
     private const int O_WRONLY = 1;
     private const int O_CREAT = 0x40;
     private const int O_EXCL = 0x80;
+    private const int O_NONBLOCK = 0x800;
     private const int O_DIRECTORY = 0x10000;
     private const int O_NOFOLLOW = 0x20000;
     private const int O_CLOEXEC = 0x80000;
@@ -152,7 +153,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         var descriptor = OpenAt2(
             GetFd(rootHandle),
             parsed.Value,
-            O_RDONLY | O_CLOEXEC | O_NOFOLLOW,
+            O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW,
             SecureResolveFlags);
 
         if (descriptor < 0)
@@ -196,7 +197,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
         var descriptor = OpenAt2(
             GetFd(rootHandle),
             parsed.Value,
-            O_RDONLY | O_CLOEXEC | O_NOFOLLOW,
+            O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW,
             SecureResolveFlags);
 
         if (descriptor < 0)
