@@ -115,6 +115,23 @@ if (startupDiagnosticsLogger.IsEnabled(LogLevel.Debug))
     }
 }
 
+app.Use(async (httpContext, next) =>
+{
+    if (!LoopbackHostGuard.IsAllowed(httpContext.Request.Host, runtimeOptions.Port))
+    {
+        await Results.Problem(
+            statusCode: StatusCodes.Status421MisdirectedRequest,
+            title: "Недопустимый адрес локальной службы",
+            extensions: new Dictionary<string, object?>
+            {
+                ["code"] = "invalid_local_host"
+            }).ExecuteAsync(httpContext);
+        return;
+    }
+
+    await next();
+});
+
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseDefaultFiles();
 app.UseStaticFiles();

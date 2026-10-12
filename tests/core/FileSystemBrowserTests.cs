@@ -364,6 +364,79 @@ public sealed class FileSystemBrowserTests
         }
     }
 
+    [Fact]
+    public async Task Chromium_DnsAliasResolvingToLoopback_CannotReadFilesystem()
+    {
+        var repo = FindRoot();
+        var temp = Path.Combine(
+            Path.GetTempPath(),
+            "webassistant-rebinding-browser",
+            Guid.NewGuid().ToString("N"));
+        var archive = Path.Combine(temp, "archive");
+        var logs = Path.Combine(temp, "logs");
+        Directory.CreateDirectory(archive);
+        Directory.CreateDirectory(logs);
+        await File.WriteAllTextAsync(Path.Combine(archive, "private.txt"), "secret");
+
+        var port = FreePort();
+        var product = Path.Combine(repo, "webassist", "src", "WebAssistant");
+        var psi = new ProcessStartInfo(
+            "dotnet",
+            $"run --no-build --project \"{Path.Combine(product, "WebAssistant.csproj")}\" --configuration Release")
+        {
+            UseShellExecute = false,
+            WorkingDirectory = product
+        };
+        psi.Environment["WebAssistant__Port"] = port.ToString();
+        psi.Environment["WebAssistant__FileSystem__archive"] = archive;
+        psi.Environment["WebAssistant__LogDirectory"] = logs;
+        using var service = Process.Start(psi)!;
+        try
+        {
+            await WaitHealthy($"http://127.0.0.1:{port}");
+            using var playwright = await Playwright.CreateAsync();
+            await using var browser = await playwright.Chromium.LaunchAsync(new()
+            {
+                Headless = true,
+                Args = new[]
+                {
+                    "--no-proxy-server",
+                    "--host-resolver-rules=MAP attacker.test 127.0.0.1"
+                }
+            });
+            var page = await browser.NewPageAsync();
+            var rebinding = await page.GotoAsync(
+                $"http://attacker.test:{port}/v1/filesystem/roots");
+            Assert.NotNull(rebinding);
+            Assert.Equal(421, rebinding.Status);
+            Assert.Contains(
+                "invalid_local_host",
+                await rebinding.TextAsync(),
+                StringComparison.Ordinal);
+
+            var normal = await page.GotoAsync(
+                $"http://127.0.0.1:{port}/v1/filesystem/roots");
+            Assert.NotNull(normal);
+            Assert.Equal(200, normal.Status);
+            Assert.Contains("archive", await normal.TextAsync(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (!service.HasExited)
+            {
+                service.Kill(entireProcessTree: true);
+            }
+
+            try
+            {
+                Directory.Delete(temp, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
     private static int FreePort()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
