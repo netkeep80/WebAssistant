@@ -330,6 +330,8 @@ public sealed class HttpFileSystemContractTests : IDisposable
     [InlineData("null")]
     [InlineData("http://localhost:9999")]
     [InlineData("http://localhost:17654.attacker.test")]
+    [InlineData("http://127.0.0.1:17654/")]
+    [InlineData("http://127.0.0.1:17654,https://untrusted.test")]
     public async Task ForeignBrowserOrigin_CannotDeleteFileOrPublishOpaqueUpload(string origin)
     {
         var victim = Path.Combine(root, "victim.txt");
