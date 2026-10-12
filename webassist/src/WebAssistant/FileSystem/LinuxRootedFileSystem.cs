@@ -43,10 +43,12 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
 
     private const int EPERM = 1;
     private const int ENOENT = 2;
+    private const int ENXIO = 6;
     private const int EACCES = 13;
     private const int EBUSY = 16;
     private const int EEXIST = 17;
     private const int EXDEV = 18;
+    private const int ENODEV = 19;
     private const int ENOTDIR = 20;
     private const int EISDIR = 21;
     private const int EINVAL = 22;
@@ -1082,6 +1084,9 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
             ENOENT or ENOTDIR => new FileSystemOperationException(
                 FileSystemErrorCodes.NotFound,
                 message),
+            ENXIO or ENODEV => new FileSystemOperationException(
+                FileSystemErrorCodes.InvalidPath,
+                "Невозможно читать специальный файловый объект.")
             ELOOP or EXDEV => UnsafeLink(message),
             EACCES or EPERM or EBUSY or ETXTBSY => new FileSystemOperationException(
                 FileSystemErrorCodes.Locked,
