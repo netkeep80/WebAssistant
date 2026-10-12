@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Net.Sockets;
 using WebAssistant.FileSystem;
 using Xunit;
 
@@ -168,6 +169,32 @@ public sealed class LinuxRootedFileSystemTests : IDisposable
 
         Assert.True(finishedWithoutWriter,
             "Открытие специального файла заблокировалось в ожидании FIFO writer.");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LinuxRootedFileSystem_UnixSocketIsNotDownloadable(
+        bool stableRead)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        using var socket = new Socket(
+            AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        socket.Bind(new UnixDomainSocketEndPoint(Path.Combine(root, "socket.sock")));
+        using var fileSystem = new LinuxRootedFileSystem(root);
+
+        var error = await Assert.ThrowsAsync<FileSystemOperationException>(
+            async () =>
+            {
+                await using var stream = stableRead
+                    ? await fileSystem.OpenStableReadAsync("socket.sock")
+                    : await fileSystem.OpenReadAsync("socket.sock");
+            });
+        Assert.Equal(FileSystemErrorCodes.InvalidPath, error.Code);
     }
 
     [Fact]
