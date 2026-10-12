@@ -325,14 +325,115 @@ public sealed class HttpFileSystemContractTests : IDisposable
         }
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(string rootDirectory) =>
+    [Theory]
+    [InlineData("https://untrusted.test")]
+    [InlineData("null")]
+    [InlineData("http://localhost:9999")]
+    [InlineData("http://localhost:17654.attacker.test")]
+    public async Task ForeignBrowserOrigin_CannotDeleteFileOrPublishOpaqueUpload(string origin)
+    {
+        var victim = Path.Combine(root, "victim.txt");
+        await File.WriteAllTextAsync(victim, "original");
+
+        using (var delete = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/v1/filesystem/file/delete?path=archive%2Fvictim.txt"))
+        {
+            delete.Headers.TryAddWithoutValidation("Origin", origin);
+            delete.Content = new StringContent("browser=form", System.Text.Encoding.UTF8, "application/x-www-form-urlencoded");
+            using var response = await client.SendAsync(delete);
+            await AssertProblemCodeAsync(response, HttpStatusCode.Forbidden, "filesystem_origin_forbidden");
+        }
+
+        Assert.Equal("original", await File.ReadAllTextAsync(victim));
+
+        using (var upload = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/v1/filesystem/file?path=archive%2Fcreated.txt"))
+        {
+            upload.Headers.TryAddWithoutValidation("Origin", origin);
+            upload.Content = new StringContent("attack", System.Text.Encoding.UTF8, "text/plain");
+            using var response = await client.SendAsync(upload);
+            await AssertProblemCodeAsync(response, HttpStatusCode.Forbidden, "filesystem_origin_forbidden");
+        }
+
+        Assert.False(File.Exists(Path.Combine(root, "created.txt")));
+    }
+
+    [Theory]
+    [InlineData("cross-site")]
+    [InlineData("same-site")]
+    public async Task BrowserFetchMetadataWithoutOrigin_CannotDeleteFile(string fetchSite)
+    {
+        var victim = Path.Combine(root, "victim.txt");
+        await File.WriteAllTextAsync(victim, "original");
+        using var delete = new HttpRequestMessage(
+            HttpMethod.Post, "/v1/filesystem/file/delete?path=archive%2Fvictim.txt");
+        delete.Headers.TryAddWithoutValidation("Sec-Fetch-Site", fetchSite);
+        using var response = await client.SendAsync(delete);
+        await AssertProblemCodeAsync(response, HttpStatusCode.Forbidden, "filesystem_origin_forbidden");
+        Assert.Equal("original", await File.ReadAllTextAsync(victim));
+    }
+
+    [Theory]
+    [InlineData("http://127.0.0.1:17654")]
+    [InlineData("http://localhost:17654")]
+    public async Task DiagnosticPageOwnOrigin_CanDeleteFile(string origin)
+    {
+        var victim = Path.Combine(root, "victim.txt");
+        await File.WriteAllTextAsync(victim, "original");
+        using var delete = new HttpRequestMessage(
+            HttpMethod.Post, "/v1/filesystem/file/delete?path=archive%2Fvictim.txt");
+        delete.Headers.TryAddWithoutValidation("Origin", origin);
+        using var response = await client.SendAsync(delete);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.False(File.Exists(victim));
+    }
+
+    [Fact]
+    public async Task ConfiguredCorsOrigin_CanPerformMutationButUnlistedOriginCannot()
+    {
+        using var allowedFactory = CreateFactory(root, "https://approved.test");
+        using var allowedClient = allowedFactory.CreateClient();
+        using var allowed = new HttpRequestMessage(HttpMethod.Post, "/v1/filesystem/directory");
+        allowed.Headers.TryAddWithoutValidation("Origin", "https://approved.test");
+        allowed.Content = JsonContent.Create(new { path = "archive/approved" });
+        using var allowedResponse = await allowedClient.SendAsync(allowed);
+        Assert.Equal(HttpStatusCode.NoContent, allowedResponse.StatusCode);
+        Assert.True(Directory.Exists(Path.Combine(root, "approved")));
+
+        using var denied = new HttpRequestMessage(HttpMethod.Post, "/v1/filesystem/directory");
+        denied.Headers.TryAddWithoutValidation("Origin", "https://untrusted.test");
+        denied.Content = JsonContent.Create(new { path = "archive/denied" });
+        using var deniedResponse = await allowedClient.SendAsync(denied);
+        await AssertProblemCodeAsync(deniedResponse, HttpStatusCode.Forbidden, "filesystem_origin_forbidden");
+        Assert.False(Directory.Exists(Path.Combine(root, "denied")));
+    }
+
+    [Fact]
+    public async Task OriginlessProgrammaticPostAndReadOnlyFindRemainCompatible()
+    {
+        using var create = await client.PostAsJsonAsync(
+            "/v1/filesystem/directory", new { path = "archive/safe" });
+        Assert.Equal(HttpStatusCode.NoContent, create.StatusCode);
+
+        using var find = new HttpRequestMessage(HttpMethod.Post, "/v1/filesystem/find");
+        find.Headers.TryAddWithoutValidation("Origin", "https://untrusted.test");
+        find.Content = JsonContent.Create(new { path = "archive/", names = new[] { "safe" } });
+        using var response = await client.SendAsync(find);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    private static WebApplicationFactory<Program> CreateFactory(string rootDirectory, string? corsOrigin = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    [$"WebAssistant:FileSystem:{LogicalRoot}"] = rootDirectory
+                    [$"WebAssistant:FileSystem:{LogicalRoot}"] = rootDirectory,
+                    ["WebAssistant:Cors:Enabled"] = corsOrigin is null ? "false" : "true",
+                    ["WebAssistant:Cors:AllowedOrigins:0"] = corsOrigin
                 });
             });
         });
