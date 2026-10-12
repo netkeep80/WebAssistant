@@ -260,6 +260,11 @@
       "id": "WA-FS-012",
       "kind": "required",
       "statement": "До исполнения любого изменяющего POST /v1/filesystem/* (upload, delete-file, create/delete-directory, file/directory move, rename) сервер проверяет происхождение браузерного запроса, независимо от CORS preflight. При наличии Origin допускаются только точные http://127.0.0.1:<WebAssistant:Port>, http://localhost:<WebAssistant:Port> или явно разрешённые exact origins при активном CORS; null, неоднозначные и посторонние Origin запрещены. Заголовок Host не предоставляет полномочий. При отсутствии Origin запрос без Sec-Fetch-Site остаётся совместимым с программными HTTP-клиентами, а Sec-Fetch-Site допускает лишь same-origin/none. Отказ происходит до обработки тела/изменения файлов и возвращает 403 application/problem+json с code filesystem_origin_forbidden без физических путей. GET и read-only POST /v1/filesystem/find сохраняют свои существующие правила."
+    },
+    {
+      "id": "WA-FS-013",
+      "kind": "required",
+      "statement": "На Linux при GET /v1/filesystem/file и получении файлов для ZIP операция OpenReadAsync/OpenStableReadAsync открывает объект descriptor-relative посредством openat2 с O_NONBLOCK, O_NOFOLLOW и действующими RESOLVE_BENEATH/NO_SYMLINKS/NO_MAGICLINKS; затем выполняет fstat уже открытого fd и разрешает только обычный файл (S_IFREG) с допустимой ссылочностью. FIFO без писателя не может блокировать поток до проверки типа, UNIX socket/device и другие специальные объекты не читаются, а возвращают нормализованную безопасную ошибку filesystem_path_invalid или эквивалентную. Проверка только pathname до открытия, расширение rooted authority, копирование содержимого специальных объектов и изменение stable-read lease/no-writer правил запрещены."
     }
   ]
 }

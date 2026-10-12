@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Net.Sockets;
 using WebAssistant.FileSystem;
 using Xunit;
 
@@ -107,6 +108,93 @@ public sealed class LinuxRootedFileSystemTests : IDisposable
             });
 
         Assert.Equal(FileSystemErrorCodes.Locked, error.Code);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LinuxRootedFileSystem_FifoReadRejectsWithoutWaitingForWriter(
+        bool stableRead)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        const string name = "blocked.fifo";
+        var path = Path.Combine(root, name);
+        Assert.Equal(0, MkFifo(path, 0x1B6)); // 0666: umask применяется ОС.
+        using var fileSystem = new LinuxRootedFileSystem(root);
+
+        // Отдельный поток обязателен: старый нативный openat2(O_RDONLY)
+        // блокируется синхронно ещё до возврата ValueTask.
+        var entered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var attempt = Task.Run(async () =>
+        {
+            entered.SetResult();
+            await using var stream = stableRead
+                ? await fileSystem.OpenStableReadAsync(name)
+                : await fileSystem.OpenReadAsync(name);
+        });
+
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var finishedWithoutWriter = false;
+        var unblockFd = -1;
+        try
+        {
+            finishedWithoutWriter = await Task.WhenAny(
+                attempt,
+                Task.Delay(TimeSpan.FromSeconds(1))) == attempt;
+
+            if (!finishedWithoutWriter)
+            {
+                // RED не может оставить вечный заблокированный поток в CI:
+                // временно открытый writer освобождает старый openat2.
+                unblockFd = OpenFifo(path, 0x2 | 0x800); // O_RDWR | O_NONBLOCK
+                Assert.True(unblockFd >= 0, "Не удалось разблокировать тестовый FIFO.");
+            }
+
+            var error = await Assert.ThrowsAsync<FileSystemOperationException>(
+                async () => await attempt.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.Equal(FileSystemErrorCodes.InvalidPath, error.Code);
+        }
+        finally
+        {
+            if (unblockFd >= 0)
+            {
+                Assert.Equal(0, CloseFifo(unblockFd));
+            }
+        }
+
+        Assert.True(finishedWithoutWriter,
+            "Открытие специального файла заблокировалось в ожидании FIFO writer.");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LinuxRootedFileSystem_UnixSocketIsNotDownloadable(
+        bool stableRead)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        using var socket = new Socket(
+            AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        socket.Bind(new UnixDomainSocketEndPoint(Path.Combine(root, "socket.sock")));
+        using var fileSystem = new LinuxRootedFileSystem(root);
+
+        var error = await Assert.ThrowsAsync<FileSystemOperationException>(
+            async () =>
+            {
+                await using var stream = stableRead
+                    ? await fileSystem.OpenStableReadAsync("socket.sock")
+                    : await fileSystem.OpenReadAsync("socket.sock");
+            });
+        Assert.Equal(FileSystemErrorCodes.InvalidPath, error.Code);
     }
 
     [Fact]
@@ -292,6 +380,15 @@ public sealed class LinuxRootedFileSystemTests : IDisposable
 
         Directory.Delete(slot, recursive: true);
     }
+
+    [DllImport("libc", EntryPoint = "mkfifo", SetLastError = true)]
+    private static extern int MkFifo(string path, uint mode);
+
+    [DllImport("libc", EntryPoint = "open", SetLastError = true)]
+    private static extern int OpenFifo(string path, int flags);
+
+    [DllImport("libc", EntryPoint = "close", SetLastError = true)]
+    private static extern int CloseFifo(int fd);
 
     [DllImport("libc", EntryPoint = "link", SetLastError = true)]
     private static extern int Link(string existingPath, string newPath);

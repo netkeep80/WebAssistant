@@ -136,7 +136,8 @@
     "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
     "webassist/src/WebAssistant/Http/FileSystemMutationOriginPolicy.cs",
     "webassist/src/WebAssistant/Http/LoopbackHostGuard.cs",
-    "webassist/src/WebAssistant/Program.cs"
+    "webassist/src/WebAssistant/Program.cs",
+    "webassist/src/WebAssistant/FileSystem/LinuxRootedFileSystem.cs"
   ],
   "vectors": [
     {
@@ -829,6 +830,24 @@
         "tests/core/FileSystemBrowserTests.cs",
         "webassist/src/WebAssistant/Http/LoopbackHostGuard.cs",
         "webassist/src/WebAssistant/Program.cs",
+        "webassist/docs/api.md",
+        "webassist/README.md"
+      ]
+    },
+    {
+      "id": "WA-C-LINUX-FIFO-001",
+      "kind": "negative",
+      "assertion": "Linux FIFO без писателя не блокирует синхронное открытие файлов и stable-read для ZIP: openat2(O_NONBLOCK) -> fstat уже открытого fd -> normal filesystem_path_invalid для не-regular. Bounded tests запускают reader отдельно, при прежнем зависании создают временного writer, после чего подтверждают отсутствие ожидания на GREEN; UNIX socket и другие не-regular entries отвергаются, ordinary regular file reads сохраняются.",
+      "requirements": [
+        "WA-FS-001",
+        "WA-FS-005",
+        "WA-FS-007",
+        "WA-FS-011",
+        "WA-FS-013"
+      ],
+      "evidence": [
+        "tests/core/LinuxRootedFileSystemTests.cs",
+        "webassist/src/WebAssistant/FileSystem/LinuxRootedFileSystem.cs",
         "webassist/docs/api.md",
         "webassist/README.md"
       ]
