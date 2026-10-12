@@ -382,7 +382,7 @@ public sealed class FileSystemBrowserTests
         var product = Path.Combine(repo, "webassist", "src", "WebAssistant");
         var psi = new ProcessStartInfo(
             "dotnet",
-            $"run --no-build --project \\"{Path.Combine(product, "WebAssistant.csproj")}\\" --configuration Release")
+            $"run --no-build --project \"{Path.Combine(product, "WebAssistant.csproj")}\" --configuration Release")
         {
             UseShellExecute = false,
             WorkingDirectory = product
