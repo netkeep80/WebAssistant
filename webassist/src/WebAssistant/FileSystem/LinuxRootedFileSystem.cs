@@ -1086,7 +1086,7 @@ internal sealed class LinuxRootedFileSystem : IRootedFileSystem, IDisposable
                 message),
             ENXIO or ENODEV => new FileSystemOperationException(
                 FileSystemErrorCodes.InvalidPath,
-                "Невозможно читать специальный файловый объект.")
+                "Невозможно читать специальный файловый объект."),
             ELOOP or EXDEV => UnsafeLink(message),
             EACCES or EPERM or EBUSY or ETXTBSY => new FileSystemOperationException(
                 FileSystemErrorCodes.Locked,
