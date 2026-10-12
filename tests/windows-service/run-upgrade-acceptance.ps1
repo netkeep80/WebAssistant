@@ -324,7 +324,7 @@ function Assert-UpgradePreflightBeforeMsi {
     if ($preflightDiagnostic -notmatch '(?m)^\S+\s+preflight-pass\s*$') {
         throw "UpgradePreflight diagnostic log has no preflight-pass evidence."
     }
-    if ($preflightDiagnostic -match '(?m)^\S+\s+preflight-fail:') {
+    if ($preflightDiagnostic -match '(?m)^\S+\s+preflight-fail\b') {
         throw "UpgradePreflight diagnostic log contains preflight-fail evidence."
     }
 }
@@ -404,6 +404,32 @@ function Write-BundleFailureEvidence {
         foreach ($match in $matches) {
             Write-Host "bundle_failure_evidence=$($match.LineNumber):$($match.Line.Trim())"
         }
+    }
+}
+
+function Write-PreflightDiagnosticEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$DiagnosticLog,
+        [Parameter(Mandatory = $true)][string]$Stage,
+        [int]$SinceLineCount = 0
+    )
+
+    if (-not (Test-Path -LiteralPath $DiagnosticLog -PathType Leaf)) {
+        Write-Host "preflight_diagnostic_missing stage=$Stage"
+        return
+    }
+
+    $allLines = @(Get-Content -LiteralPath $DiagnosticLog)
+    if ($allLines.Count -lt $SinceLineCount) {
+        Write-Host "preflight_diagnostic_truncated stage=$Stage previousLines=$SinceLineCount currentLines=$($allLines.Count)"
+        return
+    }
+
+    $stageLines = @($allLines | Select-Object -Skip $SinceLineCount)
+    Write-Host "preflight_diagnostic_line_count stage=$Stage count=$($stageLines.Count)"
+    foreach ($line in $stageLines) {
+        Write-Host "preflight_diagnostic_evidence stage=$Stage line=$line"
+        $line
     }
 }
 
@@ -652,14 +678,25 @@ try {
     if (Test-Path -LiteralPath $repairLog) {
         Remove-Item -LiteralPath $repairLog -Force
     }
+    $repairPreflightBaselineLineCount = if (Test-Path -LiteralPath $preflightDiagnosticLog -PathType Leaf) {
+        @(Get-Content -LiteralPath $preflightDiagnosticLog).Count
+    } else {
+        0
+    }
     $repairExitCode = Invoke-Bundle `
         -Executable $candidate.Path `
         -Arguments @('/repair', '/quiet', '/norestart', '/log', $repairLog) `
         -Operation "same-version repair $($candidate.Version)" `
         -AllowFailure
+    $repairDiagnostic = @(Write-PreflightDiagnosticEvidence -DiagnosticLog $preflightDiagnosticLog -SinceLineCount $repairPreflightBaselineLineCount -Stage 'same-version repair')
     if ($repairExitCode -ne 0) {
         Write-BundleFailureEvidence -PrimaryLog $repairLog -Stage 'same-version repair'
         throw "WebAssistant bundle same-version repair $($candidate.Version) failed with exit code $repairExitCode."
+    }
+    if (@($repairDiagnostic | Where-Object { $_ -match '^\S+\s+preflight-fail\b' }).Count -gt 0 -or
+        @($repairDiagnostic | Where-Object { $_ -match '^\S+\s+preflight-start\b' }).Count -ne 1 -or
+        @($repairDiagnostic | Where-Object { $_ -match '^\S+\s+preflight-pass\s*$' }).Count -ne 1) {
+        throw "Same-version repair lacks a single successful, failure-free UpgradePreflight execution."
     }
     Assert-NoFilesInUseEvidence -PrimaryLog $repairLog
     Assert-CandidateInstalled -ExpectedVersion $candidate.Version -ExpectedPort $Port
