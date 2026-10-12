@@ -135,7 +135,8 @@
     "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
     "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
     "webassist/src/WebAssistant/Http/FileSystemMutationOriginPolicy.cs",
-    "webassist/src/WebAssistant/Http/LoopbackHostGuard.cs"
+    "webassist/src/WebAssistant/Http/LoopbackHostGuard.cs",
+    "webassist/src/WebAssistant/Program.cs"
   ],
   "vectors": [
     {
