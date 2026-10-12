@@ -17,13 +17,13 @@ internal static class FileSystemEndpointHandlers
         api.MapGet("/filesystem/file", DownloadAsync);
         api.MapGet("/filesystem/files", DownloadZipAsync);
         api.MapPost("/filesystem/find", FindAsync);
-        api.MapPost("/filesystem/file", UploadAsync);
-        api.MapPost("/filesystem/file/delete", DeleteFileAsync);
-        api.MapPost("/filesystem/directory", CreateDirectoryAsync);
-        api.MapPost("/filesystem/directory/delete", DeleteDirectoryAsync);
-        api.MapPost("/filesystem/move", MoveAsync);
-        api.MapPost("/filesystem/directory/move", MoveDirectoryAsync);
-        api.MapPost("/filesystem/rename", RenameAsync);
+        api.MapPost("/filesystem/file", UploadAsync).AddEndpointFilter(FileSystemMutationOriginPolicy.EnforceAsync);
+        api.MapPost("/filesystem/file/delete", DeleteFileAsync).AddEndpointFilter(FileSystemMutationOriginPolicy.EnforceAsync);
+        api.MapPost("/filesystem/directory", CreateDirectoryAsync).AddEndpointFilter(FileSystemMutationOriginPolicy.EnforceAsync);
+        api.MapPost("/filesystem/directory/delete", DeleteDirectoryAsync).AddEndpointFilter(FileSystemMutationOriginPolicy.EnforceAsync);
+        api.MapPost("/filesystem/move", MoveAsync).AddEndpointFilter(FileSystemMutationOriginPolicy.EnforceAsync);
+        api.MapPost("/filesystem/directory/move", MoveDirectoryAsync).AddEndpointFilter(FileSystemMutationOriginPolicy.EnforceAsync);
+        api.MapPost("/filesystem/rename", RenameAsync).AddEndpointFilter(FileSystemMutationOriginPolicy.EnforceAsync);
     }
 
     private static IResult Roots(
