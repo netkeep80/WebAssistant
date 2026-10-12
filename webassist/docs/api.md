@@ -360,7 +360,7 @@ Package-owned fingerprint вычисляется один раз на проце
 
 CORS выключен по умолчанию. Для браузерного origin, отличающегося от origin диагностической панели, его нужно явно добавить в JSON-список разрешённых источников и установить `WebAssistant:Cors:Enabled=true`. Разрешены только точные HTTP/HTTPS origins; wildcard `*` запрещён.
 
-При включённом CORS WebAssistant разрешает только методы `GET` и `POST`. Для JSON и непрозрачных загрузок разрешён заголовок запроса `Content-Type`. `PUT` и `DELETE` не входят в разрешённую поверхность. Межсайтовое изменение проходит обычный браузерный preflight; origin, отсутствующий в списке разрешённых, не получает `Access-Control-Allow-Origin`.
+При включённом CORS WebAssistant разрешает только методы `GET` и `POST`. Для JSON и непрозрачных загрузок разрешён заголовок запроса `Content-Type`. `PUT` и `DELETE` не входят в разрешённую поверхность. Origin, отсутствующий в списке разрешённых, не получает `Access-Control-Allow-Origin`. Сам по себе CORS не запрещает браузеру отправить простой `POST`; поэтому для изменяющих файловых операций дополнительно проверяется происхождение запроса на сервере.
 
 ## Файловый обмен
 
@@ -424,6 +424,16 @@ POST /v1/filesystem/rename
 ```
 
 Публичная filesystem API использует только HTTP-методы `GET` и `POST`. Все изменения остаются `POST`; `POST /v1/filesystem/find` — read-only batch query с JSON-телом. Маршрутов `PUT`, `DELETE`, `PATCH` и других HTTP methods в публичной filesystem API нет. JSON-маршруты `POST /v1/filesystem/find`, `POST /v1/filesystem/directory`, `POST /v1/filesystem/move`, `POST /v1/filesystem/directory/move` и `POST /v1/filesystem/rename` требуют `Content-Type: application/json`; отсутствующий или иной тип содержимого возвращает `400 filesystem_path_invalid`. Загрузка через `POST /v1/filesystem/file` передаёт непрозрачные байты и JSON не использует. Отсутствуют универсальный маршрут файловой системы, серверная сессия `cd` и точка API для произвольного пути хоста.
+
+### Защита изменяющих запросов от чужого браузерного origin
+
+Перед любым изменяющим `POST /v1/filesystem/*` (загрузка, удаление, создание каталога, перемещение и переименование) сервер проверяет происхождение запроса **до обращения к файловой системе**. `POST /v1/filesystem/find` остаётся только читающим запросом и не входит в эту проверку. Поведение `GET` не меняется.
+
+Если передан `Origin`, разрешены только точные `http://127.0.0.1:<настроенный порт>`, `http://localhost:<настроенный порт>` либо явно перечисленные в `WebAssistant:Cors:AllowedOrigins` источники при включённом CORS. Значение `null`, неоднозначный или посторонний `Origin` отклоняются; произвольный заголовок `Host` не создаёт полномочий (защита от подмены имени при обращении к loopback).
+
+Если `Origin` отсутствует, обычные небраузерные HTTP-клиенты сохраняют совместимость. Однако при наличии `Sec-Fetch-Site` разрешены только `same-origin` и `none`; `cross-site`, `same-site` и неоднозначные значения отклоняются. Это дополнительный ограничитель, а не самостоятельная аутентификация или защита от клиентского приложения с прямым доступом к локальной машине.
+
+Отклонённая операция возвращает `403 application/problem+json` с `code=filesystem_origin_forbidden`; её тело и целевой путь не обрабатываются. Это правило распространяется также на простые браузерные запросы с `application/x-www-form-urlencoded` и `text/plain`, для которых CORS preflight может не выполняться.
 
 ### Получение списка каталога и wildcard
 
@@ -689,6 +699,7 @@ Symlink, junction и другие link/reparse-объекты могут быт�
 | Область | Ограничение или граница | Тип | Основание | Observable поведение | Платформа | Статус |
 |---|---|---|---|---|---|---|
 | HTTP surface | Только `GET` и `POST`; JSON batch/mutation endpoints требуют `Content-Type: application/json`. | semantic | API contract | Неверный content type JSON-запроса даёт `400 filesystem_path_invalid`. | все | required |
+| browser origin | Изменяющие `POST` требуют доверенного `Origin` при его наличии, либо отсутствия недоверенных `Sec-Fetch-Site` подсказок. | security | anti-CSRF для loopback | Недоверенный браузерный источник => `403 filesystem_origin_forbidden`; небраузерный запрос без браузерных заголовков совместим. | все | required |
 | logical roots | Root name соответствует `[A-Za-z0-9][A-Za-z0-9._-]*`; `.`/`..` и case-only duplicates запрещены. | semantic | root registry | Некорректная карта roots => `filesystem_configuration_invalid`. | все | under review |
 | logical roots | Configured root lookup регистрозависимый (`StringComparer.Ordinal`). | implementation-only | current registry lookup | `Archive/` не выбирает configured `archive`. | все | under review |
 | logical roots | Hard-coded maximum количества roots отсутствует. | semantic | multi-root design | Ограничение определяется ресурсами/configuration, не `maxRoots=N`. | все | required |
