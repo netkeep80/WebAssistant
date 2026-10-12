@@ -258,8 +258,8 @@ internal sealed class WindowsUpgradeEnvironment : IUpgradeEnvironment
             ? Task.CompletedTask
             : Task.Delay(delay, cancellationToken);
 
-    // Querying an already-exited worker may fail after OpenProcess succeeded.
-    // An inaccessible live worker is never safe to silently omit.
+    // Получение пути завершившегося worker может завершиться ошибкой после успешного OpenProcess.
+    // Работающий worker с неподтверждённым путём нельзя молча исключать из проверки.
     internal static bool CanSkipWorkerImageError(
         bool allowInaccessible,
         int win32Error,
