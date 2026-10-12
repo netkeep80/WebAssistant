@@ -258,6 +258,16 @@ internal sealed class WindowsUpgradeEnvironment : IUpgradeEnvironment
             ? Task.CompletedTask
             : Task.Delay(delay, cancellationToken);
 
+    // Querying an already-exited worker may fail after OpenProcess succeeded.
+    // An inaccessible live worker is never safe to silently omit.
+    internal static bool CanSkipWorkerImageError(
+        bool allowInaccessible,
+        int win32Error,
+        uint processWaitResult) =>
+        allowInaccessible &&
+        win32Error == ErrorAccessDenied &&
+        processWaitResult == WaitObject0;
+
     internal static bool IsWorkerSnapshotCandidate(string executableName) =>
         string.Equals(
             executableName,
@@ -486,20 +496,40 @@ internal sealed class WindowsUpgradeEnvironment : IUpgradeEnvironment
             throw Win32Failure($"OpenProcess(pid={processId})", error);
         }
 
-        return ReadProcessIdentity(handle, processId, parentProcessId);
+        return ReadProcessIdentity(handle, processId, parentProcessId, allowInaccessible);
     }
 
-    private static ProcessIdentity ReadProcessIdentity(
+    private static ProcessIdentity? ReadProcessIdentity(
         SafeKernelHandle handle,
         int processId,
-        int parentProcessId)
+        int parentProcessId,
+        bool allowInaccessible)
     {
         var capacity = 32768;
         var path = new StringBuilder(capacity);
         var size = capacity;
         if (!QueryFullProcessImageName(handle, 0, path, ref size))
         {
-            throw Win32Failure($"QueryFullProcessImageName(pid={processId})");
+            var error = Marshal.GetLastWin32Error();
+            if (allowInaccessible && error == ErrorAccessDenied)
+            {
+                var waitResult = WaitForSingleObject(handle, 0);
+                if (CanSkipWorkerImageError(allowInaccessible, error, waitResult))
+                {
+                    return null;
+                }
+
+                if (waitResult == WaitFailed)
+                {
+                    throw Win32Failure($"WaitForSingleObject(pid={processId})");
+                }
+
+                throw Win32Failure(
+                    $"QueryFullProcessImageName(pid={processId}, parentPid={parentProcessId}, processWait=0x{waitResult:X8})",
+                    error);
+            }
+
+            throw Win32Failure($"QueryFullProcessImageName(pid={processId})", error);
         }
 
         if (!GetProcessTimes(handle, out var creation, out _, out _, out _))
