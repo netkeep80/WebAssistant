@@ -250,6 +250,11 @@
       "id": "WA-INSTALL-DOC-001",
       "kind": "required",
       "statement": "Release surface содержит один canonical WebAssistant-Installation-Guide.pdf, воспроизводимо построенный из repository-owned editable source и описывающий фактические Windows EXE и ALT ZIP install/service/health/uninstall flows; финальные screenshots добавляются только после стабилизации real installer UX."
+    },
+    {
+      "id": "WA-FS-012",
+      "kind": "required",
+      "statement": "До исполнения любого изменяющего POST /v1/filesystem/* (upload, delete-file, create/delete-directory, file/directory move, rename) сервер проверяет происхождение браузерного запроса, независимо от CORS preflight. При наличии Origin допускаются только точные http://127.0.0.1:<WebAssistant:Port>, http://localhost:<WebAssistant:Port> или явно разрешённые exact origins при активном CORS; null, неоднозначные и посторонние Origin запрещены. Заголовок Host не предоставляет полномочий. При отсутствии Origin запрос без Sec-Fetch-Site остаётся совместимым с программными HTTP-клиентами, а Sec-Fetch-Site допускает лишь same-origin/none. Отказ происходит до обработки тела/изменения файлов и возвращает 403 application/problem+json с code filesystem_origin_forbidden без физических путей. GET и read-only POST /v1/filesystem/find сохраняют свои существующие правила."
     }
   ]
 }
