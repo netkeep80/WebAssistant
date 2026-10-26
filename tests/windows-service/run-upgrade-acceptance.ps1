@@ -544,8 +544,14 @@ if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
 if (Test-Path -LiteralPath $installDirectoryFull) {
     throw "WebAssistant install directory already exists before upgrade acceptance."
 }
+# The preceding installer lifecycle intentionally proves that ordinary uninstall preserves
+# ProgramData config. This scenario must then establish an independent legacy-only fixture
+# before installing historical 0.3.21, otherwise it would not exercise OLD -> NEW migration.
+if (Test-Path -LiteralPath $configDirectory) {
+    Remove-Item -LiteralPath $configDirectory -Recurse -Force
+}
 if (Test-Path -LiteralPath $persistentConfig -PathType Leaf) {
-    throw "Persistent WebAssistant config already exists before migration acceptance: $persistentConfig"
+    throw "Failed to establish clean persistent-config fixture before migration acceptance: $persistentConfig"
 }
 if ((Get-WebAssistantBundleEntries).Count -ne 0) {
     throw "WebAssistant Installed Apps entry already exists before upgrade acceptance."
