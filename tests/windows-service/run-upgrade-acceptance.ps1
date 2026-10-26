@@ -41,13 +41,18 @@ $historicalArtifactName = "WebAssistant-win-x64-0.3.21.exe"
 $historicalSha256 = "68fe8a0145721c13f14dad4a4d3fea333c9ccb240b036d8869aa2152af7b7271"
 $installDirectoryFull = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd('\')
 $programDataRoot = Join-Path $env:ProgramData "WebAssistant"
+$configDirectory = Join-Path $programDataRoot "config"
+$persistentConfig = Join-Path $configDirectory "appsettings.json"
+$installedExample = Join-Path $configDirectory "appsettings.example.json"
+$candidateExampleSource = Join-Path $repositoryRoot "webassist/build/common/appsettings.example.json"
+$candidateExampleSha256 = (Get-FileHash -LiteralPath $candidateExampleSource -Algorithm SHA256).Hash.ToLowerInvariant()
 $logDirectory = Join-Path $programDataRoot "logs"
 $dataDirectory = Join-Path $programDataRoot "data"
 $logSentinel = Join-Path $logDirectory "upgrade-preserve-log.sentinel"
 $dataSentinel = Join-Path $dataDirectory "upgrade-preserve-data.sentinel"
 $logSentinelContent = "webassistant-upgrade-log-state"
 $dataSentinelContent = "webassistant-upgrade-data-state"
-$installedConfig = Join-Path $installDirectoryFull "appsettings.json"
+$legacyInstalledConfig = Join-Path $installDirectoryFull "appsettings.json"
 $configPreservationSentinel = "webassistant-existing-appsettings-must-survive-upgrade-and-repair"
 $configSentinelSha256 = $null
 
@@ -439,11 +444,11 @@ function Assert-InstalledConfigPreserved {
         [Parameter(Mandatory = $true)][string]$Stage
     )
 
-    if (-not (Test-Path -LiteralPath $installedConfig -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath $persistentConfig -PathType Leaf)) {
         Write-ConfigMsiLogEvidence -PrimaryLog $burnLog
         throw "Installed appsettings.json disappeared during $Stage."
     }
-    $actualSha256 = (Get-FileHash -LiteralPath $installedConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualSha256 = (Get-FileHash -LiteralPath $persistentConfig -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualSha256 -ne $ExpectedSha256) {
         Write-ConfigMsiLogEvidence -PrimaryLog $burnLog
         throw "Installed appsettings.json was overwritten during $Stage. expected=$ExpectedSha256 actual=$actualSha256"
@@ -554,8 +559,8 @@ try {
     Set-Content -LiteralPath $logSentinel -Value $logSentinelContent -NoNewline
     Set-Content -LiteralPath $dataSentinel -Value $dataSentinelContent -NoNewline
 
-    if (-not (Test-Path -LiteralPath $installedConfig -PathType Leaf)) {
-        throw "Historical installer did not create appsettings.json."
+    if (-not (Test-Path -LiteralPath $legacyInstalledConfig -PathType Leaf)) {
+        throw "Historical installer did not create Program Files appsettings.json."
     }
     $preservedConfig = [ordered]@{
         WebAssistant = [ordered]@{
@@ -573,10 +578,10 @@ try {
     }
     $preservedConfigJson = $preservedConfig | ConvertTo-Json -Depth 8
     [IO.File]::WriteAllText(
-        $installedConfig,
+        $legacyInstalledConfig,
         $preservedConfigJson,
         [Text.UTF8Encoding]::new($false))
-    $configSentinelSha256 = (Get-FileHash -LiteralPath $installedConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+    $configSentinelSha256 = (Get-FileHash -LiteralPath $legacyInstalledConfig -Algorithm SHA256).Hash.ToLowerInvariant()
 
     Invoke-Scanners -ExpectedPort $Port | Out-Null
 
