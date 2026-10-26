@@ -9,6 +9,7 @@ internal static class WindowsConfigurationLifecycle
 {
     internal const string ExampleFileName = "appsettings.example.json";
     internal const string ActiveFileName = "appsettings.json";
+    internal const string LifecycleMarkerFileName = ".persistent-config-v1";
 
     internal static WindowsConfigurationState Prepare(
         string applicationRoot,
@@ -24,17 +25,25 @@ internal static class WindowsConfigurationLifecycle
             "config");
         Directory.CreateDirectory(configurationRoot);
 
-        foreach (var legacyPath in EnumerateLegacyRuntimeConfigurationFiles(
-                     fullApplicationRoot))
+        var markerPath = Path.Combine(
+            configurationRoot,
+            LifecycleMarkerFileName);
+        if (!File.Exists(markerPath))
         {
-            var destination = Path.Combine(
-                configurationRoot,
-                Path.GetFileName(legacyPath));
-
-            if (!File.Exists(destination))
+            foreach (var legacyPath in EnumerateLegacyRuntimeConfigurationFiles(
+                         fullApplicationRoot))
             {
-                File.Copy(legacyPath, destination, overwrite: false);
+                var destination = Path.Combine(
+                    configurationRoot,
+                    Path.GetFileName(legacyPath));
+
+                if (!File.Exists(destination))
+                {
+                    File.Copy(legacyPath, destination, overwrite: false);
+                }
             }
+
+            WriteLifecycleMarker(markerPath);
         }
 
         return new WindowsConfigurationState(
@@ -54,6 +63,15 @@ internal static class WindowsConfigurationLifecycle
         }
 
         return root;
+    }
+
+    private static void WriteLifecycleMarker(string path)
+    {
+        var temporary = path + ".tmp";
+        File.WriteAllText(
+            temporary,
+            "persistent-config-v1\n");
+        File.Move(temporary, path, overwrite: true);
     }
 
     private static IReadOnlyList<string> EnumerateLegacyRuntimeConfigurationFiles(
