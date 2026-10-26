@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-
 namespace WebAssistant.Runtime;
 
 internal sealed record WindowsConfigurationState(
@@ -36,14 +34,6 @@ internal static class WindowsConfigurationLifecycle
             if (!File.Exists(destination))
             {
                 File.Copy(legacyPath, destination, overwrite: false);
-                continue;
-            }
-
-            if (!FilesEqual(legacyPath, destination))
-            {
-                PreserveLegacyConflict(
-                    legacyPath,
-                    configurationRoot);
             }
         }
 
@@ -84,51 +74,4 @@ internal static class WindowsConfigurationLifecycle
                 .ToArray()
             : Array.Empty<string>();
 
-    private static void PreserveLegacyConflict(
-        string legacyPath,
-        string configurationRoot)
-    {
-        var fileName = Path.GetFileName(legacyPath);
-        var baseName = $"legacy-{fileName}";
-        var candidate = Path.Combine(
-            configurationRoot,
-            baseName);
-
-        if (!File.Exists(candidate))
-        {
-            File.Copy(legacyPath, candidate, overwrite: false);
-            return;
-        }
-
-        if (FilesEqual(legacyPath, candidate))
-        {
-            return;
-        }
-
-        var hash = Convert.ToHexString(
-                SHA256.HashData(File.ReadAllBytes(legacyPath)))
-            .ToLowerInvariant()[..12];
-        candidate = Path.Combine(
-            configurationRoot,
-            $"legacy-{hash}-{fileName}");
-
-        if (!File.Exists(candidate))
-        {
-            File.Copy(legacyPath, candidate, overwrite: false);
-        }
-    }
-
-    private static bool FilesEqual(string left, string right)
-    {
-        var leftInfo = new FileInfo(left);
-        var rightInfo = new FileInfo(right);
-        if (leftInfo.Length != rightInfo.Length)
-        {
-            return false;
-        }
-
-        return File.ReadAllBytes(left)
-            .AsSpan()
-            .SequenceEqual(File.ReadAllBytes(right));
-    }
 }
