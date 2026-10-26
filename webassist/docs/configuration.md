@@ -4,19 +4,42 @@
 
 ## Где находится `appsettings.json`
 
-WebAssistant не хранит зависящий от окружения `src/WebAssistant/appsettings.json` в публичном репозитории. Канонические упаковщики выбирают конфигурацию во время формирования пакета:
+На Windows рабочая конфигурация является persistent machine state и хранится отдельно от Program Files:
 
-1. если `src/WebAssistant/appsettings.json` существует, в состав пакета попадают его точные байты;
-2. иначе в состав пакета копируется `build/common/default-appsettings.json`.
+```text
+%ProgramData%\WebAssistant\config\appsettings.json
+```
 
-После формирования пакета установщик не создаёт заново и не исправляет `appsettings.json`.
+На Linux текущая модель не меняется:
 
-Установленная конфигурация находится рядом с приложением:
+```text
+/opt/webassist/appsettings.json
+```
 
-- Windows: `%ProgramFiles%\WebAssistant\appsettings.json`;
-- Linux: `/opt/webassist/appsettings.json`;
-- при ручном запуске из опубликованного каталога — рядом с `WebAssistant`.
+При ручном запуске не-Windows опубликованного каталога конфигурация по-прежнему находится рядом с приложением.
 
+Канонические упаковщики выбирают **начальный seed** во время формирования пакета:
+
+1. если `src/WebAssistant/appsettings.json` существует, используются его точные байты;
+2. иначе используется `build/common/default-appsettings.json`.
+
+На Windows migration release сохраняет этот seed как legacy-файл рядом с приложением только для перехода со старых установок. При первом запуске, если persistent `appsettings.json` ещё отсутствует, WebAssistant копирует legacy/seed в ProgramData byte-for-byte. Если persistent файл уже существует, install, upgrade, repair и reinstall его не перезаписывают. При расхождении legacy и persistent конфигураций persistent-файл остаётся authority, а legacy bytes сохраняются в ProgramData отдельным `legacy-*.json` backup вместо silent overwrite.
+
+Обычный uninstall Windows сохраняет каталог `%ProgramData%\WebAssistant\config`. Полное удаление конфигурации является отдельным явным purge-действием.
+
+## Всегда свежий пример
+
+Windows installer также устанавливает:
+
+```text
+%ProgramData%\WebAssistant\config\appsettings.example.json
+```
+
+Этот файл принадлежит **установленной версии WebAssistant**, а не администратору. При install/upgrade/repair/reinstall он заменяется свежей package-версией и служит справочным примером всей актуальной configuration surface.
+
+`appsettings.example.json` **никогда не является runtime configuration provider**, в том числе если environment случайно называется `example`. Рабочие настройки изменяются только в `appsettings.json` и стандартных environment-specific runtime-файлах. Repository-owned source полного примера: `build/common/appsettings.example.json`.
+
+`build/common/default-appsettings.json` имеет другую роль: это минимальный безопасный seed. Default и example намеренно не совпадают.
 ## Полная структура
 
 Безопасная конфигурация репозитория по умолчанию:
