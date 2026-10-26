@@ -1,12 +1,16 @@
 ﻿[CmdletBinding()]
 param(
     [string]$InstallDirectory = "$env:ProgramFiles\WebAssistant",
-    [switch]$PurgeData
+    [switch]$PurgeData,
+    [switch]$PurgeConfig
 )
 
 $ErrorActionPreference = "Stop"
 $serviceName = "WebAssistant"
 $dataRoot = "$env:ProgramData\WebAssistant"
+$configDirectory = Join-Path $dataRoot "config"
+$logDirectory = Join-Path $dataRoot "logs"
+$runtimeDataDirectory = Join-Path $dataRoot "data"
 
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 if ($null -ne $service) {
@@ -20,9 +24,20 @@ if (Test-Path $InstallDirectory) {
     Remove-Item $InstallDirectory -Recurse -Force
 }
 
-if ($PurgeData -and (Test-Path $dataRoot)) {
-    Remove-Item $dataRoot -Recurse -Force
-    Write-Host "WebAssistant удалён вместе с журналами и данными."
+if ($PurgeData) {
+    foreach ($path in @($logDirectory, $runtimeDataDirectory)) {
+        if (Test-Path -LiteralPath $path) {
+            Remove-Item -LiteralPath $path -Recurse -Force
+        }
+    }
+}
+
+if ($PurgeConfig -and (Test-Path -LiteralPath $configDirectory)) {
+    Remove-Item -LiteralPath $configDirectory -Recurse -Force
+}
+
+if ($PurgeConfig) {
+    Write-Host "WebAssistant удалён; persistent configuration удалена явно."
 } else {
-    Write-Host "WebAssistant удалён. Данные в $dataRoot сохранены."
+    Write-Host "WebAssistant удалён; persistent configuration в $configDirectory сохранена."
 }
