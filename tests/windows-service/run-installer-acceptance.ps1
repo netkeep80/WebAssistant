@@ -284,12 +284,60 @@ try {
         throw "WebAssistant Installed Apps entry остался после uninstall."
     }
 
-    $finalSha256 = (Get-FileHash -LiteralPath $artifactPathFull -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($finalSha256 -ne $computedSha256) {
-        throw "Windows artifact bytes изменились после uninstall."
+    if (-not (Test-Path -LiteralPath $persistentConfig -PathType Leaf)) {
+        throw "Persistent appsettings.json был удалён обычным uninstall."
+    }
+    if ((Get-FileHash -LiteralPath $persistentConfig -Algorithm SHA256).Hash.ToLowerInvariant() -ne $installedConfigHash) {
+        throw "Persistent appsettings.json изменился при uninstall."
+    }
+    if (-not (Test-Path -LiteralPath $installedExample -PathType Leaf)) {
+        throw "Persistent appsettings.example.json исчез при uninstall."
     }
 
-    Write-Host "windows_installer_artifact_acceptance=PASS version=$version sha256=$computedSha256"
+    # Full uninstall -> reinstall must retain active config and refresh a stale reference example.
+    [IO.File]::WriteAllText(
+        $installedExample,
+        "stale-example",
+        [Text.UTF8Encoding]::new($false))
+
+    Invoke-ExactBundle `
+        -Executable $artifactPathFull `
+        -Arguments @('/quiet', '/norestart') `
+        -Operation "reinstall after full uninstall"
+    $installed = $true
+
+    if ((Get-FileHash -LiteralPath $persistentConfig -Algorithm SHA256).Hash.ToLowerInvariant() -ne $installedConfigHash) {
+        throw "Reinstall overwrote persistent appsettings.json."
+    }
+    if ((Get-FileHash -LiteralPath $installedExample -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedExampleSha256) {
+        throw "Reinstall did not refresh appsettings.example.json."
+    }
+    & $serviceAcceptance `
+        -InstallDirectory $installDirectoryFull `
+        -Port $Port `
+        -ExpectedVersion $version
+
+    Invoke-ExactBundle `
+        -Executable $artifactPathFull `
+        -Arguments @('/uninstall', '/quiet', '/norestart') `
+        -Operation "final uninstall after reinstall"
+    $installed = $false
+    Wait-ServiceAbsent
+    Wait-NoListener -ExpectedPort $Port
+
+    if (-not (Test-Path -LiteralPath $persistentConfig -PathType Leaf)) {
+        throw "Persistent appsettings.json disappeared after final uninstall."
+    }
+    if ((Get-FileHash -LiteralPath $persistentConfig -Algorithm SHA256).Hash.ToLowerInvariant() -ne $installedConfigHash) {
+        throw "Persistent appsettings.json changed after reinstall lifecycle."
+    }
+
+    $finalSha256 = (Get-FileHash -LiteralPath $artifactPathFull -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($finalSha256 -ne $computedSha256) {
+        throw "Windows artifact bytes изменились после uninstall/reinstall acceptance."
+    }
+
+    Write-Host "windows_installer_artifact_acceptance=PASS version=$version sha256=$computedSha256 persistent_config=PASS fresh_example=PASS reinstall=PASS"
 }
 finally {
     if ($installed) {
