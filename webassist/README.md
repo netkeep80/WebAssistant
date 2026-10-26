@@ -117,7 +117,9 @@ src/WebAssistant/appsettings.json отсутствует
   -> упаковщик включает build/common/default-appsettings.json
 ```
 
-После формирования канонического артефакта `appsettings.json` принадлежит пакету. Установщик не генерирует, не заменяет и не исправляет упакованную конфигурацию.
+На Windows package-time `appsettings.json` является только seed/legacy migration source. Runtime authority хранится в `%ProgramData%\WebAssistant\config\appsettings.json`: при первом переходе старые bytes копируются туда без преобразования, а существующий persistent config не заменяется install/upgrade/repair/reinstall. Обычный uninstall сохраняет его.
+
+Windows installer также всегда обновляет `%ProgramData%\WebAssistant\config\appsettings.example.json` из repository-owned `build/common/appsettings.example.json`. Это полный справочный пример текущей версии, а не runtime provider. Минимальный безопасный `default-appsettings.json` остаётся отдельным seed.
 
 Конфигурация репозитория по умолчанию выключает CORS, использует платформенный каталог журналов, задаёт уровень журналирования `Information` и содержит пустую карту `WebAssistant:FileSystem`. Пустая карта означает, что файловый обмен не настроен; скрытый или платформенный корень по умолчанию не создаётся. При включении CORS разрешены только явно заданные точные HTTP/HTTPS origins; wildcard `*` не допускается. Публичный API файловой системы использует только `GET` и `POST`; межсайтовые JSON-запросы проходят обычный браузерный preflight.
 
@@ -134,7 +136,7 @@ src/WebAssistant/appsettings.json отсутствует
 }
 ```
 
-`Information` предназначен для обычной эксплуатации: итог HTTP/scanner operation, существенные предупреждения и крупные timings. `Debug` предназначен для опытной эксплуатации и расследования: он добавляет `operationId`, causal `worker.acquire/release/exit`, exact worker PID/bitness, TWAIN native stage boundaries и x86 worker self-report фактически загруженных legacy `twain_32.dll` или modern `twaindsm.dll` и vendor DS modules. `Trace` оставляет включёнными наиболее подробные безопасные технические события и должен использоваться кратковременно. Для гарантированного применения изменённого packaged `appsettings.json` достаточно перезапустить службу; специальная диагностическая сборка не нужна.
+`Information` предназначен для обычной эксплуатации: итог HTTP/scanner operation, существенные предупреждения и крупные timings. `Debug` предназначен для опытной эксплуатации и расследования: он добавляет `operationId`, causal `worker.acquire/release/exit`, exact worker PID/bitness, TWAIN native stage boundaries и x86 worker self-report фактически загруженных legacy `twain_32.dll` или modern `twaindsm.dll` и vendor DS modules. `Trace` оставляет включёнными наиболее подробные безопасные технические события и должен использоваться кратковременно. Для гарантированного применения изменённого persistent `appsettings.json` достаточно перезапустить службу; специальная диагностическая сборка не нужна.
 
 В `Debug` и `Trace` `GET /v1/diag/info` даёт package/runtime inventory, а causal `operationId ↔ workerPid ↔ DSM/DS ↔ native stage` восстанавливается по собственному daily log WebAssistant без ручных PowerShell/cmd/shell-команд. Host-side worker snapshot не считается доказательством ownership конкретной операции и не заменяет x86 worker self-report. Обычный `Information` не публикует эти подробности.
 
