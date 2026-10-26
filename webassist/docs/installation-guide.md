@@ -16,7 +16,7 @@
 | Windows | `{{WINDOWS_FILENAME}}` | `{{WINDOWS_SHA256}}` |
 | ALT Linux 10.1 | `{{LINUX_FILENAME}}` | `{{LINUX_SHA256}}` |
 
-Конфигурация пакета выбирается **во время сборки**. После формирования установщика или пакета файл `appsettings.json` является частью содержимого пакета. Установщик не создаёт, не заменяет и не исправляет упакованную конфигурацию. Полная структура `appsettings.json`, значения по умолчанию, приоритет источников и различия платформ описаны в [`configuration.md`](configuration.md).
+Начальная конфигурация выбирается **во время сборки**. На Windows она является seed для persistent `%ProgramData%\WebAssistant\config\appsettings.json`; существующий persistent config при install/upgrade/repair/reinstall не заменяется. На Linux текущая packaged-config модель сохраняется. Полная структура, миграция и приоритет источников описаны в [`configuration.md`](configuration.md).
 
 # Windows
 
@@ -60,15 +60,19 @@ Invoke-WebRequest http://127.0.0.1:17654/v1/health
 Общесистемное состояние времени выполнения расположено отдельно от Program Files:
 
 ```text
+%ProgramData%\WebAssistant\config\appsettings.json
+%ProgramData%\WebAssistant\config\appsettings.example.json
 %ProgramData%\WebAssistant\logs
 %ProgramData%\WebAssistant\data
 ```
+
+`appsettings.json` принадлежит администратору и сохраняется между обновлением, удалением и повторной установкой. `appsettings.example.json` принадлежит installer и при каждой установке/обновлении/repair заменяется свежим примером текущей версии.
 
 ## 5. Удаление
 
 Используйте стандартное удаление WebAssistant через Installed Apps / Programs and Features либо штатное удаление канонического bundle.
 
-Удаление останавливает и удаляет Windows Service, регистрацию продукта и установленные файлы приложения. `%ProgramData%\WebAssistant\logs` и `%ProgramData%\WebAssistant\data` по текущей политике состояния сохраняются.
+Удаление останавливает и удаляет Windows Service, регистрацию продукта и installation payload. `%ProgramData%\WebAssistant\config`, `logs` и `data` сохраняются; reinstall снова использует прежний `appsettings.json`. Полное удаление конфигурации выполняется только явным purge-действием.
 
 {{WIN_UNINSTALL}}
 
