@@ -24,7 +24,7 @@
     {
       "id": "WA-REPO-002",
       "kind": "required",
-      "statement": "Исходники, build/package/install scripts, механизм runtime configuration, vendored обязательные зависимости и продуктовая документация находятся внутри webassist. Environment-specific appsettings.json может принадлежать downstream consumer/deployment и не обязан храниться в public development repository. Canonical producer может использовать такой файл как package-time seed: Windows installer инициализирует им persistent ProgramData configuration без подмены уже существующего active config, Linux сохраняет packaged appsettings.json model."
+      "statement": "Исходники, build/package/install scripts, механизм runtime configuration, vendored обязательные зависимости и продуктовая документация находятся внутри webassist. Environment-specific appsettings.json может принадлежать downstream consumer/deployment и не обязан храниться в public development repository; если такой config уже входит в package, installer не заменяет его собственным default config."
     },
     {
       "id": "WA-CI-001",
