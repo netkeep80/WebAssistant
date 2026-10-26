@@ -74,6 +74,14 @@ Invoke-WebRequest http://127.0.0.1:17654/v1/health
 
 Удаление останавливает и удаляет Windows Service, регистрацию продукта и installation payload. `%ProgramData%\WebAssistant\config`, `logs` и `data` сохраняются; reinstall снова использует прежний `appsettings.json`. Полное удаление конфигурации выполняется только явным purge-действием.
 
+Если требуется именно забыть сохранённые настройки после штатного удаления, администратор выполняет отдельное явное действие:
+
+```powershell
+Remove-Item -LiteralPath "$env:ProgramData\WebAssistant\config" -Recurse -Force
+```
+
+Обычный и тихий uninstall эту команду не выполняют.
+
 {{WIN_UNINSTALL}}
 
 # ALT Linux 10.1
