@@ -42,7 +42,7 @@ src/WebAssistant/appsettings.json существует
   -> используется build/common/default-appsettings.json
 ```
 
-В migration release seed остаётся рядом с Program Files только как переходный источник для существующих установок до 0.3.68 включительно. При первом запуске новой версии, если persistent config отсутствует, эти байты копируются в ProgramData без преобразования. Если persistent `appsettings.json` уже существует, он не заменяется при install, upgrade, repair или reinstall.
+В migration release seed остаётся рядом с Program Files только как переходный bootstrap source. При upgrade установки до 0.3.68 включительно Burn `UpgradePreflight` получает legacy install root, завершает service/worker lifecycle и затем копирует legacy `appsettings*.json` в ProgramData **до запуска MSI**. Если persistent config уже существует, он не заменяется; отличающиеся legacy bytes сохраняются отдельным backup. На clean install runtime bootstrap использует package seed только при отсутствии persistent config. Поэтому install, upgrade, repair и reinstall существующий `%ProgramData%\WebAssistant\config\appsettings.json` не изменяют.
 
 Отдельный файл:
 
