@@ -12,8 +12,15 @@
         "path": ".github/workflows/repo-guard.yml",
         "role": "repo_guard_pr_gate",
         "expect": {
-          "events": ["pull_request"],
-          "event_types": ["opened", "synchronize", "reopened", "ready_for_review"],
+          "events": [
+            "pull_request"
+          ],
+          "event_types": [
+            "opened",
+            "synchronize",
+            "reopened",
+            "ready_for_review"
+          ],
           "action": {
             "uses": "netkeep80/repo-guard",
             "ref": "92432809fcddc290080beb51ba151e13a5761869",
@@ -26,9 +33,15 @@
             "pull-requests": "read",
             "issues": "read"
           },
-          "token_env": ["GH_TOKEN"],
+          "token_env": [
+            "GH_TOKEN"
+          ],
           "summary": true,
-          "disallow": ["continue_on_error", "manual_clone", "direct_temp_cli_execution"]
+          "disallow": [
+            "continue_on_error",
+            "manual_clone",
+            "direct_temp_cli_execution"
+          ]
         }
       }
     ],
@@ -39,7 +52,11 @@
         "path": ".github/PULL_REQUEST_TEMPLATE.md",
         "requires_change_intent_block": true,
         "required_block_kind": "repo-guard-yaml",
-        "required_change_intent_fields": ["change_type", "scope", "anchors.affects"]
+        "required_change_intent_fields": [
+          "change_type",
+          "scope",
+          "anchors.affects"
+        ]
       },
       {
         "id": "change-intent-issue-form",
@@ -48,7 +65,11 @@
         "requires_change_intent_block": true,
         "optional": true,
         "required_block_kind": "repo-guard-yaml",
-        "required_change_intent_fields": ["change_type", "scope", "anchors.affects"]
+        "required_change_intent_fields": [
+          "change_type",
+          "scope",
+          "anchors.affects"
+        ]
       }
     ],
     "docs": [
@@ -56,7 +77,12 @@
         "id": "readme-governance",
         "kind": "markdown",
         "path": "README.md",
-        "must_mention": ["repo-guard", "ChangeIntent", "GovernanceGrant", "webassist"],
+        "must_mention": [
+          "repo-guard",
+          "ChangeIntent",
+          "GovernanceGrant",
+          "webassist"
+        ],
         "must_reference_files": [
           "repo-policy.json",
           ".github/PULL_REQUEST_TEMPLATE.md",
@@ -73,7 +99,11 @@
           "webassist/docs/configuration.md",
           "webassist/docs/appsettings.schema.json"
         ],
-        "must_mention_change_intent_fields": ["change_type", "scope", "anchors.affects"]
+        "must_mention_change_intent_fields": [
+          "change_type",
+          "scope",
+          "anchors.affects"
+        ]
       }
     ]
   },
@@ -108,7 +138,10 @@
         "projection": "array_items"
       }
     ],
-    "cochange": ["current.contract", "current.conformance"],
+    "cochange": [
+      "current.contract",
+      "current.conformance"
+    ],
     "control_paths": [
       "contracts/webassistant-contract-v*.json",
       "contracts/webassistant-conformance-v*.json"
@@ -146,8 +179,15 @@
     ]
   },
   "paths": {
-    "forbidden": ["*.bak", "*.tmp", "*.orig"],
-    "canonical_docs": ["README.md", "webassist/README.md"],
+    "forbidden": [
+      "*.bak",
+      "*.tmp",
+      "*.orig"
+    ],
+    "canonical_docs": [
+      "README.md",
+      "webassist/README.md"
+    ],
     "governance_paths": [
       "repo-policy.json",
       "contracts/**",
@@ -182,8 +222,8 @@
       "forbid_regex": [
         "ScannerAgent",
         "tmk5scan",
-        "Tri\u0075mf",
-        "depfi\u006e\\.nnov\\.ru"
+        "Triumf",
+        "depfin\\.nnov\\.ru"
       ]
     }
   ],
@@ -270,18 +310,6 @@
       ],
       "must_change_any": [
         "contracts/webassistant-conformance-v0.3.json"
-      ]
-    },
-    {
-      "if_changed": [
-        "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
-        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
-        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
-        "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
-        "webassist/build/common/default-appsettings.json"
-      ],
-      "must_change_any": [
-        "webassist/build/common/appsettings.example.json"
       ]
     },
     {
@@ -376,6 +404,18 @@
       ],
       "must_change_any": [
         "webassist/docs/installation-guide.md"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
+        "webassist/build/common/default-appsettings.json"
+      ],
+      "must_change_any": [
+        "webassist/build/common/appsettings.example.json"
       ]
     }
   ]
