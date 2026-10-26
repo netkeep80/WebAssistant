@@ -21,6 +21,15 @@ $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $scriptDirectory "../.."))
 $serviceAcceptance = Join-Path $scriptDirectory "run-service-acceptance.ps1"
 $runtimeIntegrity = Join-Path $scriptDirectory "naps2-runtime-integrity.ps1"
+$programDataRoot = Join-Path $env:ProgramData "WebAssistant"
+$configDirectory = Join-Path $programDataRoot "config"
+$persistentConfig = Join-Path $configDirectory "appsettings.json"
+$installedExample = Join-Path $configDirectory "appsettings.example.json"
+$exampleSource = Join-Path $repositoryRoot "webassist/build/common/appsettings.example.json"
+if (-not (Test-Path -LiteralPath $exampleSource -PathType Leaf)) {
+    throw "Repository-owned appsettings.example.json is missing: $exampleSource"
+}
+$expectedExampleSha256 = (Get-FileHash -LiteralPath $exampleSource -Algorithm SHA256).Hash.ToLowerInvariant()
 
 function Get-WebAssistantBundleEntries {
     $registryPaths = @(
@@ -208,11 +217,21 @@ try {
         -ExpectedSha256 $candidateSdk.Sha256 `
         -Stage 'clean install'
 
-    $installedConfig = Join-Path $installDirectoryFull "appsettings.json"
-    if (-not (Test-Path -LiteralPath $installedConfig -PathType Leaf)) {
-        throw "WiX installer не установил package-owned appsettings.json."
+    $legacySeed = Join-Path $installDirectoryFull "appsettings.json"
+    if (-not (Test-Path -LiteralPath $legacySeed -PathType Leaf)) {
+        throw "WiX migration package не установил transition appsettings.json seed."
     }
-    $installedConfigHash = (Get-FileHash -LiteralPath $installedConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+    if (-not (Test-Path -LiteralPath $persistentConfig -PathType Leaf)) {
+        throw "Clean install не создал persistent appsettings.json."
+    }
+    if (-not (Test-Path -LiteralPath $installedExample -PathType Leaf)) {
+        throw "Clean install не установил appsettings.example.json."
+    }
+    $installedConfigHash = (Get-FileHash -LiteralPath $persistentConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+    $installedExampleHash = (Get-FileHash -LiteralPath $installedExample -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($installedExampleHash -ne $expectedExampleSha256) {
+        throw "Clean install appsettings.example.json не совпадает с repository-owned current example."
+    }
 
     $bundleEntries = @(Get-WebAssistantBundleEntries | Where-Object {
         [string]$_.DisplayVersion -eq $version
@@ -234,9 +253,9 @@ try {
         -Port $Port `
         -ExpectedVersion $version
 
-    $configHashAfterLifecycle = (Get-FileHash -LiteralPath $installedConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+    $configHashAfterLifecycle = (Get-FileHash -LiteralPath $persistentConfig -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($configHashAfterLifecycle -ne $installedConfigHash) {
-        throw "Installed package-owned appsettings.json изменился во время lifecycle acceptance."
+        throw "Persistent appsettings.json изменился во время lifecycle acceptance."
     }
 
     $shaAfterLifecycle = (Get-FileHash -LiteralPath $artifactPathFull -Algorithm SHA256).Hash.ToLowerInvariant()
