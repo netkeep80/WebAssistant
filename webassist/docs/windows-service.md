@@ -120,4 +120,12 @@ Invoke-WebRequest http://127.0.0.1:17654/v1/health
 
 Удаление останавливает и удаляет Windows Service, регистрацию продукта и installation payload. `%ProgramData%\WebAssistant\config`, `logs` и `data` сохраняются. Поэтому последующая чистая установка автоматически использует прежний `appsettings.json`. Удаление конфигурации допускается только отдельным явным purge-действием; исторический `uninstall.ps1` предоставляет для этого `-PurgeConfig`.
 
+После обычного canonical uninstall администратор может явно удалить только сохранённую конфигурацию:
+
+```powershell
+Remove-Item -LiteralPath "$env:ProgramData\WebAssistant\config" -Recurse -Force
+```
+
+Это действие необратимо и не выполняется обычным/silent uninstall автоматически. Для repository-owned historical/manual lifecycle `webassist/install/windows/uninstall.ps1 -PurgeConfig` предоставляет эквивалентный явный purge config; `-PurgeData` остаётся отдельным действием для logs/data.
+
 Исторические сценарии репозитория `install.bat` / `install.ps1` не являются каноническим пользовательским способом установки версионированного дистрибутива Windows.
