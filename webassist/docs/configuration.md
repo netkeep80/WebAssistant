@@ -23,7 +23,7 @@
 1. если `src/WebAssistant/appsettings.json` существует, используются его точные байты;
 2. иначе используется `build/common/default-appsettings.json`.
 
-На Windows migration release сохраняет этот seed как legacy-файл рядом с приложением только для перехода со старых установок. При первом запуске, если persistent `appsettings.json` ещё отсутствует, WebAssistant копирует legacy/seed в ProgramData byte-for-byte. Если persistent файл уже существует, install, upgrade, repair и reinstall его не перезаписывают. При расхождении legacy и persistent конфигураций persistent-файл остаётся authority, а legacy bytes сохраняются в ProgramData отдельным `legacy-*.json` backup вместо silent overwrite.
+На Windows migration release сохраняет seed рядом с приложением только как bootstrap source. При upgrade существующей установки Burn `UpgradePreflight` сначала запоминает legacy install root, штатно останавливает WebAssistant/worker, затем **до запуска MSI** копирует legacy `appsettings*.json` в ProgramData byte-for-byte. Если persistent файл уже существует, он не перезаписывается; при расхождении persistent-файл остаётся authority, а legacy bytes сохраняются отдельным `legacy-*.json` backup вместо silent data loss. На clean install, где legacy installation отсутствует, runtime bootstrap копирует package seed в ProgramData только если persistent active config ещё отсутствует. Install, upgrade, repair и reinstall существующий persistent config не изменяют.
 
 Обычный uninstall Windows сохраняет каталог `%ProgramData%\WebAssistant\config`. Полное удаление конфигурации является отдельным явным purge-действием.
 
