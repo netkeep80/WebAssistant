@@ -137,7 +137,11 @@
     "webassist/src/WebAssistant/Http/FileSystemMutationOriginPolicy.cs",
     "webassist/src/WebAssistant/Http/LoopbackHostGuard.cs",
     "webassist/src/WebAssistant/Program.cs",
-    "webassist/src/WebAssistant/FileSystem/LinuxRootedFileSystem.cs"
+    "webassist/src/WebAssistant/FileSystem/LinuxRootedFileSystem.cs",
+    "webassist/build/common/appsettings.example.json",
+    "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+    "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+    "tests/core/WindowsConfigurationLifecycleTests.cs"
   ],
   "vectors": [
     {
@@ -577,12 +581,13 @@
     {
       "id": "WA-C-CONFIG-DOCUMENTATION-001",
       "kind": "positive",
-      "assertion": "Каноническое описание конфигурации времени выполнения и пакета и JSON schema согласованы с безопасной конфигурацией по умолчанию и текущими правилами чтения и проверки; изменение модели конфигурации нельзя провести обновлением только одного документа.",
+      "assertion": "Каноническое описание active runtime configuration, JSON schema и устанавливаемый appsettings.example.json согласованы с безопасным default seed и текущими правилами чтения, persistent Windows ownership и проверки; изменение configuration semantic source нельзя провести без обязательного co-change полного примера и current configuration artifacts.",
       "requirements": [
         "WA-CONFIG-001",
         "WA-DIST-003",
         "WA-CORS-001",
-        "WA-FS-001"
+        "WA-FS-001",
+        "WA-CONFIG-002"
       ],
       "evidence": [
         "webassist/docs/configuration.md",
@@ -592,7 +597,11 @@
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "tests/core/DocumentationGovernanceTests.cs",
         "tests/core/ConfigurationOwnershipTests.cs",
-        "tests/core/RuntimeOptionsTests.cs"
+        "tests/core/RuntimeOptionsTests.cs",
+        "webassist/build/common/appsettings.example.json",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "tests/core/WindowsConfigurationLifecycleTests.cs"
       ]
     },
     {
@@ -660,9 +669,10 @@
     {
       "id": "WA-C-PACKAGE-CONFIG-001",
       "kind": "negative",
-      "assertion": "Distribution candidate фиксирует package-time config selection: source appsettings exact bytes при наличии либо safe default при отсутствии; после package formation installer не может заменить или изменить packaged config.",
+      "assertion": "Distribution candidate фиксирует package-time seed selection: source appsettings exact bytes при наличии либо safe default при отсутствии. На Windows seed мигрирует только при отсутствии persistent ProgramData config, existing active config не перезаписывается, а свежий installer-owned appsettings.example.json обновляется независимо; Linux packaged-config semantics сохраняются.",
       "requirements": [
-        "WA-DIST-003"
+        "WA-DIST-003",
+        "WA-CONFIG-002"
       ],
       "evidence": [
         "tests/core/DistributionContractCandidateTests.cs",
@@ -671,7 +681,36 @@
         "webassist/build/windows/package.ps1",
         "webassist/build/linux/package.sh",
         "tests/windows-service/run-installer-acceptance.ps1",
-        "tests/linux-systemd/run-installer-acceptance.sh"
+        "tests/linux-systemd/run-installer-acceptance.sh",
+        "webassist/build/common/appsettings.example.json",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "tests/core/WindowsConfigurationLifecycleTests.cs",
+        "webassist/build/windows/installer/Package.wxs"
+      ]
+    },
+    {
+      "id": "WA-C-WINDOWS-CONFIG-LIFECYCLE-001",
+      "kind": "positive",
+      "assertion": "Windows configuration lifecycle доказывает byte-preserving migration legacy appsettings*.json в ProgramData при отсутствии persistent authority, no-overwrite existing config, conflict backup, исключение appsettings.example.json из runtime providers и installer refresh полного example; uninstall по умолчанию сохраняет persistent config, explicit purge отделён от удаления logs/data.",
+      "requirements": [
+        "WA-CONFIG-001",
+        "WA-CONFIG-002",
+        "WA-DIST-003",
+        "WA-WIN-INSTALL-001"
+      ],
+      "evidence": [
+        "tests/core/WindowsConfigurationLifecycleTests.cs",
+        "tests/core/AppSettingsBootstrapTests.cs",
+        "tests/core/ConfigurationOwnershipTests.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/build/common/appsettings.example.json",
+        "webassist/build/windows/package.ps1",
+        "webassist/build/windows/installer/Package.wxs",
+        "webassist/install/windows/install.ps1",
+        "webassist/install/windows/uninstall.ps1",
+        "webassist/docs/configuration.md",
+        "webassist/docs/windows-service.md"
       ]
     },
     {
