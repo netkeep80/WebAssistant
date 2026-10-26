@@ -16,7 +16,7 @@
 | Windows | `{{WINDOWS_FILENAME}}` | `{{WINDOWS_SHA256}}` |
 | ALT Linux 10.1 | `{{LINUX_FILENAME}}` | `{{LINUX_SHA256}}` |
 
-Начальная конфигурация выбирается **во время сборки**. На Windows она является seed для persistent `%ProgramData%\WebAssistant\config\appsettings.json`; существующий persistent config при install/upgrade/repair/reinstall не заменяется. На Linux текущая packaged-config модель сохраняется. Полная структура, миграция и приоритет источников описаны в [`configuration.md`](configuration.md).
+Начальная конфигурация выбирается **во время сборки**. На Windows она является только installer seed: MSI устанавливает active config непосредственно в `%ProgramData%\WebAssistant\config\appsettings.json`, а `appsettings.json` в Program Files новой установки отсутствует. Существующий persistent config при install/upgrade/repair/reinstall не заменяется. На Linux текущая packaged-config модель сохраняется. Полная структура, миграция и приоритет источников описаны в [`configuration.md`](configuration.md).
 
 # Windows
 
@@ -163,7 +163,7 @@ sudo ./uninstall.sh --purge-data
 
 # Диагностика
 
-Если установка или запуск завершились ошибкой, сначала проверяйте состояние системной службы и `/v1/health`. Не заменяйте упакованный `appsettings.json` во время установки: конфигурация принадлежит уже сформированному пакету.
+Если установка или запуск завершились ошибкой, сначала проверяйте состояние системной службы и `/v1/health`. На Windows изменяйте только persistent `%ProgramData%\WebAssistant\config\appsettings.json`; Program Files не является местом пользовательской конфигурации. На Linux сохраняется packaged `appsettings.json`.
 
 Windows:
 
