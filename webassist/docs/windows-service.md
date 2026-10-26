@@ -53,6 +53,8 @@ src/WebAssistant/appsettings.json существует
 является installer-owned примером всей текущей configuration surface. Installer принудительно заменяет его свежей package-версией. Он не используется runtime как `appsettings.{Environment}.json`, даже при environment `example`.
 
 Безопасный default seed содержит пустую карту `WebAssistant:FileSystem`; полный пример находится в `appsettings.example.json`. Полная структура и приоритет источников описаны в [`configuration.md`](configuration.md).
+
+`WebAssistant:FileSystem:RootDirectory` не имеет специальной legacy-семантики. Если этот ключ присутствует с допустимым абсолютным путём, текущая multi-root модель трактует его как **обычный логический корень** с именем `RootDirectory`; `%ProgramData%\WebAssistant\data` сам по себе файловым root не становится.
 ## Установка
 
 Запустите установщик от имени пользователя, который может подтвердить повышение прав UAC:
