@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | Обзор продукта и текущие возможности | `README.md`, `webassist/README.md` | код продукта, сценарии сборки и упаковки, текущая принятая пара, кандидат v0.3 | тесты на устаревшие утверждения + аудит PR |
 | REST API, сканирование, файловый обмен, диагностика, CORS | `webassist/docs/api.md` | `webassist/src/WebAssistant/Http/**`, прикладные службы сканирования и файлового обмена | `repo-guard` cochange для известных поверхностей API + тесты |
-| Конфигурация времени выполнения и пакета | `webassist/docs/configuration.md`, `webassist/docs/appsettings.schema.json`, соответствующие разделы `webassist/README.md` | `WebAssistantRuntimeOptions.cs`, `FileSystemRootRegistry.cs`, `build/common/default-appsettings.json` | несколько независимых блокирующих cochange-правил: одного обновлённого документа недостаточно |
+| Конфигурация времени выполнения и пакета | `webassist/docs/configuration.md`, `webassist/docs/appsettings.schema.json`, соответствующие разделы `webassist/README.md` | `WebAssistantRuntimeOptions.cs`, `AppSettingsBootstrap.cs`, `WindowsConfigurationLifecycle.cs`, `FileSystemRootRegistry.cs`, `build/common/default-appsettings.json` | несколько независимых блокирующих cochange-правил: одного обновлённого документа недостаточно |
 | Установка и служба Windows | `webassist/docs/windows-service.md`, `webassist/docs/installation-guide.md` | упаковка Windows, WiX и реализация службы | целевые тесты + аудит документации |
 | Установка и служба Linux | `webassist/docs/linux-service.md`, `webassist/docs/installation-guide.md` | упаковка Linux, install scripts и systemd | целевые тесты + аудит документации |
 | Схема настроек сканера | `webassist/docs/scanner-settings.schema.json`, раздел настроек сканера в `webassist/docs/api.md` | DTO, handlers и adapters настроек сканера | существующий cochange + тесты |
@@ -45,6 +45,7 @@
 
 - `webassist/docs/configuration.md`;
 - `webassist/docs/appsettings.schema.json`;
+- `webassist/build/common/appsettings.example.json`;
 - `webassist/README.md`;
 - кандидат `contracts/webassistant-contract-v0.3.json`;
 - кандидат `contracts/webassistant-conformance-v0.3.json`.
@@ -55,7 +56,7 @@
 
 ## Конфигурация
 
-Каноническое человекочитаемое описание JSON-конфигурации находится в `webassist/docs/configuration.md`, а машиночитаемая схема — в `webassist/docs/appsettings.schema.json`.
+Каноническое человекочитаемое описание JSON-конфигурации находится в `webassist/docs/configuration.md`, машиночитаемая схема — в `webassist/docs/appsettings.schema.json`, а полный устанавливаемый пример — в `webassist/build/common/appsettings.example.json`. Изменение configuration semantic source обязано обновлять пример вместе с текущими документами; сам example не является runtime authority.
 
 Любое изменение модели конфигурации времени выполнения, значений по умолчанию, выбора конфигурации при упаковке, приоритета источников или проверки значений должно рассматриваться как изменение этой пары и соответствующих обзорных и кандидатных документов.
 
