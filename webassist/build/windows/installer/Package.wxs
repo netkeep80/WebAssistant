@@ -28,11 +28,11 @@
       <Exclude Files="$(var.PayloadRoot)\appsettings.example.json" />
     </Files>
 
-    <!-- Transition seed/source for migration from <=0.3.68. Runtime authority is ProgramData. -->
     <Component
         Id="WebAssistantConfigurationComponent"
-        Directory="INSTALLFOLDER"
+        Directory="WEBAssistantConfigDirectory"
         Guid="*"
+        Permanent="yes"
         NeverOverwrite="yes">
       <File
           Id="WebAssistantConfigurationFile"
