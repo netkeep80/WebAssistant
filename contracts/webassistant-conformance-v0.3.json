@@ -693,7 +693,7 @@
     {
       "id": "WA-C-WINDOWS-CONFIG-LIFECYCLE-001",
       "kind": "positive",
-      "assertion": "Windows configuration lifecycle доказывает pre-MSI byte-preserving migration legacy appsettings*.json после bounded service/worker shutdown, no-overwrite existing ProgramData authority, conflict backup, clean-install bootstrap, исключение appsettings.example.json из runtime providers и installer refresh полного example; ordinary uninstall сохраняет persistent config, explicit purge отделён от удаления logs/data.",
+      "assertion": "Windows configuration lifecycle доказывает pre-MSI byte-preserving migration legacy appsettings*.json после bounded service/worker shutdown, no-overwrite existing ProgramData authority, conflict backup, clean-install bootstrap, исключение appsettings.example.json из runtime providers, installer refresh полного example при clean install/upgrade/repair/reinstall и сохранение active config через ordinary uninstall -> reinstall.",
       "requirements": [
         "WA-CONFIG-001",
         "WA-CONFIG-002",
@@ -715,7 +715,10 @@
         "webassist/docs/windows-service.md",
         "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs",
         "tests/core/WindowsConfigurationMigrationTests.cs",
-        "webassist/build/windows/upgrade-preflight/Program.cs"
+        "webassist/build/windows/upgrade-preflight/Program.cs",
+        "tests/windows-service/run-service-acceptance.ps1",
+        "tests/windows-service/run-installer-acceptance.ps1",
+        "tests/windows-service/run-upgrade-acceptance.ps1"
       ]
     },
     {
