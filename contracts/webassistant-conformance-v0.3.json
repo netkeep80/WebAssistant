@@ -143,7 +143,11 @@
     "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
     "tests/core/WindowsConfigurationLifecycleTests.cs",
     "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs",
-    "tests/core/WindowsConfigurationMigrationTests.cs"
+    "tests/core/WindowsConfigurationMigrationTests.cs",
+    "tests/core/AppSettingsBootstrapTests.cs",
+    "webassist/install/windows/uninstall.ps1",
+    "webassist/build/windows/upgrade-preflight/Program.cs",
+    "tests/windows-service/run-upgrade-acceptance.ps1"
   ],
   "vectors": [
     {
