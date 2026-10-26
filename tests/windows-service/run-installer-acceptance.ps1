@@ -217,9 +217,9 @@ try {
         -ExpectedSha256 $candidateSdk.Sha256 `
         -Stage 'clean install'
 
-    $legacySeed = Join-Path $installDirectoryFull "appsettings.json"
-    if (-not (Test-Path -LiteralPath $legacySeed -PathType Leaf)) {
-        throw "WiX migration package не установил transition appsettings.json seed."
+    $programFilesConfig = Join-Path $installDirectoryFull "appsettings.json"
+    if (Test-Path -LiteralPath $programFilesConfig -PathType Leaf) {
+        throw "Clean install left appsettings.json in Program Files."
     }
     if (-not (Test-Path -LiteralPath $persistentConfig -PathType Leaf)) {
         throw "Clean install не создал persistent appsettings.json."
