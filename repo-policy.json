@@ -215,6 +215,8 @@
     {
       "if_changed": [
         "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "webassist/build/common/default-appsettings.json"
       ],
@@ -225,6 +227,8 @@
     {
       "if_changed": [
         "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "webassist/build/common/default-appsettings.json"
       ],
@@ -235,6 +239,8 @@
     {
       "if_changed": [
         "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "webassist/build/common/default-appsettings.json"
       ],
@@ -245,6 +251,8 @@
     {
       "if_changed": [
         "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "webassist/build/common/default-appsettings.json"
       ],
@@ -255,11 +263,25 @@
     {
       "if_changed": [
         "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "webassist/build/common/default-appsettings.json"
       ],
       "must_change_any": [
         "contracts/webassistant-conformance-v0.3.json"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
+        "webassist/build/common/default-appsettings.json"
+      ],
+      "must_change_any": [
+        "webassist/build/common/appsettings.example.json"
       ]
     },
     {
