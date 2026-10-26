@@ -5,6 +5,7 @@ namespace WebAssistant.UpgradePreflight;
 internal static class WindowsConfigurationMigration
 {
     internal const string ExampleFileName = "appsettings.example.json";
+    internal const string LifecycleMarkerFileName = ".persistent-config-v1";
 
     internal static void Migrate(
         string legacyApplicationRoot,
@@ -23,6 +24,14 @@ internal static class WindowsConfigurationMigration
             "WebAssistant",
             "config");
         Directory.CreateDirectory(destinationRoot);
+
+        var markerPath = Path.Combine(
+            destinationRoot,
+            LifecycleMarkerFileName);
+        if (File.Exists(markerPath))
+        {
+            return;
+        }
 
         foreach (var source in Directory
                      .EnumerateFiles(
@@ -50,6 +59,17 @@ internal static class WindowsConfigurationMigration
                 PreserveConflict(source, destinationRoot);
             }
         }
+
+        WriteLifecycleMarker(markerPath);
+    }
+
+    private static void WriteLifecycleMarker(string path)
+    {
+        var temporary = path + ".tmp";
+        File.WriteAllText(
+            temporary,
+            "persistent-config-v1\n");
+        File.Move(temporary, path, overwrite: true);
     }
 
     private static void PreserveConflict(
