@@ -8,6 +8,8 @@ public sealed class DocumentationGovernanceTests
     private static readonly string[] ConfigurationSemanticSources =
     [
         "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "webassist/build/common/default-appsettings.json"
     ];
@@ -16,6 +18,7 @@ public sealed class DocumentationGovernanceTests
     [
         "webassist/docs/configuration.md",
         "webassist/docs/appsettings.schema.json",
+        "webassist/build/common/appsettings.example.json",
         "webassist/README.md",
         "contracts/webassistant-contract-v0.3.json",
         "contracts/webassistant-conformance-v0.3.json"
@@ -45,6 +48,7 @@ public sealed class DocumentationGovernanceTests
         Assert.Contains("WebAssistant:Cors:AllowedOrigins", configuration, StringComparison.Ordinal);
         Assert.Contains("WebAssistant:FileSystem", configuration, StringComparison.Ordinal);
         Assert.Contains("build/common/default-appsettings.json", configuration, StringComparison.Ordinal);
+        Assert.Contains("build/common/appsettings.example.json", configuration, StringComparison.Ordinal);
         Assert.Contains("переменные окружения", configuration, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("командной строки", configuration, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("неизвест", configuration, StringComparison.OrdinalIgnoreCase);
