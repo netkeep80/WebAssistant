@@ -30,7 +30,7 @@ Windows и Linux используют один принадлежащий реп
 src/WebAssistant/product-metadata.json
 ```
 
-`product-metadata.json` и необязательный зависящий от окружения `src/WebAssistant/appsettings.json` располагаются в одном исходном каталоге, но имеют разную семантику: первый влияет только на отображаемую идентичность продукта при сборке, а второй при наличии выбирается упаковщиком как файл пакета `appsettings.json`. Во время выполнения используется уже упакованный `appsettings.json` рядом с приложением с учётом стандартного приоритета источников конфигурации, описанного в [`docs/configuration.md`](docs/configuration.md). На Windows bootstrap также принимает native path с одиночными обратными слешами в строковых значениях (`C:\\...`) и нормализует его в памяти/временной копии до стандартного JSON provider; исходный файл не переписывается.
+`product-metadata.json` и необязательный зависящий от окружения `src/WebAssistant/appsettings.json` располагаются в одном исходном каталоге, но имеют разную семантику: первый влияет только на отображаемую идентичность продукта при сборке, а второй при наличии выбирается упаковщиком как configuration seed. На Windows installer помещает active config непосредственно в `%ProgramData%\WebAssistant\config\appsettings.json`; Program Files не содержит active config. На Linux seed остаётся packaged `appsettings.json` рядом с приложением. Стандартный приоритет источников описан в [`docs/configuration.md`](docs/configuration.md). На Windows bootstrap также принимает native path с одиночными обратными слешами в строковых значениях (`C:\\...`) и нормализует его в памяти/временной копии до стандартного JSON provider; исходный файл не переписывается.
 
 Допустимые поля переопределения:
 
@@ -117,7 +117,7 @@ src/WebAssistant/appsettings.json отсутствует
   -> упаковщик включает build/common/default-appsettings.json
 ```
 
-На Windows package-time `appsettings.json` является только seed/legacy migration source. Runtime authority хранится в `%ProgramData%\WebAssistant\config\appsettings.json`: при первом переходе старые bytes копируются туда без преобразования, а существующий persistent config не заменяется install/upgrade/repair/reinstall. Обычный uninstall сохраняет его.
+На Windows package-time `appsettings.json` является только installer input. MSI устанавливает его непосредственно как `%ProgramData%\WebAssistant\config\appsettings.json`; новой копии `appsettings.json` в Program Files нет. При первом переходе со старой версии legacy bytes из Program Files копируются в ProgramData preflight-стадией до MSI, а существующий persistent config не заменяется install/upgrade/repair/reinstall. Обычный uninstall сохраняет его.
 
 Windows installer также всегда обновляет `%ProgramData%\WebAssistant\config\appsettings.example.json` из repository-owned `build/common/appsettings.example.json`. Это полный справочный пример текущей версии, а не runtime provider. Минимальный безопасный `default-appsettings.json` остаётся отдельным seed.
 
