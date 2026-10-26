@@ -161,6 +161,48 @@ public sealed class AppSettingsBootstrapTests : IDisposable
             File.ReadAllText(sourcePath));
     }
 
+    [Fact]
+    public void PrepareForConfigurationRoot_DoesNotLoadExampleAsEnvironmentConfig()
+    {
+        var applicationRoot = Path.Combine(root, "application");
+        var configurationRoot = Path.Combine(root, "config");
+        Directory.CreateDirectory(applicationRoot);
+        Directory.CreateDirectory(configurationRoot);
+
+        File.WriteAllText(
+            Path.Combine(configurationRoot, "appsettings.json"),
+            """
+            {
+              "WebAssistant": {
+                "Port": 17654
+              }
+            }
+            """);
+        File.WriteAllText(
+            Path.Combine(
+                configurationRoot,
+                WindowsConfigurationLifecycle.ExampleFileName),
+            """
+            {
+              "WebAssistant": {
+                "Port": 19999
+              }
+            }
+            """);
+
+        using var bootstrap = AppSettingsBootstrap.PrepareForConfigurationRoot(
+            new[] { "--environment", "example" },
+            applicationRoot,
+            configurationRoot);
+        var builder = bootstrap.CreateBuilder(
+            new[] { "--environment", "example" });
+
+        Assert.True(bootstrap.IsPreprocessed);
+        Assert.Equal(
+            "17654",
+            builder.Configuration["WebAssistant:Port"]);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(root))
