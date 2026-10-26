@@ -31,6 +31,7 @@ public sealed class ConfigurationOwnershipTests
 
         Assert.Contains("src/WebAssistant/appsettings.json", windows, StringComparison.Ordinal);
         Assert.Contains("build/common/default-appsettings.json", windows, StringComparison.Ordinal);
+        Assert.Contains("build/common/appsettings.example.json", windows, StringComparison.Ordinal);
         Assert.Contains("source-appsettings", windows, StringComparison.Ordinal);
         Assert.Contains("generated-default", windows, StringComparison.Ordinal);
 
@@ -54,7 +55,7 @@ public sealed class ConfigurationOwnershipTests
     }
 
     [Fact]
-    public void WindowsWixInstaller_DoesNotOverwriteExistingAppsettings()
+    public void WindowsWixInstaller_PreservesLegacySeedAndRefreshesPersistentExample()
     {
         var package = ReadRequired("webassist/build/windows/installer/Package.wxs");
 
@@ -73,6 +74,16 @@ public sealed class ConfigurationOwnershipTests
             "Source=\"$(var.PayloadRoot)\\appsettings.json\"",
             package,
             StringComparison.Ordinal);
+        Assert.Contains("WEBAssistantConfigDirectory", package, StringComparison.Ordinal);
+        Assert.Contains("Name=\"config\"", package, StringComparison.Ordinal);
+        Assert.Contains("Id=\"WebAssistantExampleConfigurationComponent\"", package, StringComparison.Ordinal);
+        Assert.Contains(
+            "Source=\"$(var.PayloadRoot)\\appsettings.example.json\"",
+            package,
+            StringComparison.Ordinal);
+        Assert.Contains("Name=\"appsettings.example.json\"", package, StringComparison.Ordinal);
+        Assert.Contains("On=\"install\"", package, StringComparison.Ordinal);
+        Assert.Contains("Permanent=\"yes\"", package, StringComparison.Ordinal);
         Assert.Contains("KeyPath=\"yes\"", package, StringComparison.Ordinal);
     }
 
@@ -128,34 +139,43 @@ public sealed class ConfigurationOwnershipTests
     }
 
     [Fact]
-    public void WindowsInstaller_PreservesPackageOwnedAppsettings()
+    public void WindowsInstaller_UsesPersistentConfigAndExplicitPurgeSwitch()
     {
-        var root = FindRepositoryRoot();
-        var installPath = Path.Combine(
-            root,
-            "webassist",
-            "install",
-            "windows",
-            "install.ps1");
-        var install = File.ReadAllText(installPath);
+        var install = ReadRequired("webassist/install/windows/install.ps1");
+        var uninstall = ReadRequired("webassist/install/windows/uninstall.ps1");
 
-        var copyIndex = install.IndexOf(
-            "Copy-Item (Join-Path $sourceDirectory \"*\") $InstallDirectory -Recurse -Force",
-            StringComparison.Ordinal);
-        var preserveGuardIndex = install.IndexOf(
-            "if (-not (Test-Path -LiteralPath $configFile))",
-            StringComparison.Ordinal);
-        var configWriteIndex = install.IndexOf(
-            "Set-Content -Path $configFile",
-            StringComparison.Ordinal);
+        Assert.Contains("$configDirectory = Join-Path $stateRoot \"config\"", install, StringComparison.Ordinal);
+        Assert.Contains("$configFile = Join-Path $configDirectory \"appsettings.json\"", install, StringComparison.Ordinal);
+        Assert.Contains("Copy-Item -LiteralPath $legacyConfigFile -Destination $configFile", install, StringComparison.Ordinal);
+        Assert.Contains("persistent appsettings.json", install, StringComparison.Ordinal);
+        Assert.Contains("appsettings.example.json", install, StringComparison.Ordinal);
 
-        Assert.True(copyIndex >= 0, "Installer must copy package app before configuration handling.");
-        Assert.True(
-            preserveGuardIndex > copyIndex,
-            "Installer must check for an already copied package appsettings.json before generating defaults.");
-        Assert.True(
-            configWriteIndex > preserveGuardIndex,
-            "Default appsettings.json may only be generated inside the missing-config guard.");
+        Assert.Contains("[switch]$PurgeConfig", uninstall, StringComparison.Ordinal);
+        Assert.Contains("persistent configuration", uninstall, StringComparison.Ordinal);
+        Assert.Contains("$runtimeDataDirectory", uninstall, StringComparison.Ordinal);
+        Assert.DoesNotContain("Remove-Item $dataRoot -Recurse -Force", uninstall, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FullExample_CoversCurrentConfigurationSurface()
+    {
+        var example = ReadRequired("webassist/build/common/appsettings.example.json");
+        var normalized = NativeWindowsPathJsonPreprocessor.Normalize(example, out _);
+
+        using var document = JsonDocument.Parse(normalized, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
+        var root = document.RootElement;
+        Assert.True(root.TryGetProperty("Logging", out _));
+        var webAssistant = root.GetProperty("WebAssistant");
+        Assert.True(webAssistant.TryGetProperty("Port", out _));
+        Assert.True(webAssistant.TryGetProperty("LogDirectory", out _));
+        Assert.True(webAssistant.TryGetProperty("Cors", out _));
+        var fileSystem = webAssistant.GetProperty("FileSystem");
+        Assert.True(fileSystem.EnumerateObject().Count() >= 4);
+
+        Assert.Contains("C:/Documents", example, StringComparison.Ordinal);
+        Assert.Contains(@"D:\Archive", example, StringComparison.Ordinal);
+        Assert.Contains(@"C:\\Program Files\\Example App", example, StringComparison.Ordinal);
+        Assert.Contains(@"\\server\share\import", example, StringComparison.Ordinal);
     }
 
     private static string ReadRequired(string relativePath)
