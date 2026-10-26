@@ -79,6 +79,45 @@ public sealed class WindowsConfigurationLifecycleTests : IDisposable
     }
 
     [Fact]
+    public void Prepare_WritesMarkerAndDoesNotReimportPackageSeedOnLaterStarts()
+    {
+        var legacy = Path.Combine(
+            applicationRoot,
+            WindowsConfigurationLifecycle.ActiveFileName);
+        File.WriteAllText(legacy, "first-seed");
+
+        var first = WindowsConfigurationLifecycle.Prepare(
+            applicationRoot,
+            programDataRoot);
+
+        var markerPath = Path.Combine(
+            first.ConfigurationRoot,
+            WindowsConfigurationLifecycle.LifecycleMarkerFileName);
+        Assert.True(File.Exists(markerPath));
+        Assert.Equal(
+            "first-seed",
+            File.ReadAllText(first.ActiveConfigurationPath));
+
+        File.WriteAllText(legacy, "changed-package-seed");
+        File.WriteAllText(
+            Path.Combine(applicationRoot, "appsettings.Late.json"),
+            "late-package-config");
+
+        WindowsConfigurationLifecycle.Prepare(
+            applicationRoot,
+            programDataRoot);
+
+        Assert.Equal(
+            "first-seed",
+            File.ReadAllText(first.ActiveConfigurationPath));
+        Assert.False(
+            File.Exists(
+                Path.Combine(
+                    first.ConfigurationRoot,
+                    "appsettings.Late.json")));
+    }
+
+    [Fact]
     public void Prepare_MigratesEnvironmentConfigurationWithoutOverwrite()
     {
         var legacy = Path.Combine(
