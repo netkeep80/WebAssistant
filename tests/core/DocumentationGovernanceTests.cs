@@ -10,6 +10,7 @@ public sealed class DocumentationGovernanceTests
         "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
         "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
         "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "webassist/build/common/default-appsettings.json"
     ];
