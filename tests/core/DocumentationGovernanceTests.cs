@@ -98,41 +98,44 @@ public sealed class DocumentationGovernanceTests
         using var policy = JsonDocument.Parse(Read("repo-policy.json"));
         var rules = policy.RootElement.GetProperty("cochange_rules").EnumerateArray().ToArray();
 
-        foreach (var target in RequiredConfigurationAuditTargets)
+        foreach (var source in ConfigurationSemanticSources)
         {
-            Assert.Contains(
-                rules,
-                rule =>
-                {
-                    var triggers = rule.GetProperty("if_changed")
-                        .EnumerateArray()
-                        .Select(value => value.GetString())
-                        .ToArray();
-                    var required = rule.GetProperty("must_change_any")
-                        .EnumerateArray()
-                        .Select(value => value.GetString())
-                        .ToArray();
+            foreach (var target in RequiredConfigurationAuditTargets)
+            {
+                Assert.Contains(
+                    rules,
+                    rule =>
+                    {
+                        var triggers = rule.GetProperty("if_changed")
+                            .EnumerateArray()
+                            .Select(value => value.GetString())
+                            .ToArray();
+                        var required = rule.GetProperty("must_change_any")
+                            .EnumerateArray()
+                            .Select(value => value.GetString())
+                            .ToArray();
 
-                    return ConfigurationSemanticSources.All(source => triggers.Contains(source, StringComparer.Ordinal))
-                        && required.Length == 1
-                        && string.Equals(required[0], target, StringComparison.Ordinal);
-                });
-        }
+                        return triggers.Contains(source, StringComparer.Ordinal)
+                            && required.Length == 1
+                            && string.Equals(required[0], target, StringComparison.Ordinal);
+                    });
+            }
 
-        var changed = new HashSet<string>(
-            [ConfigurationSemanticSources[0], RequiredConfigurationAuditTargets[0]],
-            StringComparer.Ordinal);
-        var unsatisfied = rules
-            .Where(rule => RuleTriggered(rule, changed) && !RuleSatisfied(rule, changed))
-            .SelectMany(rule => rule.GetProperty("must_change_any").EnumerateArray())
-            .Select(value => value.GetString())
-            .Where(value => value is not null)
-            .Cast<string>()
-            .ToHashSet(StringComparer.Ordinal);
+            var changed = new HashSet<string>(
+                [source, RequiredConfigurationAuditTargets[0]],
+                StringComparer.Ordinal);
+            var unsatisfied = rules
+                .Where(rule => RuleTriggered(rule, changed) && !RuleSatisfied(rule, changed))
+                .SelectMany(rule => rule.GetProperty("must_change_any").EnumerateArray())
+                .Select(value => value.GetString())
+                .Where(value => value is not null)
+                .Cast<string>()
+                .ToHashSet(StringComparer.Ordinal);
 
-        foreach (var target in RequiredConfigurationAuditTargets.Skip(1))
-        {
-            Assert.Contains(target, unsatisfied);
+            foreach (var target in RequiredConfigurationAuditTargets.Skip(1))
+            {
+                Assert.Contains(target, unsatisfied);
+            }
         }
     }
 
