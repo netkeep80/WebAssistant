@@ -55,7 +55,7 @@ public sealed class ConfigurationOwnershipTests
     }
 
     [Fact]
-    public void WindowsWixInstaller_PreservesLegacySeedAndRefreshesPersistentExample()
+    public void WindowsWixInstaller_InstallsPersistentConfigOutsideProgramFilesAndRefreshesExample()
     {
         var package = ReadRequired("webassist/build/windows/installer/Package.wxs");
 
@@ -65,10 +65,13 @@ public sealed class ConfigurationOwnershipTests
             StringComparison.Ordinal);
         Assert.Contains("Id=\"WebAssistantConfigurationComponent\"", package, StringComparison.Ordinal);
         Assert.Contains(
-            "Id=\"WebAssistantConfigurationComponent\"\n        Directory=\"INSTALLFOLDER\"\n        Guid=\"*\"\n        NeverOverwrite=\"yes\"",
+            "Id=\"WebAssistantConfigurationComponent\"\n        Directory=\"WEBAssistantConfigDirectory\"\n        Guid=\"*\"\n        Permanent=\"yes\"\n        NeverOverwrite=\"yes\"",
             package,
             StringComparison.Ordinal);
-        Assert.Contains("NeverOverwrite=\"yes\"", package, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Id=\"WebAssistantConfigurationComponent\"\n        Directory=\"INSTALLFOLDER\"",
+            package,
+            StringComparison.Ordinal);
         Assert.Contains("Id=\"WebAssistantConfigurationFile\"", package, StringComparison.Ordinal);
         Assert.Contains(
             "Source=\"$(var.PayloadRoot)\\appsettings.json\"",
