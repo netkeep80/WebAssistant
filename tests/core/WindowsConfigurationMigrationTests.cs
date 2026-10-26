@@ -77,6 +77,47 @@ public sealed class WindowsConfigurationMigrationTests : IDisposable
     }
 
     [Fact]
+    public void Migrate_WritesMarkerAndDoesNotRepeatLegacyConflictOnRepair()
+    {
+        var source = Path.Combine(legacyRoot, "appsettings.json");
+        File.WriteAllText(source, "legacy-before-upgrade");
+
+        WindowsConfigurationMigration.Migrate(
+            legacyRoot,
+            programDataRoot);
+
+        var destinationRoot = Path.Combine(
+            programDataRoot,
+            "WebAssistant",
+            "config");
+        var destination = Path.Combine(
+            destinationRoot,
+            "appsettings.json");
+        var markerPath = Path.Combine(
+            destinationRoot,
+            WindowsConfigurationMigration.LifecycleMarkerFileName);
+
+        Assert.True(File.Exists(markerPath));
+        Assert.Equal(
+            "legacy-before-upgrade",
+            File.ReadAllText(destination));
+
+        File.WriteAllText(source, "candidate-package-seed");
+        WindowsConfigurationMigration.Migrate(
+            legacyRoot,
+            programDataRoot);
+
+        Assert.Equal(
+            "legacy-before-upgrade",
+            File.ReadAllText(destination));
+        Assert.False(
+            File.Exists(
+                Path.Combine(
+                    destinationRoot,
+                    "legacy-appsettings.json")));
+    }
+
+    [Fact]
     public void Migrate_DoesNotTreatExampleAsRuntimeConfiguration()
     {
         File.WriteAllText(
