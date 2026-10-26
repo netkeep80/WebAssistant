@@ -71,9 +71,8 @@ public sealed class WindowsConfigurationLifecycleTests : IDisposable
             programDataRoot);
 
         Assert.Equal("persistent", File.ReadAllText(active));
-        Assert.Equal(
-            "legacy",
-            File.ReadAllText(
+        Assert.False(
+            File.Exists(
                 Path.Combine(
                     configurationRoot,
                     "legacy-appsettings.json")));
