@@ -9,8 +9,12 @@ param(
 $ErrorActionPreference = "Stop"
 $serviceName = "WebAssistant"
 $sourceDirectory = Join-Path $PSScriptRoot "app"
-$logDirectory = "$env:ProgramData\WebAssistant\logs"
-$configFile = Join-Path $InstallDirectory "appsettings.json"
+$stateRoot = "$env:ProgramData\WebAssistant"
+$logDirectory = Join-Path $stateRoot "logs"
+$configDirectory = Join-Path $stateRoot "config"
+$configFile = Join-Path $configDirectory "appsettings.json"
+$legacyConfigFile = Join-Path $InstallDirectory "appsettings.json"
+$exampleConfigFile = Join-Path $configDirectory "appsettings.example.json"
 
 if (-not (Test-Path $sourceDirectory)) {
     throw "Не найден каталог package app: $sourceDirectory"
@@ -33,27 +37,38 @@ if (Test-Path $InstallDirectory) {
 }
 New-Item $InstallDirectory -ItemType Directory -Force | Out-Null
 New-Item $logDirectory -ItemType Directory -Force | Out-Null
+New-Item $configDirectory -ItemType Directory -Force | Out-Null
 New-Item $FileSystemRootDirectory -ItemType Directory -Force | Out-Null
 Copy-Item (Join-Path $sourceDirectory "*") $InstallDirectory -Recurse -Force
 
 if (-not (Test-Path -LiteralPath $configFile)) {
-    $configuration = @{
-        WebAssistant = @{
-            Port = $Port
-            LogDirectory = $logDirectory
-            Cors = @{
-                Enabled = ($AllowedOrigins.Count -gt 0)
-                AllowedOrigins = @($AllowedOrigins)
-            }
-            FileSystem = @{
-                RootDirectory = $FileSystemRootDirectory
+    if (Test-Path -LiteralPath $legacyConfigFile -PathType Leaf) {
+        Copy-Item -LiteralPath $legacyConfigFile -Destination $configFile
+    }
+    else {
+        $configuration = @{
+            WebAssistant = @{
+                Port = $Port
+                LogDirectory = $logDirectory
+                Cors = @{
+                    Enabled = ($AllowedOrigins.Count -gt 0)
+                    AllowedOrigins = @($AllowedOrigins)
+                }
+                FileSystem = @{
+                    RootDirectory = $FileSystemRootDirectory
+                }
             }
         }
+        $configuration | ConvertTo-Json -Depth 6 | Set-Content -Path $configFile -Encoding utf8
     }
-    $configuration | ConvertTo-Json -Depth 6 | Set-Content -Path $configFile -Encoding utf8
 }
 else {
-    Write-Host "Сохраняю package appsettings.json без изменений: $configFile"
+    Write-Host "Сохраняю persistent appsettings.json без изменений: $configFile"
+}
+
+$packagedExample = Join-Path $InstallDirectory "appsettings.example.json"
+if (Test-Path -LiteralPath $packagedExample -PathType Leaf) {
+    Copy-Item -LiteralPath $packagedExample -Destination $exampleConfigFile -Force
 }
 
 $executable = Join-Path $InstallDirectory "WebAssistant.exe"
