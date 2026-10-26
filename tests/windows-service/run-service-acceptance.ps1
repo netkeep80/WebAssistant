@@ -8,7 +8,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $serviceName = "WebAssistant"
-$legacySeedFile = Join-Path $InstallDirectory "appsettings.json"
+$programFilesConfig = Join-Path $InstallDirectory "appsettings.json"
 $configDirectory = Join-Path $env:ProgramData "WebAssistant\config"
 $installedConfigFile = Join-Path $configDirectory "appsettings.json"
 $installedExampleFile = Join-Path $configDirectory "appsettings.example.json"
@@ -212,8 +212,8 @@ if (-not (Test-Path -LiteralPath $expectedExecutable -PathType Leaf)) {
 if ($serviceInfo.PathName -notlike "*$expectedExecutable*") {
     throw "SCM указывает не на установленный WebAssistant.exe: $($serviceInfo.PathName)"
 }
-if (-not (Test-Path -LiteralPath $legacySeedFile -PathType Leaf)) {
-    throw "Installer transition package не содержит appsettings.json seed: $legacySeedFile"
+if (Test-Path -LiteralPath $programFilesConfig -PathType Leaf) {
+    throw "Installed WebAssistant must not keep active appsettings.json in Program Files: $programFilesConfig"
 }
 if (-not (Test-Path -LiteralPath $installedConfigFile -PathType Leaf)) {
     throw "Runtime не создал persistent appsettings.json: $installedConfigFile"
