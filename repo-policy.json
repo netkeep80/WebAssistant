@@ -222,8 +222,8 @@
       "forbid_regex": [
         "ScannerAgent",
         "tmk5scan",
-        "Tri\\u0075mf",
-        "depfi\\u006e\\\\.nnov\\\\.ru"
+        "Tri\u0075mf",
+        "depfi\u006e\\.nnov\\.ru"
       ]
     }
   ],
