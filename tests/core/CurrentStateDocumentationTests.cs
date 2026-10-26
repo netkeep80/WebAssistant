@@ -117,7 +117,9 @@ public sealed class CurrentStateDocumentationTests
         var linux = ReadRepositoryFile("webassist/docs/linux-service.md");
 
         Assert.Contains("WebAssistant:FileSystem:RootDirectory", windows, StringComparison.Ordinal);
+        Assert.Contains("обычный логический корень", windows, StringComparison.Ordinal);
         Assert.Contains("%ProgramData%\\WebAssistant\\data", windows, StringComparison.Ordinal);
+        Assert.Contains("%ProgramData%\\WebAssistant\\config\\appsettings.json", windows, StringComparison.Ordinal);
         Assert.Contains("WebAssistant:FileSystem:RootDirectory", linux, StringComparison.Ordinal);
         Assert.Contains("/var/lib/webassistant", linux, StringComparison.Ordinal);
     }
