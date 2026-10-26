@@ -24,37 +24,35 @@ WebAssistant-win-x64-<VERSION>.exe
 
 Сценарий сначала собирает самодостаточный payload приложения `win-x64`, затем внутренний MSI и итоговый WiX 7 Burn bundle. Внутренний MSI — промежуточный результат сборки; устанавливать его вручную не требуется. Отображаемые метаданные, задаваемые при сборке, не меняют стабильные технические идентификаторы: исполняемый файл `WebAssistant.exe` и Windows Service `WebAssistant` остаются прежними.
 
-## Конфигурация, принадлежащая пакету
+## Persistent-конфигурация Windows
 
-Конфигурация выбирается во время упаковки:
+Рабочая конфигурация Windows находится вне installation root:
+
+```text
+%ProgramData%\WebAssistant\config\appsettings.json
+```
+
+Во время упаковки по-прежнему выбирается начальный seed:
 
 ```text
 src/WebAssistant/appsettings.json существует
-  -> в состав пакета попадают точные байты этого файла
+  -> используются точные байты этого файла
 
 файл отсутствует
-  -> в состав пакета копируется build/common/default-appsettings.json
+  -> используется build/common/default-appsettings.json
 ```
 
-После формирования EXE `appsettings.json` принадлежит пакету. Установщик не создаёт конфигурацию по умолчанию, не заменяет упакованный файл и не исправляет его во время установки или переустановки.
+В migration release seed остаётся рядом с Program Files только как переходный источник для существующих установок до 0.3.68 включительно. При первом запуске новой версии, если persistent config отсутствует, эти байты копируются в ProgramData без преобразования. Если persistent `appsettings.json` уже существует, он не заменяется при install, upgrade, repair или reinstall.
 
-Поэтому публичный корень продукта может не содержать зависящий от окружения `src/WebAssistant/appsettings.json`: канонический сценарий в таком случае использует безопасную конфигурацию репозитория по умолчанию. В ней `WebAssistant:FileSystem` является пустой картой, поэтому файловый обмен по умолчанию не настроен.
+Отдельный файл:
 
-Именованные файловые корни задаются явно, например:
-
-```json
-{
-  "WebAssistant": {
-    "FileSystem": {
-      "archive": "D:/archive",
-      "import": "//192.168.1.20/import"
-    }
-  }
-}
+```text
+%ProgramData%\WebAssistant\config\appsettings.example.json
 ```
 
-Имя `RootDirectory` больше не имеет специальной однокорневой семантики. Если `WebAssistant:FileSystem:RootDirectory` присутствует с допустимым абсолютным путём, текущая модель нескольких корней трактует его как обычный логический корень с именем `RootDirectory`; при миграции следует явно выбрать желаемое имя. Полная структура и приоритет источников конфигурации описаны в [`configuration.md`](configuration.md).
+является installer-owned примером всей текущей configuration surface. Installer принудительно заменяет его свежей package-версией. Он не используется runtime как `appsettings.{Environment}.json`, даже при environment `example`.
 
+Безопасный default seed содержит пустую карту `WebAssistant:FileSystem`; полный пример находится в `appsettings.example.json`. Полная структура и приоритет источников описаны в [`configuration.md`](configuration.md).
 ## Установка
 
 Запустите установщик от имени пользователя, который может подтвердить повышение прав UAC:
@@ -76,7 +74,7 @@ src/WebAssistant/appsettings.json существует
 - регистрирует фактическую отображаемую идентичность продукта в Installed Apps / Programs and Features;
 - записывает `DisplayVersion`, совпадающий с `VERSION` продукта.
 
-Установленное приложение использует принадлежащий пакету `appsettings.json` без повторного создания со стороны установщика.
+После запуска служба использует persistent `%ProgramData%\WebAssistant\config\appsettings.json`; Program Files не является runtime authority конфигурации.
 
 ## Проверка
 
@@ -105,6 +103,7 @@ Invoke-WebRequest http://127.0.0.1:17654/v1/health
 Общесистемное состояние расположено отдельно от Program Files:
 
 ```text
+%ProgramData%\WebAssistant\config
 %ProgramData%\WebAssistant\logs
 %ProgramData%\WebAssistant\data
 ```
@@ -117,6 +116,6 @@ Invoke-WebRequest http://127.0.0.1:17654/v1/health
 
 Используйте стандартное удаление фактического продукта WebAssistant через Installed Apps / Programs and Features либо штатное удаление канонического bundle.
 
-Удаление останавливает и удаляет Windows Service, регистрацию продукта и установленные файлы приложения. `%ProgramData%\WebAssistant\logs` и `%ProgramData%\WebAssistant\data` по текущей политике состояния сохраняются.
+Удаление останавливает и удаляет Windows Service, регистрацию продукта и installation payload. `%ProgramData%\WebAssistant\config`, `logs` и `data` сохраняются. Поэтому последующая чистая установка автоматически использует прежний `appsettings.json`. Удаление конфигурации допускается только отдельным явным purge-действием; исторический `uninstall.ps1` предоставляет для этого `-PurgeConfig`.
 
 Исторические сценарии репозитория `install.bat` / `install.ps1` не являются каноническим пользовательским способом установки версионированного дистрибутива Windows.
