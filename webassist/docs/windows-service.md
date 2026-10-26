@@ -42,7 +42,7 @@ src/WebAssistant/appsettings.json существует
   -> используется build/common/default-appsettings.json
 ```
 
-В migration release seed остаётся рядом с Program Files только как переходный bootstrap source. При upgrade установки до 0.3.68 включительно Burn `UpgradePreflight` получает legacy install root, завершает service/worker lifecycle и затем копирует legacy `appsettings*.json` в ProgramData **до запуска MSI**. Если persistent config уже существует, он не заменяется; отличающиеся legacy bytes сохраняются отдельным backup. На clean install runtime bootstrap использует package seed только при отсутствии persistent config. Поэтому install, upgrade, repair и reinstall существующий `%ProgramData%\WebAssistant\config\appsettings.json` не изменяют.
+На Windows seed используется только как input сборки MSI: новая установка кладёт active `appsettings.json` непосредственно в `%ProgramData%\WebAssistant\config`, а в Program Files этого файла после установки нет. При upgrade установки до 0.3.68 включительно Burn `UpgradePreflight` получает legacy install root, завершает service/worker lifecycle и затем копирует старые `appsettings*.json` из Program Files в ProgramData **до запуска MSI**. Если persistent config уже существует, он не заменяется; отличающиеся legacy bytes сохраняются отдельным backup только в первом transition. Lifecycle marker делает migration idempotent и не позволяет repair новой версии повторно трактовать package seed как legacy user config.
 
 Отдельный файл:
 
@@ -76,7 +76,7 @@ src/WebAssistant/appsettings.json существует
 - регистрирует фактическую отображаемую идентичность продукта в Installed Apps / Programs and Features;
 - записывает `DisplayVersion`, совпадающий с `VERSION` продукта.
 
-После запуска служба использует persistent `%ProgramData%\WebAssistant\config\appsettings.json`; Program Files не является runtime authority конфигурации.
+После установки и запуска служба использует persistent `%ProgramData%\WebAssistant\config\appsettings.json`; `%ProgramFiles%\WebAssistant\appsettings.json` в новой модели отсутствует.
 
 ## Проверка
 
