@@ -255,9 +255,6 @@
     {
       "if_changed": [
         "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
-        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
-        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
-        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "webassist/build/common/default-appsettings.json"
       ],
@@ -268,9 +265,6 @@
     {
       "if_changed": [
         "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
-        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
-        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
-        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "webassist/build/common/default-appsettings.json"
       ],
@@ -281,9 +275,6 @@
     {
       "if_changed": [
         "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
-        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
-        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
-        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "webassist/build/common/default-appsettings.json"
       ],
@@ -294,9 +285,6 @@
     {
       "if_changed": [
         "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
-        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
-        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
-        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "webassist/build/common/default-appsettings.json"
       ],
@@ -307,9 +295,6 @@
     {
       "if_changed": [
         "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
-        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
-        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
-        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "webassist/build/common/default-appsettings.json"
       ],
@@ -413,12 +398,62 @@
     },
     {
       "if_changed": [
-        "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
         "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
         "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
-        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs",
+        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs"
+      ],
+      "must_change_any": [
+        "webassist/docs/configuration.md"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs"
+      ],
+      "must_change_any": [
+        "webassist/docs/appsettings.schema.json"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs"
+      ],
+      "must_change_any": [
+        "webassist/README.md"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs"
+      ],
+      "must_change_any": [
+        "contracts/webassistant-contract-v0.3.json"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs"
+      ],
+      "must_change_any": [
+        "contracts/webassistant-conformance-v0.3.json"
+      ]
+    },
+    {
+      "if_changed": [
+        "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
-        "webassist/build/common/default-appsettings.json"
+        "webassist/build/common/default-appsettings.json",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs"
       ],
       "must_change_any": [
         "webassist/build/common/appsettings.example.json"
