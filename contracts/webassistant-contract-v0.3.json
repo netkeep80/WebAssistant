@@ -124,7 +124,7 @@
     {
       "id": "WA-CORS-001",
       "kind": "required",
-      "statement": "CORS по умолчанию выключен. При включении разрешены только явно заданные exact HTTP/HTTPS origins; wildcard запрещён. Для current public API CORS разрешает только GET и POST и header Content-Type. Environment-specific exact origins могут поставляться downstream consumer/deployment через package appsettings.json, и installer обязан сохранять уже присутствующий package config без подмены default CORS configuration."
+      "statement": "CORS по умолчанию выключен. При включении разрешены только явно заданные exact HTTP/HTTPS origins; wildcard запрещён. Для current public API CORS разрешает только GET и POST и header Content-Type. Environment-specific exact origins могут поставляться downstream consumer/deployment через configuration seed/active config; Windows installer обязан сохранять уже существующий persistent ProgramData config, Linux installer — существующий packaged config, без подмены default CORS configuration."
     },
     {
       "id": "WA-FS-001",
@@ -204,7 +204,12 @@
     {
       "id": "WA-CONFIG-001",
       "kind": "required",
-      "statement": "Runtime/package configuration имеет один current human reference webassist/docs/configuration.md и machine-readable projection webassist/docs/appsettings.schema.json. Они описывают package-time appsettings selection, полную WebAssistant configuration structure, defaults, validation, platform-specific paths, standard ASP.NET Core provider priority и compatibility boundary. Изменение WebAssistantRuntimeOptions, FileSystemRootRegistry или canonical default-appsettings требует синхронного обновления обоих configuration artifacts, product README и candidate contract/conformance."
+      "statement": "Runtime configuration имеет один current human reference webassist/docs/configuration.md, machine-readable projection webassist/docs/appsettings.schema.json и полный устанавливаемый reference-example webassist/build/common/appsettings.example.json. Они описывают полную WebAssistant configuration structure, defaults, validation, platform-specific paths, standard ASP.NET Core provider priority, persistent Windows ownership/migration и compatibility boundary. Изменение configuration semantic source требует синхронного обновления текущих configuration artifacts, product README и candidate contract/conformance; appsettings.example.json является обязательным co-change и не является runtime authority."
+    },
+    {
+      "id": "WA-CONFIG-002",
+      "kind": "required",
+      "statement": "На Windows active machine configuration хранится в %ProgramData%\\WebAssistant\\config\\appsettings.json и не принадлежит Program Files payload; новая canonical installation не оставляет %ProgramFiles%\\WebAssistant\\appsettings.json. При clean install MSI инициализирует persistent config из package-time seed только если active config отсутствует. При upgrade legacy installation до 0.3.68 включительно Burn UpgradePreflight фиксирует old install root, завершает bounded service/worker lifecycle и затем до запуска MSI копирует legacy appsettings*.json в persistent config byte-for-byte. Существующий persistent config никогда автоматически не перезаписывается install/upgrade/repair/reinstall; при первом transition-конфликте persistent config остаётся authority, а отличающиеся legacy bytes сохраняются отдельным backup без silent data loss. Одноразовый lifecycle marker делает legacy migration idempotent и предотвращает повторную интерпретацию package seed как legacy user config при repair/future upgrade. Обычный uninstall сохраняет persistent config; удаление config требует явного purge. %ProgramData%\\WebAssistant\\config\\appsettings.example.json принадлежит installer и всегда заменяется свежей package-версией при install/upgrade/repair/reinstall, но исключается из runtime appsettings providers."
     },
     {
       "id": "WA-DIST-001",
@@ -219,7 +224,7 @@
     {
       "id": "WA-DIST-003",
       "kind": "required",
-      "statement": "Оба canonical producers выбирают config только package-time: если src/WebAssistant/appsettings.json существует, в package включаются его exact bytes; иначе producer создаёт безопасный default config. После формирования final installer appsettings.json является immutable package payload, а installer не генерирует, не заменяет и не изменяет packaged config."
+      "statement": "Оба canonical producers выбирают config seed package-time: если src/WebAssistant/appsettings.json существует, используются его exact bytes; иначе используется безопасный default config. На Windows seed является только build/MSI input: он устанавливается непосредственно как persistent %ProgramData%\\WebAssistant\\config\\appsettings.json при отсутствии existing active config и не устанавливается как appsettings.json в Program Files; package также содержит свежий appsettings.example.json. На Linux текущая packaged appsettings.json model сохраняется: installer устанавливает упакованный config без генерации или подмены."
     },
     {
       "id": "WA-DIST-004",
@@ -234,7 +239,7 @@
     {
       "id": "WA-WIN-INSTALL-001",
       "kind": "required",
-      "statement": "Windows canonical artifact <effective installer basename>-win-x64-<VERSION>.exe обеспечивает elevation/UAC, machine-wide установку в Program Files, self-contained payload, регистрацию и automatic start Windows Service, Installed Apps/Programs and Features registration с DisplayVersion == webassist/VERSION и standard uninstall. .NET file/product metadata и WiX/ARP user-visible display identity используют effective product metadata, при этом WebAssistant.exe, technical service name WebAssistant и stable WiX lifecycle identity не переименовываются branding override. Canonical Windows Burn installer использует repository-owned русскую локализацию WixStandardBootstrapperApplication как default interactive presentation и одну repository-owned графическую identity для bundle EXE/Installed Apps и standard installer logo; presentation resources не изменяют VERSION authority, WebAssistant.exe, technical service name WebAssistant или stable WiX lifecycle identities."
+      "statement": "Windows canonical artifact <effective installer basename>-win-x64-<VERSION>.exe обеспечивает elevation/UAC, machine-wide установку в Program Files, self-contained payload, регистрацию и automatic start Windows Service, Installed Apps/Programs and Features registration с DisplayVersion == webassist/VERSION и standard uninstall. .NET file/product metadata и WiX/ARP user-visible display identity используют effective product metadata, при этом WebAssistant.exe, technical service name WebAssistant и stable WiX lifecycle identity не переименовываются branding override. Canonical Windows Burn installer использует repository-owned русскую локализацию WixStandardBootstrapperApplication как default interactive presentation и одну repository-owned графическую identity для bundle EXE/Installed Apps и standard installer logo; presentation resources не изменяют VERSION authority, WebAssistant.exe, technical service name WebAssistant или stable WiX lifecycle identities. Windows installer создаёт persistent config directory в ProgramData, сохраняет active appsettings.json через uninstall/reinstall lifecycle и обновляет installer-owned appsettings.example.json на текущую package-версию. Active appsettings.json установлен только в ProgramData; Program Files не содержит runtime configuration file."
     },
     {
       "id": "WA-ALT-INSTALL-001",

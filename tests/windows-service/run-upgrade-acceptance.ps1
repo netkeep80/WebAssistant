@@ -41,13 +41,21 @@ $historicalArtifactName = "WebAssistant-win-x64-0.3.21.exe"
 $historicalSha256 = "68fe8a0145721c13f14dad4a4d3fea333c9ccb240b036d8869aa2152af7b7271"
 $installDirectoryFull = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd('\')
 $programDataRoot = Join-Path $env:ProgramData "WebAssistant"
+$configDirectory = Join-Path $programDataRoot "config"
+$persistentConfig = Join-Path $configDirectory "appsettings.json"
+$installedExample = Join-Path $configDirectory "appsettings.example.json"
+$candidateExampleSource = Join-Path $repositoryRoot "webassist/build/common/appsettings.example.json"
+if (-not (Test-Path -LiteralPath $candidateExampleSource -PathType Leaf)) {
+    throw "Candidate appsettings.example.json source is missing."
+}
+$candidateExampleSha256 = (Get-FileHash -LiteralPath $candidateExampleSource -Algorithm SHA256).Hash.ToLowerInvariant()
 $logDirectory = Join-Path $programDataRoot "logs"
 $dataDirectory = Join-Path $programDataRoot "data"
 $logSentinel = Join-Path $logDirectory "upgrade-preserve-log.sentinel"
 $dataSentinel = Join-Path $dataDirectory "upgrade-preserve-data.sentinel"
 $logSentinelContent = "webassistant-upgrade-log-state"
 $dataSentinelContent = "webassistant-upgrade-data-state"
-$installedConfig = Join-Path $installDirectoryFull "appsettings.json"
+$legacyInstalledConfig = Join-Path $installDirectoryFull "appsettings.json"
 $configPreservationSentinel = "webassistant-existing-appsettings-must-survive-upgrade-and-repair"
 $configSentinelSha256 = $null
 
@@ -321,6 +329,9 @@ function Assert-UpgradePreflightBeforeMsi {
         throw "UpgradePreflight diagnostic log is missing: $PreflightDiagnosticLog"
     }
     $preflightDiagnostic = Get-Content -LiteralPath $PreflightDiagnosticLog -Raw
+    if ($preflightDiagnostic -notmatch '(?m)^\S+\s+config-migration outcome=complete\s*$') {
+        throw "UpgradePreflight diagnostic log has no completed config migration before MSI."
+    }
     if ($preflightDiagnostic -notmatch '(?m)^\S+\s+preflight-pass\s*$') {
         throw "UpgradePreflight diagnostic log has no preflight-pass evidence."
     }
@@ -439,14 +450,26 @@ function Assert-InstalledConfigPreserved {
         [Parameter(Mandatory = $true)][string]$Stage
     )
 
-    if (-not (Test-Path -LiteralPath $installedConfig -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath $persistentConfig -PathType Leaf)) {
         Write-ConfigMsiLogEvidence -PrimaryLog $burnLog
-        throw "Installed appsettings.json disappeared during $Stage."
+        throw "Persistent appsettings.json disappeared during $Stage."
     }
-    $actualSha256 = (Get-FileHash -LiteralPath $installedConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualSha256 = (Get-FileHash -LiteralPath $persistentConfig -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualSha256 -ne $ExpectedSha256) {
         Write-ConfigMsiLogEvidence -PrimaryLog $burnLog
-        throw "Installed appsettings.json was overwritten during $Stage. expected=$ExpectedSha256 actual=$actualSha256"
+        throw "Persistent appsettings.json was overwritten during $Stage. expected=$ExpectedSha256 actual=$actualSha256"
+    }
+}
+
+function Assert-ExampleCurrent {
+    param([Parameter(Mandatory = $true)][string]$Stage)
+
+    if (-not (Test-Path -LiteralPath $installedExample -PathType Leaf)) {
+        throw "appsettings.example.json missing during $Stage."
+    }
+    $actualSha256 = (Get-FileHash -LiteralPath $installedExample -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualSha256 -ne $candidateExampleSha256) {
+        throw "appsettings.example.json is stale during $Stage. expected=$candidateExampleSha256 actual=$actualSha256"
     }
 }
 
@@ -521,6 +544,15 @@ if (Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {
 if (Test-Path -LiteralPath $installDirectoryFull) {
     throw "WebAssistant install directory already exists before upgrade acceptance."
 }
+# The preceding installer lifecycle intentionally proves that ordinary uninstall preserves
+# ProgramData config. This scenario must then establish an independent legacy-only fixture
+# before installing historical 0.3.21, otherwise it would not exercise OLD -> NEW migration.
+if (Test-Path -LiteralPath $configDirectory) {
+    Remove-Item -LiteralPath $configDirectory -Recurse -Force
+}
+if (Test-Path -LiteralPath $persistentConfig -PathType Leaf) {
+    throw "Failed to establish clean persistent-config fixture before migration acceptance: $persistentConfig"
+}
 if ((Get-WebAssistantBundleEntries).Count -ne 0) {
     throw "WebAssistant Installed Apps entry already exists before upgrade acceptance."
 }
@@ -554,8 +586,8 @@ try {
     Set-Content -LiteralPath $logSentinel -Value $logSentinelContent -NoNewline
     Set-Content -LiteralPath $dataSentinel -Value $dataSentinelContent -NoNewline
 
-    if (-not (Test-Path -LiteralPath $installedConfig -PathType Leaf)) {
-        throw "Historical installer did not create appsettings.json."
+    if (-not (Test-Path -LiteralPath $legacyInstalledConfig -PathType Leaf)) {
+        throw "Historical installer did not create Program Files appsettings.json."
     }
     $preservedConfig = [ordered]@{
         WebAssistant = [ordered]@{
@@ -573,10 +605,10 @@ try {
     }
     $preservedConfigJson = $preservedConfig | ConvertTo-Json -Depth 8
     [IO.File]::WriteAllText(
-        $installedConfig,
+        $legacyInstalledConfig,
         $preservedConfigJson,
         [Text.UTF8Encoding]::new($false))
-    $configSentinelSha256 = (Get-FileHash -LiteralPath $installedConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+    $configSentinelSha256 = (Get-FileHash -LiteralPath $legacyInstalledConfig -Algorithm SHA256).Hash.ToLowerInvariant()
 
     Invoke-Scanners -ExpectedPort $Port | Out-Null
 
@@ -636,6 +668,7 @@ try {
     }
     Assert-ProgramDataSentinels
     Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'upgrade'
+    Assert-ExampleCurrent -Stage 'upgrade'
 
     # Candidate runtime shutdown invariant: once SCM reports stopped, no worker owned by that service instance may remain.
     Invoke-Scanners -ExpectedPort $Port | Out-Null
@@ -670,6 +703,11 @@ try {
     Invoke-Scanners -ExpectedPort $Port | Out-Null
     Assert-ProgramDataSentinels
     Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'service restart'
+
+    [IO.File]::WriteAllText(
+        $installedExample,
+        "stale-example-before-repair",
+        [Text.UTF8Encoding]::new($false))
 
     # Same-version behavior is canonical Burn maintenance/repair, with the service running and scanner worker materialized.
     $repairServiceInfo = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
@@ -707,6 +745,7 @@ try {
     Invoke-Scanners -ExpectedPort $Port | Out-Null
     Assert-ProgramDataSentinels
     Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'same-version repair'
+    Assert-ExampleCurrent -Stage 'same-version repair'
 
     # Downgrade must be rejected and leave the candidate intact.
     if (Test-Path -LiteralPath $downgradeLog) {
@@ -724,6 +763,7 @@ try {
     Invoke-Scanners -ExpectedPort $Port | Out-Null
     Assert-ProgramDataSentinels
     Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'rejected downgrade'
+    Assert-ExampleCurrent -Stage 'rejected downgrade'
 
     $finalCandidateSha = (Get-FileHash -LiteralPath $candidate.Path -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($finalCandidateSha -ne $candidate.Sha256) {
@@ -758,8 +798,10 @@ try {
         Assert-ProcessIdentityGone -Identity $workerIdentity -Description 'Candidate NAPS2.Worker after uninstall'
     }
     Assert-ProgramDataSentinels
+    Assert-InstalledConfigPreserved -ExpectedSha256 $configSentinelSha256 -Stage 'uninstall preservation'
+    Assert-ExampleCurrent -Stage 'uninstall preservation'
 
-    Write-Host "windows_live_worker_upgrade_acceptance=PASS from=$historicalVersion to=$($candidate.Version)"
+    Write-Host "windows_live_worker_upgrade_acceptance=PASS from=$historicalVersion to=$($candidate.Version) persistent_config=PASS fresh_example=PASS"
 }
 finally {
     $ErrorActionPreference = 'Continue'

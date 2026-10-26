@@ -8,7 +8,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 $serviceName = "WebAssistant"
-$installedConfigFile = Join-Path $InstallDirectory "appsettings.json"
+$programFilesConfig = Join-Path $InstallDirectory "appsettings.json"
+$configDirectory = Join-Path $env:ProgramData "WebAssistant\config"
+$installedConfigFile = Join-Path $configDirectory "appsettings.json"
+$installedExampleFile = Join-Path $configDirectory "appsettings.example.json"
 $logDirectory = Join-Path $env:ProgramData "WebAssistant\logs"
 $dataDirectory = Join-Path $env:ProgramData "WebAssistant\data"
 $installRoot = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd('\') + '\'
@@ -209,8 +212,14 @@ if (-not (Test-Path -LiteralPath $expectedExecutable -PathType Leaf)) {
 if ($serviceInfo.PathName -notlike "*$expectedExecutable*") {
     throw "SCM указывает не на установленный WebAssistant.exe: $($serviceInfo.PathName)"
 }
+if (Test-Path -LiteralPath $programFilesConfig -PathType Leaf) {
+    throw "Installed WebAssistant must not keep active appsettings.json in Program Files: $programFilesConfig"
+}
 if (-not (Test-Path -LiteralPath $installedConfigFile -PathType Leaf)) {
-    throw "Installer не установил package-owned appsettings.json: $installedConfigFile"
+    throw "Runtime не создал persistent appsettings.json: $installedConfigFile"
+}
+if (-not (Test-Path -LiteralPath $installedExampleFile -PathType Leaf)) {
+    throw "Installer не установил persistent appsettings.example.json: $installedExampleFile"
 }
 
 if (-not [string]::IsNullOrWhiteSpace($ExpectedVersion)) {

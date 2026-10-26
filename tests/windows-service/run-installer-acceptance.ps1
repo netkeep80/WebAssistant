@@ -21,6 +21,15 @@ $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $scriptDirectory "../.."))
 $serviceAcceptance = Join-Path $scriptDirectory "run-service-acceptance.ps1"
 $runtimeIntegrity = Join-Path $scriptDirectory "naps2-runtime-integrity.ps1"
+$programDataRoot = Join-Path $env:ProgramData "WebAssistant"
+$configDirectory = Join-Path $programDataRoot "config"
+$persistentConfig = Join-Path $configDirectory "appsettings.json"
+$installedExample = Join-Path $configDirectory "appsettings.example.json"
+$exampleSource = Join-Path $repositoryRoot "webassist/build/common/appsettings.example.json"
+if (-not (Test-Path -LiteralPath $exampleSource -PathType Leaf)) {
+    throw "Repository-owned appsettings.example.json is missing: $exampleSource"
+}
+$expectedExampleSha256 = (Get-FileHash -LiteralPath $exampleSource -Algorithm SHA256).Hash.ToLowerInvariant()
 
 function Get-WebAssistantBundleEntries {
     $registryPaths = @(
@@ -208,11 +217,21 @@ try {
         -ExpectedSha256 $candidateSdk.Sha256 `
         -Stage 'clean install'
 
-    $installedConfig = Join-Path $installDirectoryFull "appsettings.json"
-    if (-not (Test-Path -LiteralPath $installedConfig -PathType Leaf)) {
-        throw "WiX installer не установил package-owned appsettings.json."
+    $programFilesConfig = Join-Path $installDirectoryFull "appsettings.json"
+    if (Test-Path -LiteralPath $programFilesConfig -PathType Leaf) {
+        throw "Clean install left appsettings.json in Program Files."
     }
-    $installedConfigHash = (Get-FileHash -LiteralPath $installedConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+    if (-not (Test-Path -LiteralPath $persistentConfig -PathType Leaf)) {
+        throw "Clean install не создал persistent appsettings.json."
+    }
+    if (-not (Test-Path -LiteralPath $installedExample -PathType Leaf)) {
+        throw "Clean install не установил appsettings.example.json."
+    }
+    $installedConfigHash = (Get-FileHash -LiteralPath $persistentConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+    $installedExampleHash = (Get-FileHash -LiteralPath $installedExample -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($installedExampleHash -ne $expectedExampleSha256) {
+        throw "Clean install appsettings.example.json не совпадает с repository-owned current example."
+    }
 
     $bundleEntries = @(Get-WebAssistantBundleEntries | Where-Object {
         [string]$_.DisplayVersion -eq $version
@@ -234,9 +253,9 @@ try {
         -Port $Port `
         -ExpectedVersion $version
 
-    $configHashAfterLifecycle = (Get-FileHash -LiteralPath $installedConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+    $configHashAfterLifecycle = (Get-FileHash -LiteralPath $persistentConfig -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($configHashAfterLifecycle -ne $installedConfigHash) {
-        throw "Installed package-owned appsettings.json изменился во время lifecycle acceptance."
+        throw "Persistent appsettings.json изменился во время lifecycle acceptance."
     }
 
     $shaAfterLifecycle = (Get-FileHash -LiteralPath $artifactPathFull -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -265,12 +284,60 @@ try {
         throw "WebAssistant Installed Apps entry остался после uninstall."
     }
 
-    $finalSha256 = (Get-FileHash -LiteralPath $artifactPathFull -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($finalSha256 -ne $computedSha256) {
-        throw "Windows artifact bytes изменились после uninstall."
+    if (-not (Test-Path -LiteralPath $persistentConfig -PathType Leaf)) {
+        throw "Persistent appsettings.json был удалён обычным uninstall."
+    }
+    if ((Get-FileHash -LiteralPath $persistentConfig -Algorithm SHA256).Hash.ToLowerInvariant() -ne $installedConfigHash) {
+        throw "Persistent appsettings.json изменился при uninstall."
+    }
+    if (-not (Test-Path -LiteralPath $installedExample -PathType Leaf)) {
+        throw "Persistent appsettings.example.json исчез при uninstall."
     }
 
-    Write-Host "windows_installer_artifact_acceptance=PASS version=$version sha256=$computedSha256"
+    # Full uninstall -> reinstall must retain active config and refresh a stale reference example.
+    [IO.File]::WriteAllText(
+        $installedExample,
+        "stale-example",
+        [Text.UTF8Encoding]::new($false))
+
+    Invoke-ExactBundle `
+        -Executable $artifactPathFull `
+        -Arguments @('/quiet', '/norestart') `
+        -Operation "reinstall after full uninstall"
+    $installed = $true
+
+    if ((Get-FileHash -LiteralPath $persistentConfig -Algorithm SHA256).Hash.ToLowerInvariant() -ne $installedConfigHash) {
+        throw "Reinstall overwrote persistent appsettings.json."
+    }
+    if ((Get-FileHash -LiteralPath $installedExample -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedExampleSha256) {
+        throw "Reinstall did not refresh appsettings.example.json."
+    }
+    & $serviceAcceptance `
+        -InstallDirectory $installDirectoryFull `
+        -Port $Port `
+        -ExpectedVersion $version
+
+    Invoke-ExactBundle `
+        -Executable $artifactPathFull `
+        -Arguments @('/uninstall', '/quiet', '/norestart') `
+        -Operation "final uninstall after reinstall"
+    $installed = $false
+    Wait-ServiceAbsent
+    Wait-NoListener -ExpectedPort $Port
+
+    if (-not (Test-Path -LiteralPath $persistentConfig -PathType Leaf)) {
+        throw "Persistent appsettings.json disappeared after final uninstall."
+    }
+    if ((Get-FileHash -LiteralPath $persistentConfig -Algorithm SHA256).Hash.ToLowerInvariant() -ne $installedConfigHash) {
+        throw "Persistent appsettings.json changed after reinstall lifecycle."
+    }
+
+    $finalSha256 = (Get-FileHash -LiteralPath $artifactPathFull -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($finalSha256 -ne $computedSha256) {
+        throw "Windows artifact bytes изменились после uninstall/reinstall acceptance."
+    }
+
+    Write-Host "windows_installer_artifact_acceptance=PASS version=$version sha256=$computedSha256 persistent_config=PASS fresh_example=PASS reinstall=PASS"
 }
 finally {
     if ($installed) {

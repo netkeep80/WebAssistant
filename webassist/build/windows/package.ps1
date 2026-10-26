@@ -81,6 +81,7 @@ $projectPath = Join-Path $productRoot "src/WebAssistant/WebAssistant.csproj"
 $preflightProject = Join-Path $productRoot "build/windows/upgrade-preflight/WebAssistant.UpgradePreflight.csproj"
 $sourceConfigPath = Join-Path $productRoot "src/WebAssistant/appsettings.json"
 $defaultConfigPath = Join-Path $productRoot "build/common/default-appsettings.json"
+$exampleConfigPath = Join-Path $productRoot "build/common/appsettings.example.json"
 $metadataDefaultsPath = Join-Path $productRoot "build/common/product-metadata.defaults.json"
 $metadataOverridePath = Join-Path $productRoot "src/WebAssistant/product-metadata.json"
 $metadataResolverProject = Join-Path $productRoot "build/common/ProductMetadataResolver/ProductMetadataResolver.csproj"
@@ -96,6 +97,7 @@ $versionPath = Join-Path $productRoot "VERSION"
 foreach ($requiredPath in @(
     $versionPath,
     $defaultConfigPath,
+    $exampleConfigPath,
     $metadataDefaultsPath,
     $metadataResolverProject,
     $provenanceWriter,
@@ -263,12 +265,18 @@ try {
         $configMode = "generated-default"
     }
 
+    $packageExampleConfigPath = Join-Path $appDirectory "appsettings.example.json"
+    Copy-Item -LiteralPath $exampleConfigPath -Destination $packageExampleConfigPath -Force
+
     $executable = Join-Path $appDirectory "WebAssistant.exe"
     if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
         throw "В staged payload отсутствует WebAssistant.exe."
     }
     if (-not (Test-Path -LiteralPath $packageConfigPath -PathType Leaf)) {
         throw "В staged payload отсутствует appsettings.json."
+    }
+    if (-not (Test-Path -LiteralPath $packageExampleConfigPath -PathType Leaf)) {
+        throw "В staged payload отсутствует appsettings.example.json."
     }
 
     & $dotnetExecutable build $packageProject `

@@ -27,8 +27,25 @@ internal static class Program
             TryWriteDiagnostic(startMessage);
 
             using var environment = new RetainedServiceProcessUpgradeEnvironment();
+            var serviceBeforeStop = environment.TryGetWebAssistantService();
             var orchestrator = new UpgradePreflightOrchestrator(environment, policy);
             await orchestrator.RunAsync(CancellationToken.None);
+
+            if (serviceBeforeStop is not null)
+            {
+                var legacyApplicationRoot = Path.GetDirectoryName(
+                    serviceBeforeStop.ExecutablePath);
+                if (!string.IsNullOrWhiteSpace(legacyApplicationRoot))
+                {
+                    WindowsConfigurationMigration.Migrate(
+                        legacyApplicationRoot,
+                        Environment.GetFolderPath(
+                            Environment.SpecialFolder.CommonApplicationData));
+                    const string migrationMessage = "config-migration outcome=complete";
+                    Console.WriteLine(migrationMessage);
+                    TryWriteDiagnostic(migrationMessage);
+                }
+            }
 
             const string passMessage = "preflight-pass";
             Console.WriteLine(passMessage);

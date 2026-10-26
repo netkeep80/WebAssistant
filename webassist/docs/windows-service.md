@@ -24,37 +24,37 @@ WebAssistant-win-x64-<VERSION>.exe
 
 Сценарий сначала собирает самодостаточный payload приложения `win-x64`, затем внутренний MSI и итоговый WiX 7 Burn bundle. Внутренний MSI — промежуточный результат сборки; устанавливать его вручную не требуется. Отображаемые метаданные, задаваемые при сборке, не меняют стабильные технические идентификаторы: исполняемый файл `WebAssistant.exe` и Windows Service `WebAssistant` остаются прежними.
 
-## Конфигурация, принадлежащая пакету
+## Persistent-конфигурация Windows
 
-Конфигурация выбирается во время упаковки:
+Рабочая конфигурация Windows находится вне installation root:
+
+```text
+%ProgramData%\WebAssistant\config\appsettings.json
+```
+
+Во время упаковки по-прежнему выбирается начальный seed:
 
 ```text
 src/WebAssistant/appsettings.json существует
-  -> в состав пакета попадают точные байты этого файла
+  -> используются точные байты этого файла
 
 файл отсутствует
-  -> в состав пакета копируется build/common/default-appsettings.json
+  -> используется build/common/default-appsettings.json
 ```
 
-После формирования EXE `appsettings.json` принадлежит пакету. Установщик не создаёт конфигурацию по умолчанию, не заменяет упакованный файл и не исправляет его во время установки или переустановки.
+На Windows seed используется только как input сборки MSI: новая установка кладёт active `appsettings.json` непосредственно в `%ProgramData%\WebAssistant\config`, а в Program Files этого файла после установки нет. При upgrade установки до 0.3.68 включительно Burn `UpgradePreflight` получает legacy install root, завершает service/worker lifecycle и затем копирует старые `appsettings*.json` из Program Files в ProgramData **до запуска MSI**. Если persistent config уже существует, он не заменяется; отличающиеся legacy bytes сохраняются отдельным backup только в первом transition. Lifecycle marker делает migration idempotent и не позволяет repair новой версии повторно трактовать package seed как legacy user config.
 
-Поэтому публичный корень продукта может не содержать зависящий от окружения `src/WebAssistant/appsettings.json`: канонический сценарий в таком случае использует безопасную конфигурацию репозитория по умолчанию. В ней `WebAssistant:FileSystem` является пустой картой, поэтому файловый обмен по умолчанию не настроен.
+Отдельный файл:
 
-Именованные файловые корни задаются явно, например:
-
-```json
-{
-  "WebAssistant": {
-    "FileSystem": {
-      "archive": "D:/archive",
-      "import": "//192.168.1.20/import"
-    }
-  }
-}
+```text
+%ProgramData%\WebAssistant\config\appsettings.example.json
 ```
 
-Имя `RootDirectory` больше не имеет специальной однокорневой семантики. Если `WebAssistant:FileSystem:RootDirectory` присутствует с допустимым абсолютным путём, текущая модель нескольких корней трактует его как обычный логический корень с именем `RootDirectory`; при миграции следует явно выбрать желаемое имя. Полная структура и приоритет источников конфигурации описаны в [`configuration.md`](configuration.md).
+является installer-owned примером всей текущей configuration surface. Installer принудительно заменяет его свежей package-версией. Он не используется runtime как `appsettings.{Environment}.json`, даже при environment `example`.
 
+Безопасный default seed содержит пустую карту `WebAssistant:FileSystem`; полный пример находится в `appsettings.example.json`. Полная структура и приоритет источников описаны в [`configuration.md`](configuration.md).
+
+`WebAssistant:FileSystem:RootDirectory` не имеет специальной legacy-семантики. Если этот ключ присутствует с допустимым абсолютным путём, текущая multi-root модель трактует его как **обычный логический корень** с именем `RootDirectory`; `%ProgramData%\WebAssistant\data` сам по себе файловым root не становится.
 ## Установка
 
 Запустите установщик от имени пользователя, который может подтвердить повышение прав UAC:
@@ -76,7 +76,7 @@ src/WebAssistant/appsettings.json существует
 - регистрирует фактическую отображаемую идентичность продукта в Installed Apps / Programs and Features;
 - записывает `DisplayVersion`, совпадающий с `VERSION` продукта.
 
-Установленное приложение использует принадлежащий пакету `appsettings.json` без повторного создания со стороны установщика.
+После установки и запуска служба использует persistent `%ProgramData%\WebAssistant\config\appsettings.json`; `%ProgramFiles%\WebAssistant\appsettings.json` в новой модели отсутствует.
 
 ## Проверка
 
@@ -105,6 +105,7 @@ Invoke-WebRequest http://127.0.0.1:17654/v1/health
 Общесистемное состояние расположено отдельно от Program Files:
 
 ```text
+%ProgramData%\WebAssistant\config
 %ProgramData%\WebAssistant\logs
 %ProgramData%\WebAssistant\data
 ```
@@ -117,6 +118,14 @@ Invoke-WebRequest http://127.0.0.1:17654/v1/health
 
 Используйте стандартное удаление фактического продукта WebAssistant через Installed Apps / Programs and Features либо штатное удаление канонического bundle.
 
-Удаление останавливает и удаляет Windows Service, регистрацию продукта и установленные файлы приложения. `%ProgramData%\WebAssistant\logs` и `%ProgramData%\WebAssistant\data` по текущей политике состояния сохраняются.
+Удаление останавливает и удаляет Windows Service, регистрацию продукта и installation payload. `%ProgramData%\WebAssistant\config`, `logs` и `data` сохраняются. Поэтому последующая чистая установка автоматически использует прежний `appsettings.json`. Удаление конфигурации допускается только отдельным явным purge-действием; исторический `uninstall.ps1` предоставляет для этого `-PurgeConfig`.
+
+После обычного canonical uninstall администратор может явно удалить только сохранённую конфигурацию:
+
+```powershell
+Remove-Item -LiteralPath "$env:ProgramData\WebAssistant\config" -Recurse -Force
+```
+
+Это действие необратимо и не выполняется обычным/silent uninstall автоматически. Для repository-owned historical/manual lifecycle `webassist/install/windows/uninstall.ps1 -PurgeConfig` предоставляет эквивалентный явный purge config; `-PurgeData` остаётся отдельным действием для logs/data.
 
 Исторические сценарии репозитория `install.bat` / `install.ps1` не являются каноническим пользовательским способом установки версионированного дистрибутива Windows.

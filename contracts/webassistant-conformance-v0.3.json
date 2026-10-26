@@ -137,7 +137,17 @@
     "webassist/src/WebAssistant/Http/FileSystemMutationOriginPolicy.cs",
     "webassist/src/WebAssistant/Http/LoopbackHostGuard.cs",
     "webassist/src/WebAssistant/Program.cs",
-    "webassist/src/WebAssistant/FileSystem/LinuxRootedFileSystem.cs"
+    "webassist/src/WebAssistant/FileSystem/LinuxRootedFileSystem.cs",
+    "webassist/build/common/appsettings.example.json",
+    "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+    "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+    "tests/core/WindowsConfigurationLifecycleTests.cs",
+    "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs",
+    "tests/core/WindowsConfigurationMigrationTests.cs",
+    "tests/core/AppSettingsBootstrapTests.cs",
+    "webassist/install/windows/uninstall.ps1",
+    "webassist/build/windows/upgrade-preflight/Program.cs",
+    "tests/windows-service/run-upgrade-acceptance.ps1"
   ],
   "vectors": [
     {
@@ -577,12 +587,13 @@
     {
       "id": "WA-C-CONFIG-DOCUMENTATION-001",
       "kind": "positive",
-      "assertion": "Каноническое описание конфигурации времени выполнения и пакета и JSON schema согласованы с безопасной конфигурацией по умолчанию и текущими правилами чтения и проверки; изменение модели конфигурации нельзя провести обновлением только одного документа.",
+      "assertion": "Каноническое описание active runtime configuration, JSON schema и устанавливаемый appsettings.example.json согласованы с безопасным default seed и текущими правилами чтения, persistent Windows ownership и проверки; изменение configuration semantic source нельзя провести без обязательного co-change полного примера и current configuration artifacts.",
       "requirements": [
         "WA-CONFIG-001",
         "WA-DIST-003",
         "WA-CORS-001",
-        "WA-FS-001"
+        "WA-FS-001",
+        "WA-CONFIG-002"
       ],
       "evidence": [
         "webassist/docs/configuration.md",
@@ -592,7 +603,11 @@
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "tests/core/DocumentationGovernanceTests.cs",
         "tests/core/ConfigurationOwnershipTests.cs",
-        "tests/core/RuntimeOptionsTests.cs"
+        "tests/core/RuntimeOptionsTests.cs",
+        "webassist/build/common/appsettings.example.json",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "tests/core/WindowsConfigurationLifecycleTests.cs"
       ]
     },
     {
@@ -660,9 +675,10 @@
     {
       "id": "WA-C-PACKAGE-CONFIG-001",
       "kind": "negative",
-      "assertion": "Distribution candidate фиксирует package-time config selection: source appsettings exact bytes при наличии либо safe default при отсутствии; после package formation installer не может заменить или изменить packaged config.",
+      "assertion": "Distribution candidate фиксирует package-time seed selection: source appsettings exact bytes при наличии либо safe default при отсутствии. На Windows seed является MSI input, active config устанавливается только в persistent ProgramData и existing config не перезаписывается; Program Files appsettings.json отсутствует, а installer-owned appsettings.example.json обновляется независимо. Linux packaged-config semantics сохраняются.",
       "requirements": [
-        "WA-DIST-003"
+        "WA-DIST-003",
+        "WA-CONFIG-002"
       ],
       "evidence": [
         "tests/core/DistributionContractCandidateTests.cs",
@@ -671,7 +687,42 @@
         "webassist/build/windows/package.ps1",
         "webassist/build/linux/package.sh",
         "tests/windows-service/run-installer-acceptance.ps1",
-        "tests/linux-systemd/run-installer-acceptance.sh"
+        "tests/linux-systemd/run-installer-acceptance.sh",
+        "webassist/build/common/appsettings.example.json",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "tests/core/WindowsConfigurationLifecycleTests.cs",
+        "webassist/build/windows/installer/Package.wxs"
+      ]
+    },
+    {
+      "id": "WA-C-WINDOWS-CONFIG-LIFECYCLE-001",
+      "kind": "positive",
+      "assertion": "Windows configuration lifecycle доказывает отсутствие installed appsettings.json в Program Files, persistent active config в ProgramData, pre-MSI byte-preserving migration legacy appsettings*.json после bounded service/worker shutdown, no-overwrite existing authority, one-time conflict backup/migration marker, исключение appsettings.example.json из runtime providers, installer refresh полного example при clean install/upgrade/repair/reinstall и сохранение active config через ordinary uninstall -> reinstall.",
+      "requirements": [
+        "WA-CONFIG-001",
+        "WA-CONFIG-002",
+        "WA-DIST-003",
+        "WA-WIN-INSTALL-001"
+      ],
+      "evidence": [
+        "tests/core/WindowsConfigurationLifecycleTests.cs",
+        "tests/core/AppSettingsBootstrapTests.cs",
+        "tests/core/ConfigurationOwnershipTests.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/build/common/appsettings.example.json",
+        "webassist/build/windows/package.ps1",
+        "webassist/build/windows/installer/Package.wxs",
+        "webassist/install/windows/install.ps1",
+        "webassist/install/windows/uninstall.ps1",
+        "webassist/docs/configuration.md",
+        "webassist/docs/windows-service.md",
+        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs",
+        "tests/core/WindowsConfigurationMigrationTests.cs",
+        "webassist/build/windows/upgrade-preflight/Program.cs",
+        "tests/windows-service/run-service-acceptance.ps1",
+        "tests/windows-service/run-installer-acceptance.ps1",
+        "tests/windows-service/run-upgrade-acceptance.ps1"
       ]
     },
     {

@@ -4,19 +4,42 @@
 
 ## Где находится `appsettings.json`
 
-WebAssistant не хранит зависящий от окружения `src/WebAssistant/appsettings.json` в публичном репозитории. Канонические упаковщики выбирают конфигурацию во время формирования пакета:
+На Windows рабочая конфигурация является persistent machine state и хранится отдельно от Program Files:
 
-1. если `src/WebAssistant/appsettings.json` существует, в состав пакета попадают его точные байты;
-2. иначе в состав пакета копируется `build/common/default-appsettings.json`.
+```text
+%ProgramData%\WebAssistant\config\appsettings.json
+```
 
-После формирования пакета установщик не создаёт заново и не исправляет `appsettings.json`.
+На Linux текущая модель не меняется:
 
-Установленная конфигурация находится рядом с приложением:
+```text
+/opt/webassist/appsettings.json
+```
 
-- Windows: `%ProgramFiles%\WebAssistant\appsettings.json`;
-- Linux: `/opt/webassist/appsettings.json`;
-- при ручном запуске из опубликованного каталога — рядом с `WebAssistant`.
+При ручном запуске не-Windows опубликованного каталога конфигурация по-прежнему находится рядом с приложением.
 
+Канонические упаковщики выбирают **начальный seed** во время формирования пакета:
+
+1. если `src/WebAssistant/appsettings.json` существует, используются его точные байты;
+2. иначе используется `build/common/default-appsettings.json`.
+
+На Windows seed является **только build/installer input** и после новой установки не остаётся как `appsettings.json` в Program Files. MSI устанавливает его непосредственно в `%ProgramData%\WebAssistant\config\appsettings.json` с persistent/no-overwrite semantics. При upgrade существующей установки до 0.3.68 включительно Burn `UpgradePreflight` сначала запоминает legacy install root, штатно останавливает WebAssistant/worker, затем **до запуска MSI** копирует старые `appsettings*.json` из Program Files в ProgramData byte-for-byte. Если persistent файл уже существует, он не перезаписывается; при первом transition-конфликте persistent-файл остаётся authority, а отличающиеся legacy bytes сохраняются отдельным `legacy-*.json` backup. Одноразовый lifecycle marker не позволяет последующим repair/upgrade повторно принять package seed за legacy user config. Install, upgrade, repair и reinstall существующий persistent config не изменяют.
+
+Обычный uninstall Windows сохраняет каталог `%ProgramData%\WebAssistant\config`. Полное удаление конфигурации является отдельным явным purge-действием.
+
+## Всегда свежий пример
+
+Windows installer также устанавливает:
+
+```text
+%ProgramData%\WebAssistant\config\appsettings.example.json
+```
+
+Этот файл принадлежит **установленной версии WebAssistant**, а не администратору. При install/upgrade/repair/reinstall он заменяется свежей package-версией и служит справочным примером всей актуальной configuration surface.
+
+`appsettings.example.json` **никогда не является runtime configuration provider**, в том числе если environment случайно называется `example`. Рабочие настройки изменяются только в `appsettings.json` и стандартных environment-specific runtime-файлах. Repository-owned source полного примера: `build/common/appsettings.example.json`.
+
+`build/common/default-appsettings.json` имеет другую роль: это минимальный безопасный seed. Default и example намеренно не совпадают.
 ## Полная структура
 
 Безопасная конфигурация репозитория по умолчанию:
@@ -126,7 +149,7 @@ WebAssistant не хранит зависящий от окружения `src/W
 
 ## Минимальная конфигурация
 
-WebAssistant может запускаться без секции `WebAssistant`; тогда используются значения времени выполнения по умолчанию, а файловая подсистема остаётся не настроена. Для явного минимального файла пакета:
+WebAssistant может запускаться без секции `WebAssistant`; тогда используются значения времени выполнения по умолчанию, а файловая подсистема остаётся не настроена. Для явного минимального seed/active JSON:
 
 ```json
 {
@@ -171,7 +194,7 @@ WebAssistant может запускаться без секции `WebAssistant
 Обычный startup использует стандартный `WebApplication.CreateBuilder(args)`. Если в `appsettings*.json` найден native Windows path с одиночными обратными слешами, bootstrap сначала создаёт временную нормализованную копию этих JSON-файлов, а затем запускает тот же стандартный builder на ней. Изменения исходного файла во время работы зеркалируются в нормализованную копию, поэтому стандартный `reloadOnChange` сохраняется. Для конфигурации приложения более поздний источник переопределяет более ранний:
 
 1. `appsettings.json`;
-2. `appsettings.{Environment}.json`, если такой файл дополнительно присутствует рядом с приложением;
+2. `appsettings.{Environment}.json`, если такой файл дополнительно присутствует в том же active configuration root (`%ProgramData%\WebAssistant\config` на Windows; application root в текущей Linux-модели);
 3. переменные окружения;
 4. аргументы командной строки.
 
@@ -179,7 +202,7 @@ WebAssistant может запускаться без секции `WebAssistant
 
 Для переменных окружения вложенные ключи задаются через двойное подчёркивание, например `WebAssistant__Port=17655`. Для командной строки применяется стандартная форма ASP.NET Core, например `--WebAssistant:Port 17655`.
 
-Независимо от источника применяются те же проверки времени выполнения: диапазоны, origins, ограничения listener и файловые корни. Принадлежность файла пакету означает, что установщик его не изменяет, но не отменяет стандартный приоритет переменных окружения и аргументов командной строки.
+Независимо от источника применяются те же проверки времени выполнения: диапазоны, origins, ограничения listener и файловые корни. На Windows persistent JSON принадлежит машине/администратору и не перезаписывается installer lifecycle; на Linux packaged JSON сохраняет текущую package-owned семантику. Это различие не меняет стандартный приоритет переменных окружения и аргументов командной строки.
 
 ## Неизвестные и некорректные поля
 

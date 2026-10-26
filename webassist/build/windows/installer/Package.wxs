@@ -16,6 +16,7 @@
 
     <StandardDirectory Id="CommonAppDataFolder">
       <Directory Id="WEBAssistantStateRoot" Name="WebAssistant">
+        <Directory Id="WEBAssistantConfigDirectory" Name="config" />
         <Directory Id="WEBAssistantLogsDirectory" Name="logs" />
         <Directory Id="WEBAssistantDataDirectory" Name="data" />
       </Directory>
@@ -24,16 +25,33 @@
     <Files Include="$(var.PayloadRoot)\**" Directory="INSTALLFOLDER">
       <Exclude Files="$(var.PayloadRoot)\WebAssistant.exe" />
       <Exclude Files="$(var.PayloadRoot)\appsettings.json" />
+      <Exclude Files="$(var.PayloadRoot)\appsettings.example.json" />
     </Files>
 
     <Component
         Id="WebAssistantConfigurationComponent"
-        Directory="INSTALLFOLDER"
+        Directory="WEBAssistantConfigDirectory"
         Guid="*"
+        Permanent="yes"
         NeverOverwrite="yes">
       <File
           Id="WebAssistantConfigurationFile"
           Source="$(var.PayloadRoot)\appsettings.json"
+          KeyPath="yes" />
+    </Component>
+
+    <Component
+        Id="WebAssistantExampleConfigurationComponent"
+        Directory="WEBAssistantConfigDirectory"
+        Guid="*"
+        Permanent="yes">
+      <RemoveFile
+          Id="RemovePreviousWebAssistantExampleConfiguration"
+          Name="appsettings.example.json"
+          On="install" />
+      <File
+          Id="WebAssistantExampleConfigurationFile"
+          Source="$(var.PayloadRoot)\appsettings.example.json"
           KeyPath="yes" />
     </Component>
 

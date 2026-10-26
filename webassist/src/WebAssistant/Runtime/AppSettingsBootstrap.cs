@@ -6,6 +6,7 @@ namespace WebAssistant.Runtime;
 internal sealed class AppSettingsBootstrap : IDisposable
 {
     private readonly string? shadowContentRoot;
+    private readonly string? sourceConfigurationRoot;
     private readonly string? originalWebRoot;
     private FileSystemWatcher? watcher;
     private Timer? refreshTimer;
@@ -15,10 +16,12 @@ internal sealed class AppSettingsBootstrap : IDisposable
     private AppSettingsBootstrap(
         string? shadowContentRoot,
         string? originalContentRoot,
+        string? sourceConfigurationRoot,
         string? originalWebRoot)
     {
         this.shadowContentRoot = shadowContentRoot;
         OriginalContentRoot = originalContentRoot;
+        this.sourceConfigurationRoot = sourceConfigurationRoot;
         this.originalWebRoot = originalWebRoot;
     }
 
@@ -42,21 +45,54 @@ internal sealed class AppSettingsBootstrap : IDisposable
             return new AppSettingsBootstrap(
                 shadowContentRoot: null,
                 originalContentRoot: fullContentRoot,
+                sourceConfigurationRoot: null,
                 originalWebRoot: null);
         }
 
-        var sourceFiles = EnumerateAppSettingsFiles(fullContentRoot);
-        if (sourceFiles.Count == 0)
+        var configurationRoot = fullContentRoot;
+        if (OperatingSystem.IsWindows())
+        {
+            var state = WindowsConfigurationLifecycle.Prepare(
+                fullContentRoot,
+                WindowsConfigurationLifecycle.ResolveCommonApplicationDataRoot());
+            configurationRoot = state.ConfigurationRoot;
+        }
+
+        return PrepareForConfigurationRoot(
+            args,
+            fullContentRoot,
+            configurationRoot);
+    }
+
+    internal static AppSettingsBootstrap PrepareForConfigurationRoot(
+        string[] args,
+        string contentRoot,
+        string configurationRoot)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentRoot);
+        ArgumentException.ThrowIfNullOrWhiteSpace(configurationRoot);
+
+        var fullContentRoot = Path.GetFullPath(contentRoot);
+        var fullConfigurationRoot = Path.GetFullPath(configurationRoot);
+        var sourceFiles = EnumerateAppSettingsFiles(fullConfigurationRoot);
+        var requiresShadow =
+            !PathsEqual(fullContentRoot, fullConfigurationRoot) ||
+            File.Exists(Path.Combine(
+                fullConfigurationRoot,
+                WindowsConfigurationLifecycle.ExampleFileName));
+
+        if (sourceFiles.Count == 0 && !requiresShadow)
         {
             return new AppSettingsBootstrap(
                 shadowContentRoot: null,
                 originalContentRoot: fullContentRoot,
+                sourceConfigurationRoot: fullConfigurationRoot,
                 originalWebRoot: ResolveWebRoot(fullContentRoot));
         }
 
         var normalized = new Dictionary<string, string>(
             StringComparer.OrdinalIgnoreCase);
-        var requiresShadow = false;
 
         foreach (var sourceFile in sourceFiles)
         {
@@ -73,6 +109,7 @@ internal sealed class AppSettingsBootstrap : IDisposable
             return new AppSettingsBootstrap(
                 shadowContentRoot: null,
                 originalContentRoot: fullContentRoot,
+                sourceConfigurationRoot: fullConfigurationRoot,
                 originalWebRoot: ResolveWebRoot(fullContentRoot));
         }
 
@@ -93,6 +130,7 @@ internal sealed class AppSettingsBootstrap : IDisposable
         var bootstrap = new AppSettingsBootstrap(
             shadowRoot,
             fullContentRoot,
+            fullConfigurationRoot,
             ResolveWebRoot(fullContentRoot));
         bootstrap.StartWatcher();
         return bootstrap;
@@ -149,14 +187,14 @@ internal sealed class AppSettingsBootstrap : IDisposable
     private void StartWatcher()
     {
         if (shadowContentRoot is null ||
-            OriginalContentRoot is null ||
-            !Directory.Exists(OriginalContentRoot))
+            sourceConfigurationRoot is null ||
+            !Directory.Exists(sourceConfigurationRoot))
         {
             return;
         }
 
         watcher = new FileSystemWatcher(
-            OriginalContentRoot,
+            sourceConfigurationRoot,
             "appsettings*.json")
         {
             IncludeSubdirectories = false,
@@ -202,7 +240,7 @@ internal sealed class AppSettingsBootstrap : IDisposable
         {
             if (disposed ||
                 shadowContentRoot is null ||
-                OriginalContentRoot is null)
+                sourceConfigurationRoot is null)
             {
                 return;
             }
@@ -210,7 +248,7 @@ internal sealed class AppSettingsBootstrap : IDisposable
             try
             {
                 var sourceFiles = EnumerateAppSettingsFiles(
-                    OriginalContentRoot);
+                    sourceConfigurationRoot);
                 var sourceNames = new HashSet<string>(
                     sourceFiles.Select(path => Path.GetFileName(path)!),
                     StringComparer.OrdinalIgnoreCase);
@@ -261,16 +299,35 @@ internal sealed class AppSettingsBootstrap : IDisposable
     }
 
     private static IReadOnlyList<string> EnumerateAppSettingsFiles(
-        string contentRoot) =>
-        Directory
+        string contentRoot)
+    {
+        if (!Directory.Exists(contentRoot))
+        {
+            return Array.Empty<string>();
+        }
+
+        return Directory
             .EnumerateFiles(
                 contentRoot,
                 "appsettings*.json",
                 SearchOption.TopDirectoryOnly)
+            .Where(path => !string.Equals(
+                Path.GetFileName(path),
+                WindowsConfigurationLifecycle.ExampleFileName,
+                StringComparison.OrdinalIgnoreCase))
             .OrderBy(
                 path => path,
                 StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            Path.TrimEndingDirectorySeparator(left),
+            Path.TrimEndingDirectorySeparator(right),
+            OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal);
 
     private static string? ResolveWebRoot(string contentRoot)
     {

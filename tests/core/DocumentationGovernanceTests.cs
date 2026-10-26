@@ -8,6 +8,9 @@ public sealed class DocumentationGovernanceTests
     private static readonly string[] ConfigurationSemanticSources =
     [
         "webassist/src/WebAssistant/Runtime/WebAssistantRuntimeOptions.cs",
+        "webassist/src/WebAssistant/Runtime/AppSettingsBootstrap.cs",
+        "webassist/src/WebAssistant/Runtime/WindowsConfigurationLifecycle.cs",
+        "webassist/build/windows/upgrade-preflight/WindowsConfigurationMigration.cs",
         "webassist/src/WebAssistant/FileSystem/FileSystemRootRegistry.cs",
         "webassist/build/common/default-appsettings.json"
     ];
@@ -16,6 +19,7 @@ public sealed class DocumentationGovernanceTests
     [
         "webassist/docs/configuration.md",
         "webassist/docs/appsettings.schema.json",
+        "webassist/build/common/appsettings.example.json",
         "webassist/README.md",
         "contracts/webassistant-contract-v0.3.json",
         "contracts/webassistant-conformance-v0.3.json"
@@ -45,6 +49,7 @@ public sealed class DocumentationGovernanceTests
         Assert.Contains("WebAssistant:Cors:AllowedOrigins", configuration, StringComparison.Ordinal);
         Assert.Contains("WebAssistant:FileSystem", configuration, StringComparison.Ordinal);
         Assert.Contains("build/common/default-appsettings.json", configuration, StringComparison.Ordinal);
+        Assert.Contains("build/common/appsettings.example.json", configuration, StringComparison.Ordinal);
         Assert.Contains("переменные окружения", configuration, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("командной строки", configuration, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("неизвест", configuration, StringComparison.OrdinalIgnoreCase);
@@ -93,41 +98,44 @@ public sealed class DocumentationGovernanceTests
         using var policy = JsonDocument.Parse(Read("repo-policy.json"));
         var rules = policy.RootElement.GetProperty("cochange_rules").EnumerateArray().ToArray();
 
-        foreach (var target in RequiredConfigurationAuditTargets)
+        foreach (var source in ConfigurationSemanticSources)
         {
-            Assert.Contains(
-                rules,
-                rule =>
-                {
-                    var triggers = rule.GetProperty("if_changed")
-                        .EnumerateArray()
-                        .Select(value => value.GetString())
-                        .ToArray();
-                    var required = rule.GetProperty("must_change_any")
-                        .EnumerateArray()
-                        .Select(value => value.GetString())
-                        .ToArray();
+            foreach (var target in RequiredConfigurationAuditTargets)
+            {
+                Assert.Contains(
+                    rules,
+                    rule =>
+                    {
+                        var triggers = rule.GetProperty("if_changed")
+                            .EnumerateArray()
+                            .Select(value => value.GetString())
+                            .ToArray();
+                        var required = rule.GetProperty("must_change_any")
+                            .EnumerateArray()
+                            .Select(value => value.GetString())
+                            .ToArray();
 
-                    return ConfigurationSemanticSources.All(source => triggers.Contains(source, StringComparer.Ordinal))
-                        && required.Length == 1
-                        && string.Equals(required[0], target, StringComparison.Ordinal);
-                });
-        }
+                        return triggers.Contains(source, StringComparer.Ordinal)
+                            && required.Length == 1
+                            && string.Equals(required[0], target, StringComparison.Ordinal);
+                    });
+            }
 
-        var changed = new HashSet<string>(
-            [ConfigurationSemanticSources[0], RequiredConfigurationAuditTargets[0]],
-            StringComparer.Ordinal);
-        var unsatisfied = rules
-            .Where(rule => RuleTriggered(rule, changed) && !RuleSatisfied(rule, changed))
-            .SelectMany(rule => rule.GetProperty("must_change_any").EnumerateArray())
-            .Select(value => value.GetString())
-            .Where(value => value is not null)
-            .Cast<string>()
-            .ToHashSet(StringComparer.Ordinal);
+            var changed = new HashSet<string>(
+                [source, RequiredConfigurationAuditTargets[0]],
+                StringComparer.Ordinal);
+            var unsatisfied = rules
+                .Where(rule => RuleTriggered(rule, changed) && !RuleSatisfied(rule, changed))
+                .SelectMany(rule => rule.GetProperty("must_change_any").EnumerateArray())
+                .Select(value => value.GetString())
+                .Where(value => value is not null)
+                .Cast<string>()
+                .ToHashSet(StringComparer.Ordinal);
 
-        foreach (var target in RequiredConfigurationAuditTargets.Skip(1))
-        {
-            Assert.Contains(target, unsatisfied);
+            foreach (var target in RequiredConfigurationAuditTargets.Skip(1))
+            {
+                Assert.Contains(target, unsatisfied);
+            }
         }
     }
 
