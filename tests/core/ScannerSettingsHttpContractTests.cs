@@ -128,7 +128,7 @@ public sealed class ScannerSettingsHttpContractTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(1, adapter.ScanCalls);
-        Assert.Equal(ScanSource.Glass, adapter.LastSource);
+        Assert.Equal(ScanSource.Feeder, adapter.LastSource);
         Assert.Equal(300, adapter.LastSettings.Dpi);
         Assert.Equal(ScannerColorMode.Grayscale, adapter.LastSettings.ColorMode);
         Assert.Equal(ScannerPaperSize.A4, adapter.LastSettings.PaperSize);
