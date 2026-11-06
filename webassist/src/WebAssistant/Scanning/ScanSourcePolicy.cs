@@ -62,7 +62,7 @@ internal static class ScanSourcePolicy
             {
                 FeederPaperState.Present => ScanSource.Feeder,
                 FeederPaperState.Absent => ScanSource.Glass,
-                FeederPaperState.Unknown => ScanSource.Glass,
+                FeederPaperState.Unknown => ScanSource.Feeder,
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(feederPaperState),
                     feederPaperState,
