@@ -201,6 +201,22 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
                     effectiveSettings,
                     cancellationToken);
             }
+            catch (ScannerFeederEmptyException) when (
+                requestedSource == RequestedScanSource.Auto &&
+                source == ScanSource.Feeder &&
+                selected.Backend == ScannerBackend.Sane &&
+                selected.SupportsFlatbed)
+            {
+                logger.LogInformation(
+                    "SANE feeder не вернул страниц; Auto повторяет сканирование со стекла scannerId={ScannerId} scannerName={ScannerName}",
+                    safeScannerId,
+                    safeScannerName);
+                pdf = await adapter.ScanAsync(
+                    selected.Id,
+                    ScanSource.Glass,
+                    effectiveSettings,
+                    cancellationToken);
+            }
             catch (DeviceFeederEmptyException) when (
                 requestedSource == RequestedScanSource.Auto &&
                 source == ScanSource.Feeder &&

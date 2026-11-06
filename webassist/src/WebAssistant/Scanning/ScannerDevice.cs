@@ -35,6 +35,14 @@ internal sealed class ScannerBackendUnavailableException : Exception
     internal ScannerBackend Backend { get; }
 }
 
+internal sealed class ScannerFeederEmptyException : Exception
+{
+    internal ScannerFeederEmptyException(Exception? innerException = null)
+        : base("Feeder не вернул ни одной страницы.", innerException)
+    {
+    }
+}
+
 internal sealed class ScannerDiscoveryResult : IReadOnlyList<ScannerDevice>
 {
     internal ScannerDiscoveryResult(
