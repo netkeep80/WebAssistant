@@ -72,6 +72,7 @@ public sealed class CiWorkflowContractTests
         Assert.Contains("run_windows:", acceptance, StringComparison.Ordinal);
         Assert.Contains("actions/download-artifact@v4", acceptance, StringComparison.Ordinal);
         Assert.Contains("tests/linux-systemd/run-installer-acceptance.sh", acceptance, StringComparison.Ordinal);
+        Assert.Contains("timeout-minutes: 60", acceptance, StringComparison.Ordinal);
         Assert.Contains("tests/windows-service/run-installer-acceptance.ps1", acceptance, StringComparison.Ordinal);
         Assert.DoesNotContain("build/linux/package.sh", acceptance, StringComparison.Ordinal);
         Assert.DoesNotContain("build/windows/package.bat", acceptance, StringComparison.Ordinal);
