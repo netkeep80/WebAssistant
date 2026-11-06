@@ -72,7 +72,13 @@
 
       <section class="card">
         <h2>Журнал WebAssistant</h2>
-        <div class="row"><input id="log-date" type="date"><button id="read-log" type="button">Показать журнал</button></div>
+        <div class="row">
+          <input id="log-date" type="date">
+          <button id="read-log" type="button">Показать журнал</button>
+          <button id="copy-log" type="button" disabled>Скопировать в буфер</button>
+          <button id="download-log" type="button" disabled>Скачать</button>
+          <span id="log-action-status" class="muted"></span>
+        </div>
         <pre id="log-output">Выберите дату.</pre>
       </section>
     </div>
@@ -102,6 +108,9 @@
     const scanStatus=document.getElementById("scan-status");
     const logDate=document.getElementById("log-date");
     const logOutput=document.getElementById("log-output");
+    const copyLogButton=document.getElementById("copy-log");
+    const downloadLogButton=document.getElementById("download-log");
+    const logActionStatus=document.getElementById("log-action-status");
     const pdfResult=document.getElementById("pdf-result");
     const pdfPreview=document.getElementById("pdf-preview");
     const pdfPreviewStatus=document.getElementById("pdf-preview-status");
@@ -114,6 +123,8 @@
     let discoveredScanners=[];
     let capabilitiesGeneration=0;
     let scanGeneration=0;
+    let loadedLogText=null;
+    let loadedLogDate=null;
 
     function today(){const now=new Date(),local=new Date(now.getTime()-now.getTimezoneOffset()*60000);return local.toISOString().slice(0,10)}
     function releasePdfUrl(){if(pdfObjectUrl){URL.revokeObjectURL(pdfObjectUrl);pdfObjectUrl=null}}
@@ -321,15 +332,66 @@
       }
     }
 
+    function resetLogActions(){
+      loadedLogText=null;
+      loadedLogDate=null;
+      copyLogButton.disabled=true;
+      downloadLogButton.disabled=true;
+      logActionStatus.textContent="";
+    }
+
     async function readLog(){
       const date=logDate.value;if(!date)return;
+      resetLogActions();
       logOutput.textContent="Чтение журнала…";
       try{
         const response=await fetch(`${endpoints.logs}?date=${encodeURIComponent(date)}`,{cache:"no-store"});
         if(response.status===404){logOutput.textContent="Журнал за выбранную дату отсутствует.";return}
         if(!response.ok)throw new Error(await errorText(response));
-        logOutput.textContent=await response.text();
+        const text=await response.text();
+        logOutput.textContent=text;
+        loadedLogText=text;
+        loadedLogDate=date;
+        copyLogButton.disabled=false;
+        downloadLogButton.disabled=false;
       }catch(error){logOutput.textContent=`Ошибка: ${error.message}`}
+    }
+
+    async function copyLog(){
+      if(loadedLogText===null)return;
+      try{
+        if(navigator.clipboard?.writeText){
+          await navigator.clipboard.writeText(loadedLogText);
+        }else{
+          const textarea=document.createElement("textarea");
+          textarea.value=loadedLogText;
+          textarea.style.position="fixed";
+          textarea.style.opacity="0";
+          document.body.append(textarea);
+          textarea.focus();
+          textarea.select();
+          const copied=document.execCommand("copy");
+          textarea.remove();
+          if(!copied)throw new Error("браузер не разрешил копирование");
+        }
+        logActionStatus.textContent="Скопировано.";
+      }catch(error){
+        logActionStatus.textContent=`Ошибка копирования: ${error.message}`;
+      }
+    }
+
+    function downloadLog(){
+      if(loadedLogText===null||!loadedLogDate)return;
+      const blob=new Blob([loadedLogText],{type:"text/plain;charset=utf-8"});
+      const url=URL.createObjectURL(blob);
+      const anchor=document.createElement("a");
+      anchor.href=url;
+      anchor.download=`webassistant-${loadedLogDate}.log`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      logActionStatus.textContent="Файл подготовлен.";
     }
 
     document.getElementById("refresh-scanners").addEventListener("click",refreshScanners);
@@ -339,6 +401,9 @@
     scannerInfoButton.addEventListener("click",showScannerInfo);
     scanButton.addEventListener("click",scan);
     document.getElementById("read-log").addEventListener("click",readLog);
+    copyLogButton.addEventListener("click",copyLog);
+    downloadLogButton.addEventListener("click",downloadLog);
+    logDate.addEventListener("change",()=>{resetLogActions();logOutput.textContent="Выберите дату."});
     window.addEventListener("beforeunload",releasePdfUrl);
     logDate.value=today();
 
