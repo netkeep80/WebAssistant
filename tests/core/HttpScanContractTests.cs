@@ -128,12 +128,10 @@ public sealed class HttpScanContractTests
         Assert.Equal(1, adapter.ScanCalls);
     }
 
-    [Theory]
-    [InlineData("Absent")]
-    [InlineData("Unknown")]
-    public async Task Scan_AutoWithoutProvenPaperInDualSource_UsesFlatbed(string paperStateName)
+    [Fact]
+    public async Task Scan_AutoWithAbsentPaperInDualSource_UsesFlatbed()
     {
-        var paperState = Enum.Parse<FeederPaperState>(paperStateName);
+        var paperState = FeederPaperState.Absent;
         var scanner = CreateScanner(
             ScannerBackend.Wia,
             "wia-native-1",
@@ -154,6 +152,31 @@ public sealed class HttpScanContractTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(ScanSource.Glass, adapter.LastSource);
+    }
+
+    [Fact]
+    public async Task Scan_AutoWithUnknownPaperInDualSource_TriesFeeder()
+    {
+        var scanner = CreateScanner(
+            ScannerBackend.Sane,
+            "airscan-network-scanner",
+            "Samsung M2070 Series",
+            supportsFlatbed: true,
+            supportsFeeder: true,
+            supportsDuplex: false,
+            FeederPaperState.Unknown);
+        var adapter = FakeScanAdapter.WithPdf([scanner], PdfBytes);
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var response = await PostScanAsync(client, new
+        {
+            scannerId = scanner.Id,
+            source = "auto"
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(ScanSource.Feeder, adapter.LastSource);
     }
 
     [Fact]
