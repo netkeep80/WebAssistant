@@ -216,6 +216,23 @@ internal sealed class ScanCoordinator(ILogger<ScanCoordinator> logger)
                     effectiveSettings,
                     cancellationToken);
             }
+            catch (DeviceOfflineException) when (
+                requestedSource == RequestedScanSource.Auto &&
+                source == ScanSource.Feeder &&
+                selected.Backend == ScannerBackend.Sane &&
+                selected.FeederPaperState == FeederPaperState.Unknown &&
+                selected.SupportsFlatbed)
+            {
+                logger.LogInformation(
+                    "SANE feeder при неизвестном состоянии бумаги вернул offline/invalid; повторное сканирование со стекла scannerId={ScannerId} scannerName={ScannerName}",
+                    safeScannerId,
+                    safeScannerName);
+                pdf = await adapter.ScanAsync(
+                    selected.Id,
+                    ScanSource.Glass,
+                    effectiveSettings,
+                    cancellationToken);
+            }
 
             if (!pdf.CanRead || (pdf.CanSeek && pdf.Length == 0))
             {
