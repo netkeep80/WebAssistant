@@ -3,6 +3,7 @@ using NAPS2.Images;
 using NAPS2.Images.Gtk;
 using NAPS2.Pdf;
 using NAPS2.Scan;
+using NAPS2.Scan.Exceptions;
 
 #pragma warning disable CA2252
 
@@ -151,14 +152,26 @@ internal sealed class LinuxScanAdapter : IScanAdapter, IDisposable
         var images = new List<ProcessedImage>();
         try
         {
-            await foreach (var image in controller.Scan(options, cancellationToken).WithCancellation(cancellationToken))
+            try
             {
-                images.Add(image);
+                await foreach (var image in controller.Scan(options, cancellationToken).WithCancellation(cancellationToken))
+                {
+                    images.Add(image);
+                }
+            }
+            catch (DeviceFeederEmptyException exception) when (source == ScanSource.Feeder)
+            {
+                throw new ScannerFeederEmptyException(exception);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
             if (images.Count == 0)
             {
+                if (source == ScanSource.Feeder)
+                {
+                    throw new ScannerFeederEmptyException();
+                }
+
                 throw new InvalidOperationException("Сканер не вернул ни одной страницы.");
             }
 
