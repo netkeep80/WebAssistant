@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NAPS2.Scan.Exceptions;
 using WebAssistant.Scanning;
 using Xunit;
 
@@ -177,6 +178,74 @@ public sealed class HttpScanContractTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(ScanSource.Feeder, adapter.LastSource);
+    }
+
+    [Fact]
+    public async Task Scan_AutoSaneUnknownPaper_OfflineFeederFallsBackToFlatbed()
+    {
+        var scanner = CreateScanner(
+            ScannerBackend.Sane,
+            "airscan-network-scanner",
+            "Samsung M2070 Series",
+            supportsFlatbed: true,
+            supportsFeeder: true,
+            supportsDuplex: false,
+            FeederPaperState.Unknown);
+        var attemptedSources = new List<ScanSource>();
+        var adapter = new FakeScanAdapter(
+            new ScannerDiscoveryResult([scanner]),
+            (_, source, _) =>
+            {
+                attemptedSources.Add(source);
+                return source == ScanSource.Feeder
+                    ? Task.FromException<Stream>(new DeviceOfflineException())
+                    : Task.FromResult<Stream>(new MemoryStream(PdfBytes, writable: false));
+            });
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var response = await PostScanAsync(client, new
+        {
+            scannerId = scanner.Id,
+            source = "auto"
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(new[] { ScanSource.Feeder, ScanSource.Glass }, attemptedSources);
+        Assert.Equal(2, adapter.ScanCalls);
+    }
+
+    [Fact]
+    public async Task Scan_ExplicitSaneFeederOffline_DoesNotFallBackToFlatbed()
+    {
+        var scanner = CreateScanner(
+            ScannerBackend.Sane,
+            "airscan-network-scanner",
+            "Samsung M2070 Series",
+            supportsFlatbed: true,
+            supportsFeeder: true,
+            supportsDuplex: false,
+            FeederPaperState.Unknown);
+        var attemptedSources = new List<ScanSource>();
+        var adapter = new FakeScanAdapter(
+            new ScannerDiscoveryResult([scanner]),
+            (_, source, _) =>
+            {
+                attemptedSources.Add(source);
+                return Task.FromException<Stream>(new DeviceOfflineException());
+            });
+        using var factory = CreateFactory(adapter);
+        using var client = factory.CreateClient();
+
+        using var response = await PostScanAsync(client, new
+        {
+            scannerId = scanner.Id,
+            source = "feeder"
+        });
+
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        Assert.Equal(new[] { ScanSource.Feeder }, attemptedSources);
+        Assert.Equal(1, adapter.ScanCalls);
     }
 
     [Fact]
