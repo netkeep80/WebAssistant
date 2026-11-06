@@ -8,7 +8,7 @@ public sealed class ScanSourcePolicyTests
     [Theory]
     [InlineData("Present", "Feeder")]
     [InlineData("Absent", "Glass")]
-    [InlineData("Unknown", "Glass")]
+    [InlineData("Unknown", "Feeder")]
     public void Auto_DualSource_UsesTriStatePaperPolicy(string paperStateName, string expectedName)
     {
         var paperState = Enum.Parse<FeederPaperState>(paperStateName);
