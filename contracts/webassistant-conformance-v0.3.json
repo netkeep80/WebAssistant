@@ -268,7 +268,7 @@
     {
       "id": "WA-C-SCANNER-AUTO-001",
       "kind": "positive",
-      "assertion": "WebAssistant-owned auto policy выбирает feeder только при PRESENT; для dual-source ABSENT и UNKNOWN выбирают flatbed, UNKNOWN не считается PRESENT, explicit source не имеет fallback. Auto с capabilityState=unavailable не угадывает source, не запускает acquisition и получает 503; unsupported source/duplex отклоняется до acquisition только когда это доказано достоверным capability snapshot.",
+      "assertion": "WebAssistant-owned auto policy для dual-source выбирает feeder при PRESENT, flatbed при ABSENT и сначала feeder при UNKNOWN. Если Auto выбрал feeder и flatbed доступен, DeviceFeederEmptyException вызывает ровно одну повторную попытку Glass; для SANE endpoint с UNKNOWN тот же fallback выполняется при DeviceOfflineException, нормализуя SANE INVAL от пустого ADF. Explicit source не имеет fallback. Auto с capabilityState=unavailable не угадывает source, не запускает acquisition и получает 503; unsupported source/duplex отклоняется до acquisition только когда это доказано достоверным capability snapshot.",
       "requirements": [
         "WA-SCAN-002",
         "WA-SCAN-008"
