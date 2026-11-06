@@ -15,6 +15,30 @@ public sealed class DiagnosticsContractTests
     private static readonly byte[] DocumentPdfBytes =
         "%PDF-1.7\nDOCUMENT-CONTENT-MARKER\n%%EOF"u8.ToArray();
 
+
+    [Fact]
+    public void DiagnosticsPage_ProvidesCopyAndDownloadActionsForLoadedDailyLog()
+    {
+        var root = FindRepositoryRoot();
+        var page = File.ReadAllText(Path.Combine(
+            root,
+            "webassist",
+            "src",
+            "WebAssistant",
+            "wwwroot",
+            "index.html"));
+
+        Assert.Contains("id=\"copy-log\"", page, StringComparison.Ordinal);
+        Assert.Contains("Скопировать в буфер", page, StringComparison.Ordinal);
+        Assert.Contains("id=\"download-log\"", page, StringComparison.Ordinal);
+        Assert.Contains(">Скачать</button>", page, StringComparison.Ordinal);
+        Assert.Contains("navigator.clipboard?.writeText", page, StringComparison.Ordinal);
+        Assert.Contains("document.execCommand(\"copy\")", page, StringComparison.Ordinal);
+        Assert.Contains("webassistant-${loadedLogDate}.log", page, StringComparison.Ordinal);
+        Assert.Contains("function resetLogActions()", page, StringComparison.Ordinal);
+        Assert.Contains("logDate.addEventListener(\"change\"", page, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task DiagnosticsInfo_ReturnsCurrentSafeRuntimeState()
     {
@@ -157,6 +181,24 @@ public sealed class DiagnosticsContractTests
         Assert.Contains(scannerId, log);
         Assert.DoesNotContain("scanner failure", log);
         Assert.DoesNotContain("System.InvalidOperationException:", log);
+    }
+
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (Directory.Exists(Path.Combine(directory.FullName, "webassist")) &&
+                Directory.Exists(Path.Combine(directory.FullName, "tests")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Не найден repository root WebAssistant.");
     }
 
     private static async Task<string> ReadTodayLogAsync(string logDirectory)
