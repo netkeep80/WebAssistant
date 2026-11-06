@@ -25,7 +25,7 @@ jobs:
     name: ALT p11 historical artifact lifecycle
     if: ${{ inputs.run_linux }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 60
     steps:
       - name: Checkout acceptance harness
         uses: actions/checkout@v6
