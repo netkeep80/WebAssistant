@@ -9,6 +9,8 @@ using NAPS2.Scan.Exceptions;
 using WebAssistant.Scanning;
 using Xunit;
 
+#pragma warning disable CA2252
+
 namespace WebAssistant.CoreTests;
 
 public sealed class HttpScanContractTests
@@ -684,3 +686,5 @@ public sealed class HttpScanContractTests
         }
     }
 }
+
+#pragma warning restore CA2252
