@@ -242,13 +242,13 @@ Native identity, возможности и внутреннее состояни
 
 - `PRESENT` → feeder;
 - `ABSENT` → flatbed;
-- `UNKNOWN` → flatbed.
+- `UNKNOWN` → сначала feeder.
 
-`UNKNOWN` никогда не трактуется как `PRESENT`.
+`UNKNOWN` не означает наличие бумаги. Для WIA/TWAIN это состояние означает, что текущий feeder-state не удалось достоверно прочитать; для SANE текущий pinned SDK не публикует `FeederHasPaper`, поэтому `UNKNOWN` является обычным состоянием dual-source SANE endpoint.
 
 Если доступен только feeder, `auto` использует feeder. Если доступен только flatbed, `auto` использует flatbed. Если подходящего источника нет, запрос отклоняется до физического сканирования. Если снимок возможностей выбранной конечной точки имеет состояние `unavailable`, `source=auto` не угадывает источник, не запускает сканирование и возвращает `503`.
 
-Состояние бумаги является снимком возможности, а не гарантией успешной последующей подачи. Если `auto` выбрал feeder для конечной точки с доступным flatbed, но реальная попытка сканирования завершилась `DeviceFeederEmptyException`, WebAssistant один раз повторяет сканирование со стекла. Для SANE dual-source endpoint с `FeederPaperState=UNKNOWN` дополнительно допускается тот же однократный fallback при `DeviceOfflineException`: NAPS2 отображает SANE `INVAL` в этот тип, а некоторые сетевые MФУ через WSD/airscan возвращают `INVAL` при пустом ADF вместо `NO_DOCS`. Во всех остальных случаях feeder error не вызывает скрытого переключения.
+Состояние бумаги является снимком возможности, а не гарантией успешной последующей подачи. Если `auto` выбрал feeder для конечной точки с доступным flatbed, но реальная попытка сканирования завершилась `DeviceFeederEmptyException`, WebAssistant один раз повторяет сканирование со стекла. Для SANE dual-source endpoint WebAssistant дополнительно нормализует в собственный `ScannerFeederEmptyException` два строго ограниченных результата feeder acquisition: NAPS2 `DeviceFeederEmptyException` и успешное завершение acquisition без единой страницы. При `source=auto` такой нормализованный feeder-empty outcome вызывает ровно одну повторную попытку со стекла; при явном `source=feeder` скрытого fallback нет. Для совместимости с известным SANE/WSD поведением при `FeederPaperState=UNKNOWN` сохраняется также однократный fallback при `DeviceOfflineException` (`SANE INVAL`). Остальные feeder errors не переключают источник.
 
 Явно заданный `flatbed` или `feeder` не имеет скрытого переключения на другой источник. В частности, `source=feeder` при пустом ADF возвращает ошибку сканирования и не переключается на flatbed.
 
