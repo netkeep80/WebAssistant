@@ -69,7 +69,7 @@
     {
       "id": "WA-SCAN-002",
       "kind": "required",
-      "statement": "POST /v1/scan является единственным scanner acquisition route. JSON request требует scannerId; source имеет значения auto, flatbed или feeder и по умолчанию равен auto; settings.duplex является отдельным boolean и по умолчанию false; source-specific routes отсутствуют. Автовыбор использует состояние бумаги PRESENT, ABSENT или UNKNOWN: для dual-source PRESENT выбирает feeder, ABSENT и UNKNOWN выбирают flatbed, UNKNOWN никогда не трактуется как PRESENT; явно заданный source не имеет скрытого fallback. WebAssistant не хранит mutable scanner profile или выбранные scannerId/source/settings: эти настройки принадлежат вызывающему приложению и передаются в запросе."
+      "statement": "POST /v1/scan является единственным scanner acquisition route. JSON request требует scannerId; source имеет значения auto, flatbed или feeder и по умолчанию равен auto; settings.duplex является отдельным boolean и по умолчанию false; source-specific routes отсутствуют. Автовыбор использует состояние бумаги PRESENT, ABSENT или UNKNOWN: для dual-source PRESENT выбирает feeder, ABSENT выбирает flatbed, UNKNOWN сначала пробует feeder. Если Auto выбрал feeder и flatbed доступен, DeviceFeederEmptyException приводит ровно к одной повторной попытке со стекла; для SANE dual-source endpoint с UNKNOWN тот же однократный fallback разрешён при DeviceOfflineException как нормализация backend-специфичного SANE INVAL на пустом ADF. Явно заданный source не имеет скрытого fallback. WebAssistant не хранит mutable scanner profile или выбранные scannerId/source/settings: эти настройки принадлежат вызывающему приложению и передаются в запросе."
     },
     {
       "id": "WA-SCAN-003",
