@@ -10,6 +10,26 @@ public sealed class CiWorkflowContractTests
         var root = FindRepositoryRoot();
         var workflows = Path.Combine(root, ".github", "workflows");
         var ci = File.ReadAllText(Path.Combine(workflows, "ci.yml"));
+        var core = File.ReadAllText(Path.Combine(workflows, "core.yml"));
+
+        Assert.Contains("runs-on: ubuntu-24.04", core, StringComparison.Ordinal);
+        Assert.Contains("runs-on: windows-2025", core, StringComparison.Ordinal);
+
+        foreach (var workflowPath in Directory.EnumerateFiles(workflows))
+        {
+            var extension = Path.GetExtension(workflowPath);
+            if (!extension.Equals(".yml", StringComparison.OrdinalIgnoreCase) &&
+                !extension.Equals(".yaml", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var workflow = File.ReadAllText(workflowPath);
+            Assert.DoesNotContain("runs-on: ubuntu-latest", workflow, StringComparison.Ordinal);
+            Assert.DoesNotContain("runs-on: windows-latest", workflow, StringComparison.Ordinal);
+            Assert.DoesNotContain("runs-on: macos-latest", workflow, StringComparison.Ordinal);
+        }
+
 
         Assert.Contains("ci-required:", ci, StringComparison.Ordinal);
         Assert.Contains("name: ci-required", ci, StringComparison.Ordinal);
