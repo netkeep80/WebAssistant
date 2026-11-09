@@ -32,6 +32,16 @@
       "statement": "Автономный export root содержит собственный .gitlab-ci.yml, который после экспорта работает без файлов родительского development repository."
     },
     {
+      "id": "WA-CI-002",
+      "kind": "required",
+      "statement": "После copy-export downstream CI repository является самостоятельным source-of-build: revision/provenance сборки определяется revision этого downstream repository, а CI не требует имени, URL, provider API, commit identity или иных repository-specific идентификаторов исходного development repository."
+    },
+    {
+      "id": "WA-CI-003",
+      "kind": "required",
+      "statement": "Development repository описывает downstream CI/CD и distribution только через generic parameterized contracts. Product requirements, conformance, repository-owned scripts и current product documentation не содержат concrete downstream repository/project/organization/host/share/cluster/path identities; environment-specific значения задаются только во внешней downstream CI/CD configuration."
+    },
+    {
       "id": "WA-SERVICE-001",
       "kind": "required",
       "statement": "WebAssistant устанавливается администратором один раз на рабочую станцию и работает как machine-wide системная служба."

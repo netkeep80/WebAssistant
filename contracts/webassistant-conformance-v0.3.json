@@ -181,6 +181,30 @@
       ]
     },
     {
+      "id": "WA-C-CI-LOCAL-REVISION-001",
+      "kind": "positive",
+      "assertion": "После copy-export downstream CI использует revision собственного repository как source identity/provenance и не зависит от имени, URL, provider API или commit identity исходного development repository.",
+      "requirements": [
+        "WA-CI-002",
+        "WA-REPO-001"
+      ],
+      "evidence": [
+        "tests/core/DistributionContractCandidateTests.cs",
+        "webassist/.gitlab-ci.yml"
+      ]
+    },
+    {
+      "id": "WA-C-DOWNSTREAM-IDENTITY-OPAQUE-001",
+      "kind": "negative",
+      "assertion": "Development repository фиксирует только generic parameterized downstream CI/CD contract и не кодирует concrete downstream repository/project/organization/host/share/cluster/path identities; environment-specific значения остаются внешней downstream CI/CD configuration.",
+      "requirements": [
+        "WA-CI-003"
+      ],
+      "evidence": [
+        "tests/core/DistributionContractCandidateTests.cs"
+      ]
+    },
+    {
       "id": "WA-C-SERVICE-LIFECYCLE-001",
       "kind": "positive",
       "assertion": "WebAssistant устанавливается и работает как machine-wide Windows Service и ALT Linux systemd service через canonical product entrypoints.",
