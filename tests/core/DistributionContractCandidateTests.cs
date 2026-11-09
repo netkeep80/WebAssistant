@@ -40,6 +40,8 @@ public sealed class DistributionContractCandidateTests
 
     private static readonly string[] DistributionRequirementIds =
     [
+        "WA-CI-002",
+        "WA-CI-003",
         "WA-DIST-001",
         "WA-DIST-002",
         "WA-DIST-003",
@@ -53,6 +55,8 @@ public sealed class DistributionContractCandidateTests
 
     private static readonly string[] DistributionVectorIds =
     [
+        "WA-C-CI-LOCAL-REVISION-001",
+        "WA-C-DOWNSTREAM-IDENTITY-OPAQUE-001",
         "WA-C-DIST-PRODUCERS-001",
         "WA-C-DIST-VERSION-IDENTITY-001",
         "WA-C-PACKAGE-CONFIG-001",
@@ -131,6 +135,53 @@ public sealed class DistributionContractCandidateTests
         Assert.True(
             graphErrors.Count == 0,
             "Candidate conformance graph invalid:\n" + string.Join("\n", graphErrors));
+    }
+
+    [Fact]
+    public void CandidateDistributionContract_RequiresRepositoryIdentityIsolation()
+    {
+        var root = FindRepositoryRoot();
+        using var candidateContract = ReadJson(root, CandidateContractPath);
+        using var candidateConformance = ReadJson(root, CandidateConformancePath);
+
+        var requirements = candidateContract.RootElement
+            .GetProperty("requirements")
+            .EnumerateArray()
+            .ToDictionary(
+                requirement => RequiredString(requirement, "id"),
+                requirement => RequiredString(requirement, "statement"),
+                StringComparer.Ordinal);
+
+        Assert.Contains("WA-CI-002", requirements.Keys);
+        Assert.Contains("WA-CI-003", requirements.Keys);
+
+        var localRevision = requirements["WA-CI-002"];
+        Assert.Contains("downstream CI repository", localRevision, StringComparison.Ordinal);
+        Assert.Contains("revision", localRevision, StringComparison.Ordinal);
+        Assert.Contains("development repository", localRevision, StringComparison.Ordinal);
+        Assert.Contains("не требует", localRevision, StringComparison.Ordinal);
+
+        var opaqueDownstream = requirements["WA-CI-003"];
+        Assert.Contains("generic parameterized contracts", opaqueDownstream, StringComparison.Ordinal);
+        Assert.Contains("concrete downstream", opaqueDownstream, StringComparison.Ordinal);
+        Assert.Contains("environment-specific", opaqueDownstream, StringComparison.Ordinal);
+
+        var vectors = candidateConformance.RootElement
+            .GetProperty("vectors")
+            .EnumerateArray()
+            .ToDictionary(vector => RequiredString(vector, "id"), StringComparer.Ordinal);
+
+        Assert.Contains("WA-C-CI-LOCAL-REVISION-001", vectors.Keys);
+        Assert.Contains("WA-C-DOWNSTREAM-IDENTITY-OPAQUE-001", vectors.Keys);
+
+        Assert.Contains(
+            "собственного repository",
+            RequiredString(vectors["WA-C-CI-LOCAL-REVISION-001"], "assertion"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "generic parameterized downstream CI/CD contract",
+            RequiredString(vectors["WA-C-DOWNSTREAM-IDENTITY-OPAQUE-001"], "assertion"),
+            StringComparison.Ordinal);
     }
 
     [Fact]
