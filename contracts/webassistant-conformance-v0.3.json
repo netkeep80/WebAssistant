@@ -201,9 +201,7 @@
         "WA-CI-003"
       ],
       "evidence": [
-        "tests/core/DistributionContractCandidateTests.cs",
-        "contracts/webassistant-contract-v0.3.json",
-        "contracts/webassistant-conformance-v0.3.json"
+        "tests/core/DistributionContractCandidateTests.cs"
       ]
     },
     {
