@@ -1,90 +1,90 @@
+# Infrastructure-neutral, copy-exportable product CI. Project-specific values
+# must be configured in downstream GitLab settings, never in this repository.
 stages:
   - utility-tasks
   - package
 
+variables:
+  WEBASSISTANT_BUILDER_TAG: "dotnet-10.0.403-v1"
+  WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP: "0"
+
 create-gitlab-variables:
   stage: utility-tasks
+  image: "$CI_DOCKER_HUB/docker:24.0.2-with-utils"
   script:
     - |
       set -eu
+      : "${CI_PROJECT_ACCESS_TOKEN:?Set protected project API token with Maintainer/api permissions first}"
+      : "${CI_API_V4_URL:?GitLab API URL is required}"
+      : "${CI_PROJECT_ID:?GitLab project ID is required}"
+      command -v curl >/dev/null 2>&1 || { echo 'curl is required' >&2; exit 1; }
 
-      : "${CI_PROJECT_ACCESS_TOKEN:?CI_PROJECT_ACCESS_TOKEN is required}"
-      : "${CI_API_V4_URL:?CI_API_V4_URL is required}"
-      : "${CI_PROJECT_ID:?CI_PROJECT_ID is required}"
-
-      command -v curl >/dev/null 2>&1 || {
-        echo "curl is required for create-gitlab-variables" >&2
-        exit 1
-      }
-
-      create_project_variable_if_missing() {
-        key="$1"
-        initial_value="$2"
-        response_file="$(mktemp)"
-
-        status="$(
-          curl --silent --show-error \
-            --output "$response_file" \
-            --write-out "%{http_code}" \
-            --header "PRIVATE-TOKEN: $CI_PROJECT_ACCESS_TOKEN" \
-            "$CI_API_V4_URL/projects/$CI_PROJECT_ID/variables/$key"
-        )"
-
+      create_if_absent() {
+        key="$1"; kind="$2"
+        response="$(mktemp)"
+        status="$(curl --silent --show-error --output "$response" --write-out '%{http_code}' \
+          --header "PRIVATE-TOKEN: $CI_PROJECT_ACCESS_TOKEN" \
+          "$CI_API_V4_URL/projects/$CI_PROJECT_ID/variables/$key")"
         case "$status" in
-          200)
-            echo "GitLab project variable already exists: $key"
-            ;;
+          200) echo "Already configured: $key" ;;
           404)
-            curl --silent --show-error --fail \
-              --request POST \
+            curl --silent --show-error --fail --request POST \
               --header "PRIVATE-TOKEN: $CI_PROJECT_ACCESS_TOKEN" \
               "$CI_API_V4_URL/projects/$CI_PROJECT_ID/variables" \
-              --form "key=$key" \
-              --form "protected=true" \
-              --form "expanded=true" \
-              --form "value=$initial_value" \
-              >/dev/null
-            echo "GitLab project variable created: $key"
-            ;;
-          *)
-            echo "Unable to inspect GitLab project variable $key: HTTP $status" >&2
-            cat "$response_file" >&2
-            rm -f "$response_file"
-            exit 1
-            ;;
+              --form "key=$key" --form 'value=null' \
+              --form 'protected=true' --form 'expanded=true' \
+              --form "variable_type=$kind" >/dev/null
+            echo "Created placeholder: $key" ;;
+          *) echo "Cannot inspect $key (HTTP $status)" >&2; rm -f "$response"; exit 1 ;;
         esac
-
-        rm -f "$response_file"
+        rm -f "$response"
       }
 
-      create_project_variable_if_missing CI_NETWORK_DRIVE_PATH null
-      create_project_variable_if_missing CI_DISTRIBUTION_NAME null
-  only:
-    refs:
-      - master
-      - main
-  when: manual
+      create_if_absent CI_DISTRIBUTION_NAME env_var
+      create_if_absent CI_NETWORK_DRIVE_PATH env_var
+      create_if_absent CI_PROMOTION_PROJECT_PATH env_var
+      create_if_absent CI_RELEASE_SSH_HOST env_var
+      create_if_absent CI_RELEASE_SSH_USER env_var
+      create_if_absent CI_RELEASE_SSH_PRIVATE_KEY file
+      create_if_absent CI_RELEASE_SSH_KNOWN_HOSTS file
+      create_if_absent CI_RELEASE_STORAGE_RENAME_VERIFIED env_var
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+      allow_failure: true
 
-linux-package:
+build-altlinux-release:
   stage: package
+  image: "${CI_DOCKER_HUB}/${CI_DISTRIBUTION_NAME}-builder:${WEBASSISTANT_BUILDER_TAG}"
+  variables:
+    GIT_STRATEGY: fetch
   script:
-    - 'export WEBASSISTANT_SOURCE_SHA="$CI_COMMIT_SHA"'
-    - './build/linux/package.sh artifacts/linux-x64'
-  artifacts:
-    # Временный transport/debug artifact. Долговременное distribution storage
-    # принадлежит внешней downstream CI/CD configuration.
-    paths:
-      - artifacts/linux-x64/
-    expire_in: 1 day
-  only:
-    changes:
-      - ".gitlab-ci.yml"
-      - "README.md"
-      - "VERSION"
-      - "WebAssistant.sln"
-      - "NuGet.Config"
-      - "src/**/*"
-      - "build/**/*"
-      - "install/**/*"
-      - "docs/**/*"
-      - "vendor/**/*"
+    - |
+      set -eu
+      : "${CI_DISTRIBUTION_NAME:?CI_DISTRIBUTION_NAME is required}"
+      case "$CI_DISTRIBUTION_NAME" in
+        null|.|..|*[!a-zA-Z0-9._-]*|'') echo 'Invalid CI_DISTRIBUTION_NAME' >&2; exit 1 ;;
+      esac
+      : "${CI_COMMIT_SHA:?GitLab source revision is required}"
+      test -f VERSION
+      version="$(cat VERSION)"
+      echo "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+      command -v dotnet >/dev/null 2>&1
+      dotnet --list-sdks | grep -Eq '^10\.' || { echo '.NET SDK 10 is required in builder image' >&2; exit 1; }
+      for tool in bash jq zip sha256sum base64 stat realpath tar ssh; do
+        command -v "$tool" >/dev/null 2>&1 || { echo "Builder missing $tool" >&2; exit 1; }
+      done
+
+      export WEBASSISTANT_SOURCE_SHA="$CI_COMMIT_SHA"
+      export WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0
+      bash tests/distribution-release.test.sh
+      bash build/linux/package.sh artifacts/linux-x64
+      bash build/distribution/release.sh assemble artifacts/linux-x64 artifacts/release-staging "$CI_DISTRIBUTION_NAME" "$version" "$CI_COMMIT_SHA"
+      release="artifacts/release-staging/products/$CI_DISTRIBUTION_NAME/releases/$version"
+      bash build/distribution/release.sh verify "$release" "$CI_DISTRIBUTION_NAME" "$version" "$CI_COMMIT_SHA"
+      bash build/distribution/publish-ssh.sh "$release" "$CI_DISTRIBUTION_NAME" "$version" "$CI_COMMIT_SHA"
+  # No GitLab Job Artifacts: exact release bytes are published directly to
+  # external immutable build storage by this same job.
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
