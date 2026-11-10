@@ -12,6 +12,11 @@ create-gitlab-variables:
       : "${CI_API_V4_URL:?CI_API_V4_URL is required}"
       : "${CI_PROJECT_ID:?CI_PROJECT_ID is required}"
 
+      command -v curl >/dev/null 2>&1 || {
+        echo "curl is required for create-gitlab-variables" >&2
+        exit 1
+      }
+
       create_project_variable_if_missing() {
         key="$1"
         initial_value="$2"
