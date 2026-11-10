@@ -55,4 +55,35 @@ fail_expected bash "$remote" finalize "$root_b64" "$product" "$version" "$stage"
 bash "$remote" cleanup "$root_b64" "$product" "$version" "$stage"
 # Exact bytes remain immutable after a rejected conflicting publication.
 diff -qr "$release" "$parent/$version"
-echo 'distribution release assembly, verification, publication, idempotence, tamper rejection: PASS'
+# The complete publish-ssh wrapper is exercised through an SSH command shim;
+# no actual remote host is contacted in this local test.
+mkdir -p "$tmp/mock-bin"
+cat > "$tmp/mock-bin/ssh" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o|-i) shift 2 ;;
+    -T) shift ;;
+    *) break ;;
+  esac
+done
+[[ $# == 2 ]] || exit 2
+shift # fake destination
+bash -c "$1"
+MOCK
+chmod +x "$tmp/mock-bin/ssh"
+printf 'mock key' > "$tmp/key-file"
+printf 'mock host key' > "$tmp/known-hosts"
+export PATH="$tmp/mock-bin:$PATH"
+export CI_NETWORK_DRIVE_PATH="$tmp/full-wrapper-store"
+export CI_RELEASE_SSH_HOST=example.test
+export CI_RELEASE_SSH_USER=builder
+export CI_RELEASE_SSH_PRIVATE_KEY="$tmp/key-file"
+export CI_RELEASE_SSH_KNOWN_HOSTS="$tmp/known-hosts"
+export CI_RELEASE_STORAGE_RENAME_VERIFIED=1
+export CI_PIPELINE_ID=203
+export CI_JOB_ID=204
+bash "$root/build/distribution/publish-ssh.sh" "$release" "$product" "$version" "$commit"
+diff -qr "$release" "$CI_NETWORK_DRIVE_PATH/shared/${product}-build/products/$product/releases/$version"
+echo 'distribution release assembly, verification, SSH transfer, idempotence, tamper rejection: PASS'
