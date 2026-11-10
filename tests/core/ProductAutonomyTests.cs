@@ -5,7 +5,7 @@ namespace WebAssistant.CoreTests;
 public sealed class ProductAutonomyTests
 {
     [Fact]
-    public void ExportRoot_ContainsStandaloneAltOnlyGitLabPackagePipeline()
+    public void ExportRoot_ContainsStandaloneAltOnlyGitLabBuildAndVariableBootstrap()
     {
         var root = FindRepositoryRoot();
         var productRoot = Path.Combine(root, "webassist");
@@ -15,9 +15,27 @@ public sealed class ProductAutonomyTests
 
         var pipeline = File.ReadAllText(pipelinePath);
 
+        Assert.Contains("utility-tasks", pipeline, StringComparison.Ordinal);
+        Assert.Contains("create-gitlab-variables:", pipeline, StringComparison.Ordinal);
+        Assert.Contains("when: manual", pipeline, StringComparison.Ordinal);
+        Assert.Contains("CI_PROJECT_ACCESS_TOKEN", pipeline, StringComparison.Ordinal);
+        Assert.Contains("CI_API_V4_URL", pipeline, StringComparison.Ordinal);
+        Assert.Contains("CI_NETWORK_DRIVE_PATH", pipeline, StringComparison.Ordinal);
+        Assert.Contains("CI_DISTRIBUTION_NAME", pipeline, StringComparison.Ordinal);
+        Assert.Contains("--form \"protected=true\"", pipeline, StringComparison.Ordinal);
+        Assert.Contains("--form \"expanded=true\"", pipeline, StringComparison.Ordinal);
+
         Assert.Contains("linux-package:", pipeline, StringComparison.Ordinal);
+        Assert.Contains("WEBASSISTANT_SOURCE_SHA: \"$CI_COMMIT_SHA\"", pipeline, StringComparison.Ordinal);
         Assert.Contains("./build/linux/package.sh", pipeline, StringComparison.Ordinal);
         Assert.Contains("artifacts/linux-x64/", pipeline, StringComparison.Ordinal);
+        Assert.Contains("expire_in: 1 day", pipeline, StringComparison.Ordinal);
+        Assert.Contains("- \"VERSION\"", pipeline, StringComparison.Ordinal);
+
+        Assert.DoesNotContain("expire_in: 7 days", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("GITHUB_SHA", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("github.com", pipeline, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("netkeep80/WebAssistant", pipeline, StringComparison.OrdinalIgnoreCase);
 
         Assert.DoesNotContain("windows-package:", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("WEBASSISTANT_WINDOWS_RUNNER_TAG", pipeline, StringComparison.Ordinal);
