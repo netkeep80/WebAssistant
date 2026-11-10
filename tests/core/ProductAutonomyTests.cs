@@ -26,7 +26,7 @@ public sealed class ProductAutonomyTests
         Assert.Contains("--form \"expanded=true\"", pipeline, StringComparison.Ordinal);
 
         Assert.Contains("linux-package:", pipeline, StringComparison.Ordinal);
-        Assert.Contains("WEBASSISTANT_SOURCE_SHA: \"$CI_COMMIT_SHA\"", pipeline, StringComparison.Ordinal);
+        Assert.Contains("export WEBASSISTANT_SOURCE_SHA=\\"$CI_COMMIT_SHA\\"", pipeline, StringComparison.Ordinal);
         Assert.Contains("./build/linux/package.sh", pipeline, StringComparison.Ordinal);
         Assert.Contains("artifacts/linux-x64/", pipeline, StringComparison.Ordinal);
         Assert.Contains("expire_in: 1 day", pipeline, StringComparison.Ordinal);
