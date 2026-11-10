@@ -41,6 +41,7 @@ create-gitlab-variables:
       }
 
       create_if_absent CI_DISTRIBUTION_NAME env_var
+      create_if_absent CI_BUILDER_IMAGE_NAME env_var
       create_if_absent CI_NETWORK_DRIVE_PATH env_var
       create_if_absent CI_PROMOTION_PROJECT_PATH env_var
       create_if_absent CI_RELEASE_SSH_HOST env_var
@@ -55,7 +56,7 @@ create-gitlab-variables:
 
 build-altlinux-release:
   stage: package
-  image: "${CI_DOCKER_HUB}/${CI_DISTRIBUTION_NAME}-builder:${WEBASSISTANT_BUILDER_TAG}"
+  image: "${CI_DOCKER_HUB}/${CI_BUILDER_IMAGE_NAME}:${WEBASSISTANT_BUILDER_TAG}"
   variables:
     GIT_STRATEGY: fetch
   script:
