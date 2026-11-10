@@ -63,6 +63,7 @@ build-altlinux-release:
     - |
       set -eu
       : "${CI_DISTRIBUTION_NAME:?CI_DISTRIBUTION_NAME is required}"
+      : "${CI_BUILDER_IMAGE_NAME:?CI_BUILDER_IMAGE_NAME is required}"
       case "$CI_DISTRIBUTION_NAME" in
         null|.|..|*[!a-zA-Z0-9._-]*|'') echo 'Invalid CI_DISTRIBUTION_NAME' >&2; exit 1 ;;
       esac
