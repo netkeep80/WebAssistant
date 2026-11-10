@@ -50,9 +50,8 @@ create-gitlab-variables:
 
 linux-package:
   stage: package
-  variables:
-    WEBASSISTANT_SOURCE_SHA: "$CI_COMMIT_SHA"
   script:
+    - 'export WEBASSISTANT_SOURCE_SHA="$CI_COMMIT_SHA"'
     - './build/linux/package.sh artifacts/linux-x64'
   artifacts:
     # Временный transport/debug artifact. Долговременное distribution storage
