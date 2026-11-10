@@ -276,69 +276,53 @@ artifacts/installation-guide/WebAssistant-Installation-Guide.pdf
 
 Закреплённый инструментарий документа описан в `docs/installation-guide/toolchain.env` и не использует изменяемый идентификатор `latest`.
 
-## GitLab CI
+## GitLab CI/CD: сборка для ALT Linux
 
-В экспортируемом корне находится самостоятельный `.gitlab-ci.yml`. Downstream GitLab repository является самостоятельным source-of-build: pipeline использует собственный `CI_COMMIT_SHA` как source revision для provenance и не требует имени, URL или commit identity development repository.
+Каталог `webassist/` переносится целиком в корень самостоятельного GitLab-репозитория. Его `.gitlab-ci.yml` не зависит от GitHub API, GitHub SHA и файлов выше корня продукта. `CI_COMMIT_SHA` в provenance означает **коммит самого GitLab-репозитория**, из которого выполнена сборка.
 
-Текущая product-local GitLab pipeline содержит две стадии:
+Первый этап — только `altlinux-x64` (дистрибутивная платформа); технический .NET RID — `linux-x64`. Windows GitLab job пока не предусмотрен.
 
-```text
-utility-tasks
-  -> create-gitlab-variables   (manual)
+### Порядок первичной настройки
 
-package
-  -> linux-package
-```
+1. Убедиться, что в GitLab registry доступен заранее собранный образ `${CI_DOCKER_HUB}/webassistant-builder:${WEBASSISTANT_BUILDER_TAG}`. В продуктовой pipeline закреплено имя `webassistant-builder` и тег `dotnet-10.0.403-v1` по умолчанию. Дополнительная переменная для имени образа **не нужна**. В образе должны присутствовать .NET SDK 10, bash, zip, jq, coreutils, tar, SSH-клиент и другие инструменты, проверяемые job. SDK из сети при сборке не скачивается.
+2. В Settings → CI/CD → Variables проверить доступность уже выданной **групповой** переменной `CI_GITLAB_API_ACCESS_TOKEN`. Её токен должен иметь права доступа к Project Variables API текущего проекта (в том числе создание переменных). **Новый отдельный токен создавать не нужно.** Токен не записывается в репозиторий; его значение не выводится в лог.
+3. На защищённой основной ветке открыть Build → Pipelines и запустить manual job `create-gitlab-variables`. Он через `CI_API_V4_URL` создаёт **только отсутствующие** project-scoped variables со значением `null`, `protected=true` и `expanded=true`. Имеющиеся значения не заменяются.
+4. В Settings → CI/CD → Variables текущего GitLab-проекта отредактировать созданные заглушки по таблице ниже. Настроить доступ сборочного job к Docker runner и registry.
+5. Выполнить `build-altlinux-release` на основной ветке. До проверки свойств rename на целевом сетевом хранилище публикация намеренно блокируется: `CI_RELEASE_STORAGE_RENAME_VERIFIED` остаётся `null`, а после физической проверки устанавливается в `1`.
 
-`linux-package` вызывает только канонический Linux producer:
+| Project variable | Что задать |
+|---|---|
+| `CI_DISTRIBUTION_NAME` | Имя продукта/каталога: латинские буквы, цифры, `._-`. Не выводится из `CI_PROJECT_NAME` |
+| `CI_NETWORK_DRIVE_PATH` | Абсолютный путь к storage **на SSH-хосте**, отдельная project variable |
+| `CI_PROMOTION_PROJECT_PATH` | Путь будущего promotion-контура; текущая сборка его ещё не использует |
+| `CI_RELEASE_SSH_HOST` | SSH-хост, на котором смонтировано build storage |
+| `CI_RELEASE_SSH_USER` | Пользователь с правами записи в build storage |
+| `CI_RELEASE_SSH_PRIVATE_KEY` | Приватный SSH-ключ, **GitLab variable type File** |
+| `CI_RELEASE_SSH_KNOWN_HOSTS` | Доверенный known_hosts, **GitLab variable type File**; host-key verification обязательна |
+| `CI_RELEASE_STORAGE_RENAME_VERIFIED` | `1` только после физического подтверждения rename semantics на выбранной ФС |
 
-```bash
-./build/linux/package.sh artifacts/linux-x64
-```
+**Важно:** имена `CI_RELEASE_SSH_*` — собственный контракт publication job. Другие групповые переменные SSH с похожими назначениями автоматически не подменяются. `CI_NETWORK_DRIVE_PATH` необходимо настроить именно на уровне проекта. Переменные `CI_DOCKER_HUB` и доступ к registry приходят из настроенной GitLab-инфраструктуры.
 
-Перед вызовом producer pipeline передаёт:
+### Что делает pipeline
 
-```text
-WEBASSISTANT_SOURCE_SHA = CI_COMMIT_SHA
-```
+`create-gitlab-variables` — ручная служебная задача. `build-altlinux-release` — основная сборка: она вызывает единственный канонический producer `build/linux/package.sh` с `WEBASSISTANT_SOURCE_SHA=$CI_COMMIT_SHA` и `WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0`, проверяет ZIP, SHA-256 и provenance, создаёт относительный `manifest.json` и передаёт точные байты через SSH на внешний storage.
 
-Поэтому `*.provenance.json` связывает собранные bytes с revision именно текущего downstream GitLab repository. Изменение только файла `VERSION` также запускает packaging job.
+Итоговый путь на SSH-хосте относительно `CI_NETWORK_DRIVE_PATH`:
 
-GitLab job artifacts используются только как кратковременный transport/debug surface и хранятся не более одного дня. Долговременное distribution storage не определяется этим файлом и остаётся внешней downstream CI/CD configuration.
+    shared/<product>-build/products/<product>/releases/<VERSION>/
+      manifest.json
+      altlinux-x64/
+        <installerBaseName>-linux-x64-<VERSION>.zip
+        <installerBaseName>-linux-x64-<VERSION>.zip.sha256
+        <installerBaseName>-linux-x64-<VERSION>.zip.provenance.json
 
-### Первичная настройка project variables
+Каждая версия immutable. Повторная публикация допускается только при **полном совпадении байтов**; любая разница даёт ошибку. GitLab Job Artifacts для установщика **не используются**. Deployment/promotion и переключение каналов релизов выполняются отдельным pipeline и **не** пересобирают продукт.
 
-Администратор один раз создаёт в GitLab project secret bootstrap credential:
+Переопределение `src/WebAssistant/product-metadata.json` (если есть во внешнем GitLab-репозитории) меняет отображаемую идентичность и basename установщика через общий `ProductMetadataResolver`; отдельного packager для GitLab нет.
 
-```text
-CI_PROJECT_ACCESS_TOKEN
-```
-
-Токен должен иметь достаточный GitLab API scope для управления project CI/CD variables и храниться как protected/masked project variable. Pipeline не может безопасно создать этот credential из самого себя.
-
-После этого на `main` или `master` можно вручную запустить:
-
-```text
-create-gitlab-variables
-```
-
-Job идемпотентно создаёт, если они ещё отсутствуют, protected/expanded project variables:
-
-```text
-CI_NETWORK_DRIVE_PATH = null
-CI_DISTRIBUTION_NAME = null
-```
-
-Повторный запуск существующие значения не перезаписывает. Фактические значения задаются администратором в downstream GitLab project settings. Конкретные repository/project/organization/host/share/cluster/path identities в public development repository не фиксируются.
-
-Нижестоящий GitLab-репозиторий может хранить собственный `src/WebAssistant/product-metadata.json`: `.gitignore` экспортируемого корня этот путь не запрещает. Упаковщик автоматически применит это переопределение через тот же `ProductMetadataResolver`; отдельная реализация брендинга или упаковки для GitLab не требуется.
-
-Сборка Windows в GitLab не является частью текущей целевой архитектуры.
+Подробности протокола публикации, диагностики блокировки и локального тестирования — в [`docs/gitlab-distribution.md`](docs/gitlab-distribution.md).
 
 ## Зависимость NAPS2 SDK
 
 Исправленный SDK хранится под отдельной идентичностью `WebAssistant.NAPS2.Sdk` в `vendor/nuget`. Сборка продукта не маскирует его под официальный `NAPS2.Sdk` той же версии. Происхождение, фиксированная идентичность пакета и способ воспроизводимой пересборки описаны в `vendor/naps2/README.md`.
 
-## GitLab CI/CD для ALT Linux
-
-Автономный `.gitlab-ci.yml` создаёт ALT Linux immutable release с `manifest.json` через canonical `build/linux/package.sh`, проверяет точные байты и передаёт их во внешнее storage без GitLab Job Artifacts. Ручная задача `create-gitlab-variables` создаёт отсутствующие project variables. Настройка builder image, защищённых переменных, SSH и верификации rename на целевой файловой системе описана в [`docs/gitlab-distribution.md`](docs/gitlab-distribution.md). Продуктовая CI-конфигурация не содержит конкретных идентификаторов внешней инфраструктуры.

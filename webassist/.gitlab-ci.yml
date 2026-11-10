@@ -14,7 +14,7 @@ create-gitlab-variables:
   script:
     - |
       set -eu
-      : "${CI_PROJECT_ACCESS_TOKEN:?Set protected project API token with Maintainer/api permissions first}"
+      : "${CI_GITLAB_API_ACCESS_TOKEN:?CI_GITLAB_API_ACCESS_TOKEN must be available with API permissions}"
       : "${CI_API_V4_URL:?GitLab API URL is required}"
       : "${CI_PROJECT_ID:?GitLab project ID is required}"
       command -v curl >/dev/null 2>&1 || { echo 'curl is required' >&2; exit 1; }
@@ -23,13 +23,13 @@ create-gitlab-variables:
         key="$1"; kind="$2"
         response="$(mktemp)"
         status="$(curl --silent --show-error --output "$response" --write-out '%{http_code}' \
-          --header "PRIVATE-TOKEN: $CI_PROJECT_ACCESS_TOKEN" \
+          --header "PRIVATE-TOKEN: $CI_GITLAB_API_ACCESS_TOKEN" \
           "$CI_API_V4_URL/projects/$CI_PROJECT_ID/variables/$key")"
         case "$status" in
           200) echo "Already configured: $key" ;;
           404)
             curl --silent --show-error --fail --request POST \
-              --header "PRIVATE-TOKEN: $CI_PROJECT_ACCESS_TOKEN" \
+              --header "PRIVATE-TOKEN: $CI_GITLAB_API_ACCESS_TOKEN" \
               "$CI_API_V4_URL/projects/$CI_PROJECT_ID/variables" \
               --form "key=$key" --form 'value=null' \
               --form 'protected=true' --form 'expanded=true' \
@@ -41,7 +41,6 @@ create-gitlab-variables:
       }
 
       create_if_absent CI_DISTRIBUTION_NAME env_var
-      create_if_absent CI_BUILDER_IMAGE_NAME env_var
       create_if_absent CI_NETWORK_DRIVE_PATH env_var
       create_if_absent CI_PROMOTION_PROJECT_PATH env_var
       create_if_absent CI_RELEASE_SSH_HOST env_var
@@ -56,14 +55,13 @@ create-gitlab-variables:
 
 build-altlinux-release:
   stage: package
-  image: "${CI_DOCKER_HUB}/${CI_BUILDER_IMAGE_NAME}:${WEBASSISTANT_BUILDER_TAG}"
+  image: "${CI_DOCKER_HUB}/webassistant-builder:${WEBASSISTANT_BUILDER_TAG}"
   variables:
     GIT_STRATEGY: fetch
   script:
     - |
       set -eu
       : "${CI_DISTRIBUTION_NAME:?CI_DISTRIBUTION_NAME is required}"
-      : "${CI_BUILDER_IMAGE_NAME:?CI_BUILDER_IMAGE_NAME is required}"
       case "$CI_DISTRIBUTION_NAME" in
         null|.|..|*[!a-zA-Z0-9._-]*|'') echo 'Invalid CI_DISTRIBUTION_NAME' >&2; exit 1 ;;
       esac
