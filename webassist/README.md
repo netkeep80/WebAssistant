@@ -278,15 +278,60 @@ artifacts/installation-guide/WebAssistant-Installation-Guide.pdf
 
 ## GitLab CI
 
-В экспортируемом корне находится самостоятельный `.gitlab-ci.yml`. Текущая локальная для продукта поверхность GitLab содержит только оркестрацию сборки Linux-пакета и вызывает тот же канонический вход:
+В экспортируемом корне находится самостоятельный `.gitlab-ci.yml`. Downstream GitLab repository является самостоятельным source-of-build: pipeline использует собственный `CI_COMMIT_SHA` как source revision для provenance и не требует имени, URL или commit identity development repository.
+
+Текущая product-local GitLab pipeline содержит две стадии:
+
+```text
+utility-tasks
+  -> create-gitlab-variables   (manual)
+
+package
+  -> linux-package
+```
+
+`linux-package` вызывает только канонический Linux producer:
 
 ```bash
 ./build/linux/package.sh artifacts/linux-x64
 ```
 
-Нижестоящий GitLab-репозиторий может хранить собственный `src/WebAssistant/product-metadata.json`: `.gitignore` экспортируемого корня этот путь не запрещает. Упаковщик автоматически применит это переопределение через тот же `ProductMetadataResolver`; отдельная реализация брендинга или упаковки для GitLab не требуется.
+Перед вызовом producer pipeline передаёт:
 
-Файл `.gitlab-ci.yml` не определяет отдельную реализацию упаковки продукта. Конкретные параметры runner/container/registry/network будущей среды сборки ALT Linux 10.1 должны задаваться нижестоящей инфраструктурой только после их фактического определения; наличие `.gitlab-ci.yml` само по себе не является доказательством приёмки на целевой ALT Linux 10.1.
+```text
+WEBASSISTANT_SOURCE_SHA = CI_COMMIT_SHA
+```
+
+Поэтому `*.provenance.json` связывает собранные bytes с revision именно текущего downstream GitLab repository. Изменение только файла `VERSION` также запускает packaging job.
+
+GitLab job artifacts используются только как кратковременный transport/debug surface и хранятся не более одного дня. Долговременное distribution storage не определяется этим файлом и остаётся внешней downstream CI/CD configuration.
+
+### Первичная настройка project variables
+
+Администратор один раз создаёт в GitLab project secret bootstrap credential:
+
+```text
+CI_PROJECT_ACCESS_TOKEN
+```
+
+Токен должен иметь достаточный GitLab API scope для управления project CI/CD variables и храниться как protected/masked project variable. Pipeline не может безопасно создать этот credential из самого себя.
+
+После этого на `main` или `master` можно вручную запустить:
+
+```text
+create-gitlab-variables
+```
+
+Job идемпотентно создаёт, если они ещё отсутствуют, protected/expanded project variables:
+
+```text
+CI_NETWORK_DRIVE_PATH = null
+CI_DISTRIBUTION_NAME = null
+```
+
+Повторный запуск существующие значения не перезаписывает. Фактические значения задаются администратором в downstream GitLab project settings. Конкретные repository/project/organization/host/share/cluster/path identities в public development repository не фиксируются.
+
+Нижестоящий GitLab-репозиторий может хранить собственный `src/WebAssistant/product-metadata.json`: `.gitignore` экспортируемого корня этот путь не запрещает. Упаковщик автоматически применит это переопределение через тот же `ProductMetadataResolver`; отдельная реализация брендинга или упаковки для GitLab не требуется.
 
 Сборка Windows в GitLab не является частью текущей целевой архитектуры.
 
