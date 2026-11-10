@@ -338,3 +338,7 @@ CI_DISTRIBUTION_NAME = null
 ## Зависимость NAPS2 SDK
 
 Исправленный SDK хранится под отдельной идентичностью `WebAssistant.NAPS2.Sdk` в `vendor/nuget`. Сборка продукта не маскирует его под официальный `NAPS2.Sdk` той же версии. Происхождение, фиксированная идентичность пакета и способ воспроизводимой пересборки описаны в `vendor/naps2/README.md`.
+
+## GitLab CI/CD для ALT Linux
+
+Автономный `.gitlab-ci.yml` создаёт ALT Linux immutable release с `manifest.json` через canonical `build/linux/package.sh`, проверяет точные байты и передаёт их во внешнее storage без GitLab Job Artifacts. Ручная задача `create-gitlab-variables` создаёт отсутствующие project variables. Настройка builder image, защищённых переменных, SSH и верификации rename на целевой файловой системе описана в [`docs/gitlab-distribution.md`](docs/gitlab-distribution.md). Продуктовая CI-конфигурация не содержит конкретных идентификаторов внешней инфраструктуры.

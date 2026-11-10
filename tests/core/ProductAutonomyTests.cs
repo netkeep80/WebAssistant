@@ -15,6 +15,7 @@ public sealed class ProductAutonomyTests
 
         var pipeline = File.ReadAllText(pipelinePath);
 
+        // Bootstrap is project-scoped, create-if-absent and administrator-configured.
         Assert.Contains("utility-tasks", pipeline, StringComparison.Ordinal);
         Assert.Contains("create-gitlab-variables:", pipeline, StringComparison.Ordinal);
         Assert.Contains("when: manual", pipeline, StringComparison.Ordinal);
@@ -22,17 +23,40 @@ public sealed class ProductAutonomyTests
         Assert.Contains("CI_API_V4_URL", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_NETWORK_DRIVE_PATH", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_DISTRIBUTION_NAME", pipeline, StringComparison.Ordinal);
-        Assert.Contains("--form \"protected=true\"", pipeline, StringComparison.Ordinal);
-        Assert.Contains("--form \"expanded=true\"", pipeline, StringComparison.Ordinal);
+        Assert.Contains("CI_BUILDER_IMAGE_NAME", pipeline, StringComparison.Ordinal);
+        Assert.Contains("create_if_absent CI_BUILDER_IMAGE_NAME env_var", pipeline, StringComparison.Ordinal);
+        Assert.Contains("--form 'protected=true'", pipeline, StringComparison.Ordinal);
+        Assert.Contains("--form 'expanded=true'", pipeline, StringComparison.Ordinal);
 
-        Assert.Contains("linux-package:", pipeline, StringComparison.Ordinal);
-        Assert.Contains("export WEBASSISTANT_SOURCE_SHA=\"$CI_COMMIT_SHA\"", pipeline, StringComparison.Ordinal);
-        Assert.Contains("./build/linux/package.sh", pipeline, StringComparison.Ordinal);
-        Assert.Contains("artifacts/linux-x64/", pipeline, StringComparison.Ordinal);
-        Assert.Contains("expire_in: 1 day", pipeline, StringComparison.Ordinal);
-        Assert.Contains("- \"VERSION\"", pipeline, StringComparison.Ordinal);
+        // One canonical Linux packager, with downstream-local source revision.
+        Assert.Contains("build-altlinux-release:", pipeline, StringComparison.Ordinal);
+        Assert.Contains("WEBASSISTANT_SOURCE_SHA=\"$CI_COMMIT_SHA\"", pipeline, StringComparison.Ordinal);
+        Assert.Contains("WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0", pipeline, StringComparison.Ordinal);
+        Assert.Contains("bash build/linux/package.sh artifacts/linux-x64", pipeline, StringComparison.Ordinal);
+        Assert.Contains("bash build/distribution/release.sh assemble", pipeline, StringComparison.Ordinal);
+        Assert.Contains("bash build/distribution/release.sh verify", pipeline, StringComparison.Ordinal);
+        Assert.Contains("bash build/distribution/publish-ssh.sh", pipeline, StringComparison.Ordinal);
+        Assert.Contains("tests/distribution-release.test.sh", pipeline, StringComparison.Ordinal);
+        Assert.Contains("$CI_DEFAULT_BRANCH", pipeline, StringComparison.Ordinal);
+        Assert.Contains("${CI_BUILDER_IMAGE_NAME}", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("${CI_DISTRIBUTION_NAME}-builder", pipeline, StringComparison.Ordinal);
 
-        Assert.DoesNotContain("expire_in: 7 days", pipeline, StringComparison.Ordinal);
+        foreach (var relativePath in new[]
+        {
+            "build/distribution/release.sh",
+            "build/distribution/remote-publish.sh",
+            "build/distribution/publish-ssh.sh",
+            "tests/distribution-release.test.sh"
+        })
+        {
+            Assert.True(File.Exists(Path.Combine(productRoot, relativePath)),
+                $"Отсутствует автономный сценарий export root: {relativePath}");
+        }
+
+        // Installer storage is externally authoritative, never a GitLab Job Artifact.
+        Assert.DoesNotContain("  artifacts:", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("expire_in:", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("linux-package:", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("GITHUB_SHA", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("github.com", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("netkeep80/WebAssistant", pipeline, StringComparison.OrdinalIgnoreCase);
@@ -41,7 +65,6 @@ public sealed class ProductAutonomyTests
         Assert.DoesNotContain("WEBASSISTANT_WINDOWS_RUNNER_TAG", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("build\\windows\\package.bat", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("artifacts/windows-x64/", pipeline, StringComparison.OrdinalIgnoreCase);
-
         Assert.DoesNotContain("NAPS2_RPM_URL", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("--naps2-rpm", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(".rpm", pipeline, StringComparison.OrdinalIgnoreCase);

@@ -1,0 +1,83 @@
+# GitLab CI: ALT Linux immutable release
+
+Этот документ описывает только переносимый контракт продукта. Все имена
+инфраструктуры, адреса и значения CI/CD-переменных задаются **во внешнем
+GitLab-проекте** после копирования корня продукта.
+
+## Подготовка
+
+1. Docker runner должен иметь доступ к образу
+   `${CI_DOCKER_HUB}/${CI_BUILDER_IMAGE_NAME}:${WEBASSISTANT_BUILDER_TAG}`.
+   Образ готовится отдельно: .NET SDK 10, bash, jq, zip, coreutils,
+   tar, ssh-client и необходимые средства NuGet. CI не скачивает SDK.
+2. Администратор вручную создаёт protected project variable
+   `CI_PROJECT_ACCESS_TOKEN` с project access token
+   (role Maintainer, scope api). Основная сборка не использует токен.
+3. На защищённой основной ветке запускает manual job
+   `create-gitlab-variables`: создаются только отсутствующие project
+   variables со значением `null`, `protected=true`, `expanded=true`.
+   Приватный ключ и known_hosts создаются с типом переменной **File**.
+4. Администратор заменяет заглушки через Settings → CI/CD → Variables.
+
+| Переменная | Назначение |
+|---|---|
+| `CI_DISTRIBUTION_NAME` | Имя продукта и каталога, не `CI_PROJECT_NAME` |
+| `CI_BUILDER_IMAGE_NAME` | Точное имя заранее собранного builder image в registry, независимо от имени distribution |
+| `CI_NETWORK_DRIVE_PATH` | Абсолютный путь к storage на SSH-хосте |
+| `CI_PROMOTION_PROJECT_PATH` | Зарезервировано для будущей promotion-конфигурации |
+| `CI_RELEASE_SSH_HOST` | Хост с подключённым storage |
+| `CI_RELEASE_SSH_USER` | Пользователь SSH |
+| `CI_RELEASE_SSH_PRIVATE_KEY` | Приватный SSH-ключ, тип GitLab variable **File** |
+| `CI_RELEASE_SSH_KNOWN_HOSTS` | Проверенный known_hosts, тип **File** |
+| `CI_RELEASE_STORAGE_RENAME_VERIFIED` | Устанавливается в `1` только после физической проверки rename semantics |
+
+`CI_BUILDER_IMAGE_NAME` должен совпадать с именем уже опубликованного builder image. Например, для образа, созданного отдельно инфраструктурным CI, администратор переносит туда имя образа без registry и tag. Оно не выводится из `CI_DISTRIBUTION_NAME`.
+
+`CI_DOCKER_HUB` и доступ к registry задаются извне. Переменная
+`CI_PROJECT_ACCESS_TOKEN` не создаётся bootstrap-задачей: без
+предварительно выданного API credential она не может работать.
+
+## Сборка и публикация
+
+Job `build-altlinux-release` запускается на основной ветке:
+
+1. Проверяет `VERSION`, `CI_DISTRIBUTION_NAME` и SDK 10.
+2. Запускает тесты immutable release.
+3. Вызывает только canonical `build/linux/package.sh`,
+   передавая `WEBASSISTANT_SOURCE_SHA=$CI_COMMIT_SHA`;
+   online SDK bootstrap запрещён.
+4. Находит ровно один ZIP с учётом допустимого custom installer basename.
+5. Проверяет ZIP, `.sha256`, `.provenance.json` и формирует
+   `products/<product>/releases/<VERSION>/manifest.json`.
+6. Проверяет SHA-256, размер, source revision и относительные пути.
+7. Передаёт ровно те же bytes через SSH tar stream; на принимающей стороне
+   повторно проверяет SHA каждого из четырёх файлов.
+8. Публикует staging каталог без перезаписи другой версии.
+   Если версия уже опубликована идентичными байтами — no-op;
+   если байты отличаются — FAIL CLOSED.
+
+В manifest `altlinux-x64` является ключом совместимости продукта,
+`linux-x64` — техническим .NET RID. Все пути внутри manifest
+относительные; инфраструктурные значения в нём отсутствуют.
+
+Во внешнем storage относительный каталог релиза:
+`shared/<product>-build/products/<product>/releases/<VERSION>/`.
+GitLab Job Artifacts для installer не создаются.
+
+**Внимание:** поддержка rename на сетевой ФС должна быть проверена
+физически до установки `CI_RELEASE_STORAGE_RENAME_VERIFIED=1`.
+В случае прерывания транзакции может остаться publication lock:
+его следует исследовать вручную до очистки. Продуктовый job не
+обновляет promotion descriptor, release index или channel pointers:
+это отдельный downstream deployment этап.
+
+## Локальная проверка
+
+На Linux с bash, jq и coreutils:
+
+    bash tests/distribution-release.test.sh
+
+Тестируются сборка, верификация, custom installer basename,
+повреждённые байты, лишние файлы, повторная идентичная публикация
+и запрет перезаписи. Это не заменяет проверку реального GitLab
+builder, сетевой ФС и целевой ALT Linux системы.
