@@ -7,7 +7,7 @@ GitLab-проекте** после копирования корня проду�
 ## Подготовка
 
 1. Docker runner должен иметь доступ к образу
-   `${CI_DOCKER_HUB}/${CI_DISTRIBUTION_NAME}-builder:${WEBASSISTANT_BUILDER_TAG}`.
+   `${CI_DOCKER_HUB}/${CI_BUILDER_IMAGE_NAME}:${WEBASSISTANT_BUILDER_TAG}`.
    Образ готовится отдельно: .NET SDK 10, bash, jq, zip, coreutils,
    tar, ssh-client и необходимые средства NuGet. CI не скачивает SDK.
 2. Администратор вручную создаёт protected project variable
@@ -22,6 +22,7 @@ GitLab-проекте** после копирования корня проду�
 | Переменная | Назначение |
 |---|---|
 | `CI_DISTRIBUTION_NAME` | Имя продукта и каталога, не `CI_PROJECT_NAME` |
+| `CI_BUILDER_IMAGE_NAME` | Точное имя заранее собранного builder image в registry, независимо от имени distribution |
 | `CI_NETWORK_DRIVE_PATH` | Абсолютный путь к storage на SSH-хосте |
 | `CI_PROMOTION_PROJECT_PATH` | Зарезервировано для будущей promotion-конфигурации |
 | `CI_RELEASE_SSH_HOST` | Хост с подключённым storage |
@@ -29,6 +30,8 @@ GitLab-проекте** после копирования корня проду�
 | `CI_RELEASE_SSH_PRIVATE_KEY` | Приватный SSH-ключ, тип GitLab variable **File** |
 | `CI_RELEASE_SSH_KNOWN_HOSTS` | Проверенный known_hosts, тип **File** |
 | `CI_RELEASE_STORAGE_RENAME_VERIFIED` | Устанавливается в `1` только после физической проверки rename semantics |
+
+`CI_BUILDER_IMAGE_NAME` должен совпадать с именем уже опубликованного builder image. Например, для образа, созданного отдельно инфраструктурным CI, администратор переносит туда имя образа без registry и tag. Оно не выводится из `CI_DISTRIBUTION_NAME`.
 
 `CI_DOCKER_HUB` и доступ к registry задаются извне. Переменная
 `CI_PROJECT_ACCESS_TOKEN` не создаётся bootstrap-задачей: без
