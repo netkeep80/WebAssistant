@@ -32,7 +32,7 @@ WebAssistant-win-x64-<VERSION>.exe
 %ProgramData%\WebAssistant\config\appsettings.json
 ```
 
-Во время упаковки по-прежнему выбирается начальный seed:
+Во время упаковки выбирается начальный seed:
 
 ```text
 src/WebAssistant/appsettings.json существует
@@ -54,7 +54,7 @@ src/WebAssistant/appsettings.json существует
 
 Безопасный default seed содержит пустую карту `WebAssistant:FileSystem`; полный пример находится в `appsettings.example.json`. Полная структура и приоритет источников описаны в [`configuration.md`](configuration.md).
 
-`WebAssistant:FileSystem:RootDirectory` не имеет специальной legacy-семантики. Если этот ключ присутствует с допустимым абсолютным путём, текущая multi-root модель трактует его как **обычный логический корень** с именем `RootDirectory`; `%ProgramData%\WebAssistant\data` сам по себе файловым root не становится.
+Ключ `WebAssistant:FileSystem:RootDirectory` с допустимым абсолютным путём задаёт **обычный логический корень** с именем `RootDirectory`. Каталог `%ProgramData%\WebAssistant\data` используется для состояния службы; полномочия файлового обмена задаются явной конфигурацией корней.
 ## Установка
 
 Запустите установщик от имени пользователя, который может подтвердить повышение прав UAC:
@@ -128,4 +128,4 @@ Remove-Item -LiteralPath "$env:ProgramData\WebAssistant\config" -Recurse -Force
 
 Это действие необратимо и не выполняется обычным/silent uninstall автоматически. Для repository-owned historical/manual lifecycle `webassist/install/windows/uninstall.ps1 -PurgeConfig` предоставляет эквивалентный явный purge config; `-PurgeData` остаётся отдельным действием для logs/data.
 
-Исторические сценарии репозитория `install.bat` / `install.ps1` не являются каноническим пользовательским способом установки версионированного дистрибутива Windows.
+Для установки версионированного дистрибутива Windows используется канонический `<installerBaseName>-win-x64-<VERSION>.exe`.
