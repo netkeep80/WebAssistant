@@ -56,18 +56,24 @@ case "$operation" in
       echo 'immutable release already exists; exact-byte no-op'
       exit 0
     fi
-    # The configured storage must have verified same-directory rename semantics.
-    # -T avoids nesting into an existing directory; -n prevents overwrite.
-    mv -T -n -- "$stage" "$final" || fail 'release rename failed'
-    [[ ! -e "$stage" && -d "$final" ]] || fail 'release not atomically published; possible competing writer'
+    # A rename on external storage may mean COPY -> DELETE, not an atomic move.
+    # Copy to the final location, verify exact bytes, then remove the staging
+    # directory. The final path is NOT a readiness signal while this runs;
+    # consumers must wait for publication success and independently verify.
+    mkdir -- "$final" || fail 'cannot create final release directory (existing destination or storage failure)'
+    cp -a -- "$stage/." "$final/" || fail 'release copy failed; final directory may be incomplete and requires manual recovery'
+    actual_final="$(cd "$final" && find . -mindepth 1 -printf '%P\n' | LC_ALL=C sort)"
+    [[ "$actual_final" == "$expected" && -d "$final/altlinux-x64" && ! -L "$final/altlinux-x64" ]] || fail 'copied release structure differs; final directory may be incomplete'
     for file in "${files[@]}"; do
-      [[ -f "$final/$file" && ! -L "$final/$file" ]] || fail 'published release incomplete'
+      [[ -f "$final/$file" && ! -L "$final/$file" ]] || fail "copied release file missing: $file"
     done
     i=7
     for file in "${files[@]}"; do
-      [[ "$(sha256sum "$final/$file" | cut -d' ' -f1)" == "${!i}" ]] || fail "post-publication SHA mismatch: $file"
+      [[ "$(sha256sum "$final/$file" | cut -d' ' -f1)" == "${!i}" ]] || fail "post-copy SHA mismatch: $file"
       i=$((i + 1))
     done
+    diff -qr -- "$stage" "$final" >/dev/null || fail 'copy differs from verified staging'
+    rm -rf -- "$stage" || fail 'verified final release exists but staging cleanup failed'
     rmdir -- "$lock"
     echo 'immutable release published'
     ;;

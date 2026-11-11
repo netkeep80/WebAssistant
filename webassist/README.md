@@ -288,20 +288,20 @@ artifacts/installation-guide/WebAssistant-Installation-Guide.pdf
 2. В Settings → CI/CD → Variables проверить доступность уже выданной **групповой** переменной `CI_GITLAB_API_ACCESS_TOKEN`. Её токен должен иметь права доступа к Project Variables API текущего проекта (в том числе создание переменных). **Новый отдельный токен создавать не нужно.** Токен не записывается в репозиторий; его значение не выводится в лог.
 3. На защищённой основной ветке открыть Build → Pipelines и запустить manual job `create-gitlab-variables`. Он через `CI_API_V4_URL` создаёт **только отсутствующие** project-scoped variables со значением `null`, `protected=true` и `expanded=true`. Имеющиеся значения не заменяются.
 4. В Settings → CI/CD → Variables текущего GitLab-проекта отредактировать созданные заглушки по таблице ниже. Настроить доступ сборочного job к Docker runner и registry.
-5. Выполнить `build-altlinux-release` на основной ветке. До проверки свойств rename на целевом сетевом хранилище публикация намеренно блокируется: `CI_RELEASE_STORAGE_RENAME_VERIFIED` остаётся `null`, а после физической проверки устанавливается в `1`.
+5. Выполнить `build-altlinux-release` на основной ветке. Сборка, создание manifest и публикация выполняются в одном job; отдельной проверки атомарного rename не требуется: внешнее хранилище рассматривается как система с семантикой `copy → delete`.
 
 | Project variable | Что задать |
 |---|---|
 | `CI_DISTRIBUTION_NAME` | Имя продукта/каталога: латинские буквы, цифры, `._-`. Не выводится из `CI_PROJECT_NAME` |
 | `CI_NETWORK_DRIVE_PATH` | Абсолютный путь к storage **на SSH-хосте**, отдельная project variable |
 | `CI_PROMOTION_PROJECT_PATH` | Путь будущего promotion-контура; текущая сборка его ещё не использует |
-| `CI_RELEASE_SSH_HOST` | SSH-хост, на котором смонтировано build storage |
-| `CI_RELEASE_SSH_USER` | Пользователь с правами записи в build storage |
-| `CI_RELEASE_SSH_PRIVATE_KEY` | Приватный SSH-ключ, **GitLab variable type File** |
-| `CI_RELEASE_SSH_KNOWN_HOSTS` | Доверенный known_hosts, **GitLab variable type File**; host-key verification обязательна |
-| `CI_RELEASE_STORAGE_RENAME_VERIFIED` | `1` только после физического подтверждения rename semantics на выбранной ФС |
 
-**Важно:** имена `CI_RELEASE_SSH_*` — собственный контракт publication job. Другие групповые переменные SSH с похожими назначениями автоматически не подменяются. `CI_NETWORK_DRIVE_PATH` необходимо настроить именно на уровне проекта. Переменные `CI_DOCKER_HUB` и доступ к registry приходят из настроенной GitLab-инфраструктуры.
+**SSH наследуется из групповых переменных**: `CI_SSH_HOST` — сервер, `CI_SSH_USER` — пользователь, `CI_SSH_ID_RSA` — приватный ключ, `CI_SSH_ID_RSA_SECRET` — парольная фраза, если ключ зашифрован. Их **не нужно копировать** в project variables. Групповой `CI_SSH_HOST` должен указывать именно на хост, где смонтировано внешнее build storage, а `CI_SSH_USER` должен иметь права на публикацию.
+
+SSH использует штатное хранилище `known_hosts` OpenSSH. Параметр `StrictHostKeyChecking=accept-new` автоматически принимает ключ нового сервера при первом соединении, но **отклоняет изменившийся ключ** при следующих подключениях. Отдельная project variable для `known_hosts` не требуется. На одноразовом GitLab Runner запись `known_hosts` может не сохраняться между jobs — тогда первый контакт не удостоверяет сервер по заранее известному ключу. Для более строгой проверки можно централизованно подготовить стандартный `known_hosts` в окружении Runner без изменения продуктового CI.
+
+
+`CI_NETWORK_DRIVE_PATH` настраивается именно на уровне проекта. Переменные `CI_DOCKER_HUB` и доступ к registry наследуются из GitLab-инфраструктуры.
 
 ### Что делает pipeline
 
@@ -315,6 +315,8 @@ artifacts/installation-guide/WebAssistant-Installation-Guide.pdf
         <installerBaseName>-linux-x64-<VERSION>.zip
         <installerBaseName>-linux-x64-<VERSION>.zip.sha256
         <installerBaseName>-linux-x64-<VERSION>.zip.provenance.json
+
+Релиз публикуется последовательностью **copy → verify → delete staging**: каталог версии создаётся, копируются точные файлы, затем проверяются структура и SHA-256, после чего удаляется временный каталог. Внешний rename не используется как атомарная операция. Пока job не завершился успешно, каталог версии может быть неполным; будущий promotion pipeline должен дополнительно проверить manifest и артефакты, а не ориентироваться только на наличие каталога. При оборванной публикации частичная версия остаётся для ручного анализа.
 
 Каждая версия immutable. Повторная публикация допускается только при **полном совпадении байтов**; любая разница даёт ошибку. GitLab Job Artifacts для установщика **не используются**. Deployment/promotion и переключение каналов релизов выполняются отдельным pipeline и **не** пересобирают продукт.
 
