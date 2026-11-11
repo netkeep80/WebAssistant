@@ -6,14 +6,14 @@
 
 | Область | Актуальные документы | Основные источники поведения | Блокирующая связь |
 | --- | --- | --- | --- |
-| Обзор продукта и текущие возможности | `README.md`, `webassist/README.md` | код продукта, сценарии сборки и упаковки, текущая принятая пара, кандидат v0.3 | тесты на устаревшие утверждения + аудит PR |
+| Обзор продукта и текущие возможности | `README.md`, `webassist/README.md` | код продукта, сценарии сборки и упаковки, текущая принятая пара, кандидат v0.3 | проверки актуального продуктового контракта + аудит PR |
 | REST API, сканирование, файловый обмен, диагностика, CORS | `webassist/docs/api.md` | `webassist/src/WebAssistant/Http/**`, прикладные службы сканирования и файлового обмена | `repo-guard` cochange для известных поверхностей API + тесты |
 | Конфигурация времени выполнения и пакета | `webassist/docs/configuration.md`, `webassist/docs/appsettings.schema.json`, соответствующие разделы `webassist/README.md` | `WebAssistantRuntimeOptions.cs`, `AppSettingsBootstrap.cs`, `WindowsConfigurationLifecycle.cs`, `build/windows/upgrade-preflight/WindowsConfigurationMigration.cs`, `FileSystemRootRegistry.cs`, `build/common/default-appsettings.json` | несколько независимых блокирующих cochange-правил: одного обновлённого документа недостаточно |
 | Установка и служба Windows | `webassist/docs/windows-service.md`, `webassist/docs/installation-guide.md` | упаковка Windows, WiX и реализация службы | целевые тесты + аудит документации |
 | Установка и служба Linux | `webassist/docs/linux-service.md`, `webassist/docs/installation-guide.md` | упаковка Linux, install scripts и systemd | целевые тесты + аудит документации |
 | Схема настроек сканера | `webassist/docs/scanner-settings.schema.json`, раздел настроек сканера в `webassist/docs/api.md` | DTO, handlers и adapters настроек сканера | существующий cochange + тесты |
 | Происхождение зависимостей | `webassist/vendor/naps2/README.md` | принадлежащие репозиторию package/provenance NAPS2 | тесты зависимостей + аудит документации |
-| Язык документации | `webassist/docs/documentation-language-policy.md` | политика документации | тесты на устаревший язык + аудит PR |
+| Язык документации | `webassist/docs/documentation-language-policy.md` | политика документации | проверки соблюдения языковой политики + аудит PR |
 | Кандидатная семантическая основа | `contracts/webassistant-contract-v0.3.json`, `contracts/webassistant-conformance-v0.3.json` | семантические изменения в области кандидата | GovernanceGrant + целевой cochange/evidence |
 | Текущая принятая основа | пути из `contract_conformance.current` в `repo-policy.json`; сейчас v0.2.1 | принятая пара contract/conformance | неизменяемая история; обычный feature PR её не переписывает |
 
@@ -52,7 +52,7 @@
 
 Обновление только одного из этих файлов не удовлетворяет остальные правила и блокируется `repo-guard`.
 
-Для широких файлов, где один путь содержит несколько независимых смыслов, принудительное изменение всех возможных документов создавало бы ложные правки. Там обязательность аудита обеспечивается шаблоном PR, текущей картой и тестами на устаревшие утверждения. Если связь становится достаточно точной и повторяемой, её следует повышать до блокирующего cochange-правила.
+Для широких файлов, где один путь содержит несколько независимых смыслов, принудительное изменение всех возможных документов создавало бы ложные правки. Там обязательность аудита обеспечивается шаблоном PR, текущей картой и проверками актуального поведения. Если связь становится достаточно точной и повторяемой, её следует повышать до блокирующего cochange-правила.
 
 ## Конфигурация
 
@@ -75,6 +75,6 @@
 - наличие независимых блокирующих cochange-обязательств;
 - отрицательный свидетель: изменение модели времени выполнения вместе с обновлением только одного документа оставляет остальные обязательства неудовлетворёнными;
 - обязательный раздел полного аудита в шаблоне PR;
-- отсутствие уже известных устаревших методов filesystem API в `webassist/README.md`.
+- соответствие описанных filesystem API-маршрутов действующему HTTP-контракту в `webassist/README.md`.
 
-Дополнительные предметные проверки устаревших утверждений остаются в `tests/core/CurrentStateDocumentationTests.cs` и специализированных contract tests.
+Предметные проверки текущей документации выполняют `tests/core/CurrentStateDocumentationTests.cs` и специализированные contract tests.
