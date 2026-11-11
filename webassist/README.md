@@ -295,12 +295,12 @@ artifacts/installation-guide/WebAssistant-Installation-Guide.pdf
 | `CI_DISTRIBUTION_NAME` | Имя продукта/каталога: латинские буквы, цифры, `._-`. Не выводится из `CI_PROJECT_NAME` |
 | `CI_NETWORK_DRIVE_PATH` | Абсолютный путь к storage **на SSH-хосте**, отдельная project variable |
 | `CI_PROMOTION_PROJECT_PATH` | Путь будущего promotion-контура; текущая сборка его ещё не использует |
-| `CI_RELEASE_SSH_KNOWN_HOSTS` | Проверенный host key SSH-сервера, тип **GitLab variable File**; можно заменить групповой `CI_SSH_KNOWN_HOSTS` |
 | `CI_RELEASE_STORAGE_RENAME_VERIFIED` | `1` только после физического подтверждения rename semantics на выбранной ФС |
 
 **SSH наследуется из групповых переменных**: `CI_SSH_HOST` — сервер, `CI_SSH_USER` — пользователь, `CI_SSH_ID_RSA` — приватный ключ, `CI_SSH_ID_RSA_SECRET` — парольная фраза, если ключ зашифрован. Их **не нужно копировать** в project variables. Групповой `CI_SSH_HOST` должен указывать именно на хост, где смонтировано внешнее build storage, а `CI_SSH_USER` должен иметь права на публикацию.
 
-Доверие к *серверу* — отдельная задача: `known_hosts` содержит **проверенный публичный host key**, а не приватный ключ клиента. В текущем наборе групповых переменных его нет, поэтому проект может сохранить `CI_RELEASE_SSH_KNOWN_HOSTS` (File). При появлении общей `CI_SSH_KNOWN_HOSTS` (строка с записями known_hosts или GitLab File variable) она будет использована с приоритетом; после этого project variable можно удалить. Использовать `ssh-keyscan` без независимой проверки ключа или отключать `StrictHostKeyChecking` нельзя.
+SSH использует штатное хранилище `known_hosts` OpenSSH. Параметр `StrictHostKeyChecking=accept-new` автоматически принимает ключ нового сервера при первом соединении, но **отклоняет изменившийся ключ** при следующих подключениях. Отдельная project variable для `known_hosts` не требуется. На одноразовом GitLab Runner запись `known_hosts` может не сохраняться между jobs — тогда первый контакт не удостоверяет сервер по заранее известному ключу. Для более строгой проверки можно централизованно подготовить стандартный `known_hosts` в окружении Runner без изменения продуктового CI.
+
 
 `CI_NETWORK_DRIVE_PATH` настраивается именно на уровне проекта. Переменные `CI_DOCKER_HUB` и доступ к registry наследуются из GitLab-инфраструктуры.
 
