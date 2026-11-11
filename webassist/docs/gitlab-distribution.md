@@ -24,9 +24,10 @@ GitLab-проекте** после копирования корня проду�
 
 | Переменная | Назначение |
 |---|---|
-| `CI_DISTRIBUTION_NAME` | Явно заданное имя продукта и каталога релизов |
 | `CI_NETWORK_DRIVE_PATH` | Абсолютный путь к storage на SSH-хосте |
 | `CI_PROMOTION_PROJECT_PATH` | Зарезервировано для будущей promotion-конфигурации |
+
+Имя продукта для manifest и путей релиза берётся из встроенной переменной GitLab `CI_PROJECT_NAME` (имя каталога проекта в URL). Смена этого имени меняет путь публикации последующих релизов.
 
 Сборка использует закреплённый образ `webassistant-builder` из настроенного
 registry. Тег по умолчанию — `dotnet-10.0.403-v1`.
@@ -56,7 +57,7 @@ variables; bootstrap-задача использует готовое групп
 
 Job `build-altlinux-release` запускается на основной ветке:
 
-1. Проверяет `CI_DISTRIBUTION_NAME` и `CI_COMMIT_SHA`, затем выполняет локальную предварительную проверку `CI_NETWORK_DRIVE_PATH`, групповых `CI_SSH_HOST`, `CI_SSH_USER`, `CI_SSH_ID_RSA` и идентификаторов GitLab pipeline/job. Пустые значения, заглушки `null`/`masked_null` и некорректный путь или SSH target завершают job с ошибкой до тестов и упаковки. Парольная фраза `CI_SSH_ID_RSA_SECRET` необязательна; доступность сервера и корректность ключа проверяются при фактической публикации. Затем проверяются `VERSION`, инструменты и SDK 10.
+1. Проверяет встроенное имя проекта `CI_PROJECT_NAME` и `CI_COMMIT_SHA`, затем выполняет локальную предварительную проверку `CI_NETWORK_DRIVE_PATH`, групповых `CI_SSH_HOST`, `CI_SSH_USER`, `CI_SSH_ID_RSA` и идентификаторов GitLab pipeline/job. Пустые значения, заглушки `null`/`masked_null` и некорректный путь или SSH target завершают job с ошибкой до тестов и упаковки. Парольная фраза `CI_SSH_ID_RSA_SECRET` необязательна; доступность сервера и корректность ключа проверяются при фактической публикации. Затем проверяются `VERSION`, инструменты и SDK 10.
 2. Запускает тесты immutable release.
 3. Вызывает только canonical `build/linux/package.sh`,
    передавая `WEBASSISTANT_SOURCE_SHA=$CI_COMMIT_SHA`;

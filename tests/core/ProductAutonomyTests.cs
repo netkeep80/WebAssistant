@@ -21,8 +21,8 @@ public sealed class ProductAutonomyTests
         Assert.Contains("when: manual", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_GITLAB_API_ACCESS_TOKEN", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_API_V4_URL", pipeline, StringComparison.Ordinal);
-        Assert.Contains("CI_NETWORK_DRIVE_PATH", pipeline, StringComparison.Ordinal);
-        Assert.Contains("CI_DISTRIBUTION_NAME", pipeline, StringComparison.Ordinal);
+        Assert.Contains("create_if_absent CI_NETWORK_DRIVE_PATH env_var", pipeline, StringComparison.Ordinal);
+        Assert.Contains("CI_PROJECT_NAME", pipeline, StringComparison.Ordinal);
         Assert.Contains("/webassistant-builder:${WEBASSISTANT_BUILDER_TAG}", pipeline, StringComparison.Ordinal);
         Assert.Contains("--form 'protected=true'", pipeline, StringComparison.Ordinal);
         Assert.Contains("--form 'expanded=true'", pipeline, StringComparison.Ordinal);
