@@ -35,6 +35,17 @@ public sealed class ProductAutonomyTests
         Assert.Contains("bash build/distribution/release.sh assemble", pipeline, StringComparison.Ordinal);
         Assert.Contains("bash build/distribution/release.sh verify", pipeline, StringComparison.Ordinal);
         Assert.Contains("bash build/distribution/publish-ssh.sh", pipeline, StringComparison.Ordinal);
+        const string preflight = "bash build/distribution/publish-ssh.sh --check-ci-environment";
+        Assert.Contains(preflight, pipeline, StringComparison.Ordinal);
+        Assert.True(
+            pipeline.IndexOf(preflight, StringComparison.Ordinal) <
+            pipeline.IndexOf("dotnet --list-sdks", StringComparison.Ordinal),
+            "Проверка CI-переменных должна выполняться до проверки SDK.");
+        Assert.True(
+            pipeline.IndexOf(preflight, StringComparison.Ordinal) <
+            pipeline.IndexOf("bash tests/distribution-release.test.sh", StringComparison.Ordinal),
+            "Проверка CI-переменных должна выполняться до тестов и упаковки.");
+        Assert.Contains("null|masked_null|", pipeline, StringComparison.Ordinal);
         Assert.Contains("tests/distribution-release.test.sh", pipeline, StringComparison.Ordinal);
         Assert.Contains("$CI_DEFAULT_BRANCH", pipeline, StringComparison.Ordinal);
 

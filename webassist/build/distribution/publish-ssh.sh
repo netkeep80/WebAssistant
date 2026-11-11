@@ -2,20 +2,31 @@
 set -euo pipefail
 
 fail() { printf 'publish-ssh: %s\n' "$*" >&2; exit 1; }
+
+# One validation path for early GitLab preflight and the actual publisher.
+# Reuse inherited SSH credentials; only the storage root is project-scoped.
+check_ci_environment() {
+  local var value
+  for var in CI_NETWORK_DRIVE_PATH CI_SSH_HOST CI_SSH_USER CI_SSH_ID_RSA CI_PIPELINE_ID CI_JOB_ID; do
+    value="${!var:-}"
+    [[ -n "$value" && "$value" != null && "$value" != masked_null ]] || fail "required CI variable not configured: $var"
+  done
+  [[ "$CI_NETWORK_DRIVE_PATH" == /* && "$CI_NETWORK_DRIVE_PATH" != / && "$CI_NETWORK_DRIVE_PATH" != *$'\n'* ]] || fail 'invalid storage root'
+  [[ "$CI_SSH_HOST" =~ ^[A-Za-z0-9._-]+$ && "$CI_SSH_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || fail 'invalid inherited SSH target'
+  [[ "$CI_PIPELINE_ID" =~ ^[0-9]+$ && "$CI_JOB_ID" =~ ^[0-9]+$ ]] || fail 'invalid job identifiers'
+}
+
+if [[ $# == 1 && "${1:-}" == --check-ci-environment ]]; then
+  check_ci_environment
+  exit 0
+fi
+
 [[ $# == 4 ]] || fail 'usage: publish-ssh.sh RELEASE_DIR PRODUCT VERSION SOURCE_SHA'
 release="$1"; product="$2"; version="$3"; commit="$4"
+check_ci_environment
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 "$script_dir/release.sh" verify "$release" "$product" "$version" "$commit"
 
-# Reuse inherited SSH credentials. Only the storage root is project-scoped;
-# the SSH host must have the root mounted.
-for var in CI_NETWORK_DRIVE_PATH CI_SSH_HOST CI_SSH_USER CI_SSH_ID_RSA CI_PIPELINE_ID CI_JOB_ID; do
-  value="${!var:-}"
-  [[ -n "$value" && "$value" != null && "$value" != masked_null ]] || fail "required CI variable not configured: $var"
-done
-[[ "$CI_NETWORK_DRIVE_PATH" == /* && "$CI_NETWORK_DRIVE_PATH" != / && "$CI_NETWORK_DRIVE_PATH" != *$'\n'* ]] || fail 'invalid storage root'
-[[ "$CI_SSH_HOST" =~ ^[A-Za-z0-9._-]+$ && "$CI_SSH_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || fail 'invalid inherited SSH target'
-[[ "$CI_PIPELINE_ID" =~ ^[0-9]+$ && "$CI_JOB_ID" =~ ^[0-9]+$ ]] || fail 'invalid job identifiers'
 for executable in ssh ssh-agent ssh-add mktemp; do
   command -v "$executable" >/dev/null 2>&1 || fail "missing SSH tool: $executable"
 done
