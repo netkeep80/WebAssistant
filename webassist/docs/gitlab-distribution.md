@@ -56,7 +56,7 @@ variables; bootstrap-задача использует готовое групп
 
 Job `build-altlinux-release` запускается на основной ветке:
 
-1. Проверяет `VERSION`, `CI_DISTRIBUTION_NAME` и SDK 10.
+1. Проверяет `CI_DISTRIBUTION_NAME` и `CI_COMMIT_SHA`, затем выполняет локальную предварительную проверку `CI_NETWORK_DRIVE_PATH`, групповых `CI_SSH_HOST`, `CI_SSH_USER`, `CI_SSH_ID_RSA` и идентификаторов GitLab pipeline/job. Пустые значения, заглушки `null`/`masked_null` и некорректный путь или SSH target завершают job с ошибкой до тестов и упаковки. Парольная фраза `CI_SSH_ID_RSA_SECRET` необязательна; доступность сервера и корректность ключа проверяются при фактической публикации. Затем проверяются `VERSION`, инструменты и SDK 10.
 2. Запускает тесты immutable release.
 3. Вызывает только canonical `build/linux/package.sh`,
    передавая `WEBASSISTANT_SOURCE_SHA=$CI_COMMIT_SHA`;
