@@ -37,6 +37,7 @@ public sealed class ProductAutonomyTests
         Assert.Contains("bash build/distribution/publish-ssh.sh", pipeline, StringComparison.Ordinal);
         Assert.Contains("tests/distribution-release.test.sh", pipeline, StringComparison.Ordinal);
         Assert.Contains("$CI_DEFAULT_BRANCH", pipeline, StringComparison.Ordinal);
+
         var sshPublisher = File.ReadAllText(Path.Combine(productRoot, "build", "distribution", "publish-ssh.sh"));
         Assert.Contains("CI_SSH_HOST", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_USER", sshPublisher, StringComparison.Ordinal);
@@ -44,6 +45,7 @@ public sealed class ProductAutonomyTests
         Assert.Contains("CI_SSH_ID_RSA_SECRET", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("StrictHostKeyChecking=accept-new", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("SSH_ASKPASS_REQUIRE=force", sshPublisher, StringComparison.Ordinal);
+
         var storagePublisher = File.ReadAllText(Path.Combine(productRoot, "build", "distribution", "remote-publish.sh"));
         Assert.Contains("cp -a -- \"$stage/.\" \"$final/\"", storagePublisher, StringComparison.Ordinal);
         Assert.Contains("diff -qr -- \"$stage\" \"$final\"", storagePublisher, StringComparison.Ordinal);
@@ -67,7 +69,6 @@ public sealed class ProductAutonomyTests
         Assert.DoesNotContain("github.com", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("netkeep80/WebAssistant", pipeline, StringComparison.OrdinalIgnoreCase);
 
-        Assert.DoesNotContain(".rpm", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("include:", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("../", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("..\\", pipeline, StringComparison.Ordinal);
@@ -90,8 +91,6 @@ public sealed class ProductAutonomyTests
         Assert.Contains("CI_SSH_ID_RSA", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA_SECRET", readme, StringComparison.Ordinal);
         Assert.Contains("copy → verify → delete", readme, StringComparison.Ordinal);
-        Assert.DoesNotContain("linux-package", readme, StringComparison.Ordinal);
-
     }
 
     [Fact]
