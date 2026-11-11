@@ -141,7 +141,7 @@ preflight_reject "required CI variable not configured: CI_JOB_ID" env -u CI_JOB_
 for bad in / relative; do
   preflight_reject "invalid storage root" env CI_NETWORK_DRIVE_PATH="$bad" bash "$publisher" --check-ci-environment
 done
-preflight_reject "invalid storage root" env CI_NETWORK_DRIVE_PATH="$(printf '/tmp/storage\\ninvalid')" bash "$publisher" --check-ci-environment
+preflight_reject "invalid storage root" env CI_NETWORK_DRIVE_PATH="$(printf '/tmp/storage\ninvalid')" bash "$publisher" --check-ci-environment
 preflight_reject "invalid inherited SSH target" env CI_SSH_HOST='invalid host' bash "$publisher" --check-ci-environment
 preflight_reject "invalid inherited SSH target" env CI_SSH_USER='invalid user' bash "$publisher" --check-ci-environment
 preflight_reject "invalid job identifiers" env CI_PIPELINE_ID=abc bash "$publisher" --check-ci-environment
