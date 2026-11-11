@@ -24,7 +24,8 @@ public sealed class ProductAutonomyTests
         Assert.Contains("CI_API_V4_URL", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_NETWORK_DRIVE_PATH", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_DISTRIBUTION_NAME", pipeline, StringComparison.Ordinal);
-        Assert.Contains("create_if_absent CI_RELEASE_SSH_KNOWN_HOSTS file", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("CI_RELEASE_SSH_KNOWN_HOSTS", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("CI_RELEASE_STORAGE_RENAME_VERIFIED", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("create_if_absent CI_RELEASE_SSH_HOST", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("create_if_absent CI_RELEASE_SSH_USER", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("create_if_absent CI_RELEASE_SSH_PRIVATE_KEY", pipeline, StringComparison.Ordinal);
@@ -49,11 +50,16 @@ public sealed class ProductAutonomyTests
         Assert.Contains("CI_SSH_USER", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA_SECRET", sshPublisher, StringComparison.Ordinal);
-        Assert.Contains("CI_SSH_KNOWN_HOSTS", sshPublisher, StringComparison.Ordinal);
-        Assert.Contains("CI_RELEASE_SSH_KNOWN_HOSTS", sshPublisher, StringComparison.Ordinal);
-        Assert.Contains("StrictHostKeyChecking=yes", sshPublisher, StringComparison.Ordinal);
+        Assert.DoesNotContain("CI_SSH_KNOWN_HOSTS", sshPublisher, StringComparison.Ordinal);
+        Assert.DoesNotContain("CI_RELEASE_SSH_KNOWN_HOSTS", sshPublisher, StringComparison.Ordinal);
+        Assert.DoesNotContain("CI_RELEASE_STORAGE_RENAME_VERIFIED", sshPublisher, StringComparison.Ordinal);
+        Assert.Contains("StrictHostKeyChecking=accept-new", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("SSH_ASKPASS_REQUIRE=force", sshPublisher, StringComparison.Ordinal);
         Assert.DoesNotContain("CI_RELEASE_SSH_PRIVATE_KEY", sshPublisher, StringComparison.Ordinal);
+        var storagePublisher = File.ReadAllText(Path.Combine(productRoot, "build", "distribution", "remote-publish.sh"));
+        Assert.Contains("cp -a -- \"$stage/.\" \"$final/\"", storagePublisher, StringComparison.Ordinal);
+        Assert.Contains("diff -qr -- \"$stage\" \"$final\"", storagePublisher, StringComparison.Ordinal);
+        Assert.DoesNotContain("mv -T", storagePublisher, StringComparison.Ordinal);
 
         foreach (var relativePath in new[]
         {
@@ -103,7 +109,9 @@ public sealed class ProductAutonomyTests
         Assert.Contains("build-altlinux-release", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA_SECRET", readme, StringComparison.Ordinal);
-        Assert.Contains("CI_RELEASE_SSH_KNOWN_HOSTS", readme, StringComparison.Ordinal);
+        Assert.DoesNotContain("CI_RELEASE_SSH_KNOWN_HOSTS", readme, StringComparison.Ordinal);
+        Assert.DoesNotContain("CI_RELEASE_STORAGE_RENAME_VERIFIED", readme, StringComparison.Ordinal);
+        Assert.Contains("copy → verify → delete", readme, StringComparison.Ordinal);
         Assert.DoesNotContain("CI_RELEASE_SSH_PRIVATE_KEY", readme, StringComparison.Ordinal);
         Assert.DoesNotContain("CI_PROJECT_ACCESS_TOKEN", readme, StringComparison.Ordinal);
         Assert.DoesNotContain("CI_BUILDER_IMAGE_NAME", readme, StringComparison.Ordinal);
