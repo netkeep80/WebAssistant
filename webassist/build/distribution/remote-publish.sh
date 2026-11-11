@@ -62,7 +62,7 @@ case "$operation" in
     # consumers must wait for publication success and independently verify.
     mkdir -- "$final" || fail 'cannot create final release directory (existing destination or storage failure)'
     cp -a -- "$stage/." "$final/" || fail 'release copy failed; final directory may be incomplete and requires manual recovery'
-    actual_final="$(cd "$final" && find . -mindepth 1 -printf '%P\\n' | LC_ALL=C sort)"
+    actual_final="$(cd "$final" && find . -mindepth 1 -printf '%P\n' | LC_ALL=C sort)"
     [[ "$actual_final" == "$expected" && -d "$final/altlinux-x64" && ! -L "$final/altlinux-x64" ]] || fail 'copied release structure differs; final directory may be incomplete'
     for file in "${files[@]}"; do
       [[ -f "$final/$file" && ! -L "$final/$file" ]] || fail "copied release file missing: $file"
