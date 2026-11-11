@@ -292,7 +292,6 @@ artifacts/installation-guide/WebAssistant-Installation-Guide.pdf
 
 | Project variable | Что задать |
 |---|---|
-| `CI_DISTRIBUTION_NAME` | Явно заданное имя каталога релизов: латинские буквы, цифры, `._-` |
 | `CI_NETWORK_DRIVE_PATH` | Абсолютный путь к storage **на SSH-хосте**, отдельная project variable |
 | `CI_PROMOTION_PROJECT_PATH` | Путь отдельного promotion-контура (зарезервирован для следующего этапа) |
 
@@ -305,7 +304,7 @@ SSH использует штатное хранилище `known_hosts` OpenSSH
 
 ### Что делает pipeline
 
-`create-gitlab-variables` — ручная служебная задача. `build-altlinux-release` сначала проверяет `CI_DISTRIBUTION_NAME`, `CI_NETWORK_DRIVE_PATH`, групповые `CI_SSH_HOST`, `CI_SSH_USER`, `CI_SSH_ID_RSA`, а также GitLab job identifiers. Пустые значения, заглушки `null`/`masked_null` и некорректные адреса отклоняются до тестов и упаковки. Проверка выполняется локально, без подключения к SSH-хосту; парольная фраза `CI_SSH_ID_RSA_SECRET` может отсутствовать. После проверки основная сборка вызывает единственный канонический producer `build/linux/package.sh` с `WEBASSISTANT_SOURCE_SHA=$CI_COMMIT_SHA` и `WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0`, проверяет ZIP, SHA-256 и provenance, создаёт относительный `manifest.json` и передаёт точные байты через SSH на внешний storage.
+Имя каталога продукта и идентификатор в manifest берутся из встроенной переменной GitLab `CI_PROJECT_NAME` (имя каталога проекта в URL). `create-gitlab-variables` — ручная служебная задача. `build-altlinux-release` сначала проверяет `CI_PROJECT_NAME`, `CI_NETWORK_DRIVE_PATH`, групповые `CI_SSH_HOST`, `CI_SSH_USER`, `CI_SSH_ID_RSA`, а также GitLab job identifiers. Пустые значения, заглушки `null`/`masked_null` и некорректные адреса отклоняются до тестов и упаковки. Проверка выполняется локально, без подключения к SSH-хосту; парольная фраза `CI_SSH_ID_RSA_SECRET` может отсутствовать. После проверки основная сборка вызывает единственный канонический producer `build/linux/package.sh` с `WEBASSISTANT_SOURCE_SHA=$CI_COMMIT_SHA` и `WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0`, проверяет ZIP, SHA-256 и provenance, создаёт относительный `manifest.json` и передаёт точные байты через SSH на внешний storage.
 
 Итоговый путь на SSH-хосте относительно `CI_NETWORK_DRIVE_PATH`:
 
