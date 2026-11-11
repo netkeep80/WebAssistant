@@ -25,7 +25,7 @@ fi
 release="$1"; product="$2"; version="$3"; commit="$4"
 check_ci_environment
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"$script_dir/release.sh" verify "$release" "$product" "$version" "$commit"
+bash "$script_dir/release.sh" verify "$release" "$product" "$version" "$commit"
 
 for executable in ssh ssh-agent ssh-add mktemp; do
   command -v "$executable" >/dev/null 2>&1 || fail "missing SSH tool: $executable"
