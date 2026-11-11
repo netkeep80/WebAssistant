@@ -381,7 +381,7 @@ CORS выключен по умолчанию. Для браузерного ori
 }
 ```
 
-Пустая или отсутствующая карта означает, что файловая подсистема не настроена. WebAssistant не создаёт скрытый корень по умолчанию. Имя `RootDirectory` не имеет специальной legacy-семантики: если ключ `WebAssistant:FileSystem:RootDirectory` присутствует и его значение является допустимым абсолютным путём, он трактуется как обычный логический корень с именем `RootDirectory`. Автоматической миграции или переименования нет. Полный runtime/package configuration contract описан в [`configuration.md`](configuration.md), machine-readable JSON projection — в [`appsettings.schema.json`](appsettings.schema.json).
+Пустая или отсутствующая карта означает, что файловая подсистема не настроена. WebAssistant не создаёт скрытый корень по умолчанию. Ключ `WebAssistant:FileSystem:RootDirectory` с допустимым абсолютным путём задаёт обычный логический корень с именем `RootDirectory`. При переходе с однокорневой конфигурации пользователь явно выбирает имя нового корня; до изменения конфигурации действует имя `RootDirectory`. Полный runtime/package configuration contract описан в [`configuration.md`](configuration.md), machine-readable JSON projection — в [`appsettings.schema.json`](appsettings.schema.json).
 
 `logicalRootName` соответствует `[A-Za-z0-9][A-Za-z0-9._-]*`. Имена `.` и `..` запрещены. Имена, различающиеся только регистром, считаются конфликтом конфигурации. Физический путь каждого корня задаётся только администратором; API его не возвращает и не позволяет изменить.
 
