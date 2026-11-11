@@ -18,7 +18,8 @@ GitLab-проекте** после копирования корня проду�
 3. На защищённой основной ветке запускает manual job
    `create-gitlab-variables`: создаются только отсутствующие project
    variables со значением `null`, `protected=true`, `expanded=true`.
-   Приватный ключ и known_hosts создаются с типом переменной **File**.
+   Если отсутствует доверенный known_hosts, он создаётся с типом **File**.
+   Приватный клиентский ключ уже наследуется из групповых переменных.
 4. Администратор заменяет заглушки через Settings → CI/CD → Variables
    целевого GitLab-проекта. Доступ к registry и runner задаётся извне.
 
@@ -27,15 +28,27 @@ GitLab-проекте** после копирования корня проду�
 | `CI_DISTRIBUTION_NAME` | Имя продукта и каталога, не `CI_PROJECT_NAME` |
 | `CI_NETWORK_DRIVE_PATH` | Абсолютный путь к storage на SSH-хосте |
 | `CI_PROMOTION_PROJECT_PATH` | Зарезервировано для будущей promotion-конфигурации |
-| `CI_RELEASE_SSH_HOST` | Хост с подключённым storage |
-| `CI_RELEASE_SSH_USER` | Пользователь SSH |
-| `CI_RELEASE_SSH_PRIVATE_KEY` | Приватный SSH-ключ, тип GitLab variable **File** |
-| `CI_RELEASE_SSH_KNOWN_HOSTS` | Проверенный known_hosts, тип **File** |
+| `CI_RELEASE_SSH_KNOWN_HOSTS` | Проверенный публичный SSH host key, тип **File**; временно, если нет группового `CI_SSH_KNOWN_HOSTS` |
 | `CI_RELEASE_STORAGE_RENAME_VERIFIED` | Устанавливается в `1` только после физической проверки rename semantics |
 
 Имя builder image зафиксировано в продуктовой pipeline: `webassistant-builder`.
 Оно не строится из `CI_DISTRIBUTION_NAME`, и отдельная переменная для имени
 образа не создаётся. Тег по умолчанию — `dotnet-10.0.403-v1`.
+
+**Групповые SSH-переменные**: `CI_SSH_HOST` — адрес принимающего SSH-хоста,
+`CI_SSH_USER` — пользователь, `CI_SSH_ID_RSA` — приватный ключ,
+`CI_SSH_ID_RSA_SECRET` — парольная фраза к зашифрованному ключу.
+Publication script использует `ssh-agent` и `SSH_ASKPASS` для
+неинтерактивной загрузки ключа. Дублировать эти значения в project variables
+не требуется. Групповой хост должен иметь подключённый внешний storage,
+а пользователь — права записи.
+
+Для проверки **подлинности SSH-сервера** нужен trusted `known_hosts`.
+Скрипт сначала использует групповую `CI_SSH_KNOWN_HOSTS` (содержимое
+или File variable), при её отсутствии — существующую project-scoped
+`CI_RELEASE_SSH_KNOWN_HOSTS`. Если обе отсутствуют, публикация
+завершается ошибкой. Публичный host key необходимо сверить по независимому
+доверенному каналу. `StrictHostKeyChecking=yes` не отключается.
 
 `CI_DOCKER_HUB` и доступ к registry задаются извне. Переменная
 `CI_GITLAB_API_ACCESS_TOKEN` наследуется из настроенных GitLab group
