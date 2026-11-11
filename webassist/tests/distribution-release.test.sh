@@ -44,6 +44,7 @@ hashes=("$(sha256sum "$release/manifest.json" | cut -d' ' -f1)" \
         "$(sha256sum "$release/altlinux-x64/$zipname.provenance.json" | cut -d' ' -f1)")
 fail_expected bash "$remote" finalize "$root_b64" "$product" "$version" "$stage" "$zipname" bad "${hashes[@]:1}"
 bash "$remote" finalize "$root_b64" "$product" "$version" "$stage" "$zipname" "${hashes[@]}"
+test ! -e "$parent/$stage" # verified copy must remove the staging directory
 diff -qr "$release" "$parent/$version"
 stage="$(bash "$remote" prepare "$root_b64" "$product" "$version" 112 223)"
 cp -a "$release/." "$parent/$stage/"
