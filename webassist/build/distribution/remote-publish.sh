@@ -2,13 +2,15 @@
 # Runs on the storage host through SSH. It never builds product artifacts.
 set -euo pipefail
 fail() { printf 'remote-publish: %s\n' "$*" >&2; exit 1; }
-[[ $# -ge 4 ]] || fail 'missing operation/root/product/version'
-operation="$1"; root_b64="$2"; product="$3"; version="$4"
+[[ $# -ge 3 ]] || fail 'missing operation/root/product'
+operation="$1"; root_b64="$2"; product="$3"; version="${4:-}"
 [[ "$root_b64" =~ ^[A-Za-z0-9+/=]+$ ]] || fail 'invalid encoded storage path'
 root="$(printf '%s' "$root_b64" | base64 -d)" || fail 'invalid storage path encoding'
 [[ "$root" == /* && "$root" != / && "$root" != *$'\n'* && "$root" != *$'\r'* ]] || fail 'invalid storage path'
 [[ "$product" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && "$product" != '.' && "$product" != '..' ]] || fail 'invalid product'
-[[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || fail 'invalid version'
+if [[ "$operation" != init-storage ]]; then
+  [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || fail 'invalid version'
+fi
 parent="$root/shared/${product}-build/products/$product/releases"
 final="$parent/$version"
 lock="$parent/.${version}.publish-lock"
@@ -18,6 +20,15 @@ check_stage_name() {
 }
 
 case "$operation" in
+  init-storage)
+    [[ $# == 3 ]] || fail 'init-storage requires storage root and product'
+    project_dir="$root/shared/${product}-build"
+    [[ -d "$root" && ! -L "$root" && -d "$root/shared" && ! -L "$root/shared" ]] || fail 'storage root/shared missing or symlinked'
+    [[ ! -L "$project_dir" ]] || fail 'project storage directory is a symlink'
+    sudo -n install -d -o "$(id -un)" -g "$(id -gn)" -m 750 -- "$project_dir" || fail 'storage initialization requires permitted passwordless sudo'
+    [[ -d "$project_dir" && ! -L "$project_dir" && -w "$project_dir" ]] || fail 'initialized storage directory is not writable'
+    echo 'release storage directory ready'
+    ;;
   prepare)
     [[ $# == 6 ]] || fail 'prepare requires pipeline and job IDs'
     [[ "$5" =~ ^[0-9]+$ && "$6" =~ ^[0-9]+$ ]] || fail 'invalid pipeline/job ID'
