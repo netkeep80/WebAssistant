@@ -295,13 +295,14 @@ artifacts/installation-guide/WebAssistant-Installation-Guide.pdf
 | `CI_DISTRIBUTION_NAME` | Имя продукта/каталога: латинские буквы, цифры, `._-`. Не выводится из `CI_PROJECT_NAME` |
 | `CI_NETWORK_DRIVE_PATH` | Абсолютный путь к storage **на SSH-хосте**, отдельная project variable |
 | `CI_PROMOTION_PROJECT_PATH` | Путь будущего promotion-контура; текущая сборка его ещё не использует |
-| `CI_RELEASE_SSH_HOST` | SSH-хост, на котором смонтировано build storage |
-| `CI_RELEASE_SSH_USER` | Пользователь с правами записи в build storage |
-| `CI_RELEASE_SSH_PRIVATE_KEY` | Приватный SSH-ключ, **GitLab variable type File** |
-| `CI_RELEASE_SSH_KNOWN_HOSTS` | Доверенный known_hosts, **GitLab variable type File**; host-key verification обязательна |
+| `CI_RELEASE_SSH_KNOWN_HOSTS` | Проверенный host key SSH-сервера, тип **GitLab variable File**; можно заменить групповой `CI_SSH_KNOWN_HOSTS` |
 | `CI_RELEASE_STORAGE_RENAME_VERIFIED` | `1` только после физического подтверждения rename semantics на выбранной ФС |
 
-**Важно:** имена `CI_RELEASE_SSH_*` — собственный контракт publication job. Другие групповые переменные SSH с похожими назначениями автоматически не подменяются. `CI_NETWORK_DRIVE_PATH` необходимо настроить именно на уровне проекта. Переменные `CI_DOCKER_HUB` и доступ к registry приходят из настроенной GitLab-инфраструктуры.
+**SSH наследуется из групповых переменных**: `CI_SSH_HOST` — сервер, `CI_SSH_USER` — пользователь, `CI_SSH_ID_RSA` — приватный ключ, `CI_SSH_ID_RSA_SECRET` — парольная фраза, если ключ зашифрован. Их **не нужно копировать** в project variables. Групповой `CI_SSH_HOST` должен указывать именно на хост, где смонтировано внешнее build storage, а `CI_SSH_USER` должен иметь права на публикацию.
+
+Доверие к *серверу* — отдельная задача: `known_hosts` содержит **проверенный публичный host key**, а не приватный ключ клиента. В текущем наборе групповых переменных его нет, поэтому проект может сохранить `CI_RELEASE_SSH_KNOWN_HOSTS` (File). При появлении общей `CI_SSH_KNOWN_HOSTS` (строка с записями known_hosts или GitLab File variable) она будет использована с приоритетом; после этого project variable можно удалить. Использовать `ssh-keyscan` без независимой проверки ключа или отключать `StrictHostKeyChecking` нельзя.
+
+`CI_NETWORK_DRIVE_PATH` настраивается именно на уровне проекта. Переменные `CI_DOCKER_HUB` и доступ к registry наследуются из GitLab-инфраструктуры.
 
 ### Что делает pipeline
 
