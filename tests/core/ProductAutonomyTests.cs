@@ -19,6 +19,8 @@ public sealed class ProductAutonomyTests
         // Bootstrap is project-scoped, create-if-absent and administrator-configured.
         Assert.Contains("utility-tasks", pipeline, StringComparison.Ordinal);
         Assert.Contains("create-gitlab-variables:", pipeline, StringComparison.Ordinal);
+        Assert.Contains("prepare-release-storage:", pipeline, StringComparison.Ordinal);
+        Assert.Contains("bash build/distribution/publish-ssh.sh --init-storage \"$CI_PROJECT_NAME\"", pipeline, StringComparison.Ordinal);
         Assert.Contains("when: manual", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_GITLAB_API_ACCESS_TOKEN", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_API_V4_URL", pipeline, StringComparison.Ordinal);
@@ -57,10 +59,12 @@ public sealed class ProductAutonomyTests
         Assert.Contains("CI_SSH_ID_RSA_SECRET", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("StrictHostKeyChecking=accept-new", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("SSH_ASKPASS_REQUIRE=force", sshPublisher, StringComparison.Ordinal);
+        Assert.Contains("--init-storage", sshPublisher, StringComparison.Ordinal);
 
         var storagePublisher = File.ReadAllText(Path.Combine(productRoot, "build", "distribution", "remote-publish.sh"));
         Assert.Contains("cp -a -- \"$stage/.\" \"$final/\"", storagePublisher, StringComparison.Ordinal);
         Assert.Contains("diff -qr -- \"$stage\" \"$final\"", storagePublisher, StringComparison.Ordinal);
+        Assert.Contains("sudo -n install -d", storagePublisher, StringComparison.Ordinal);
         Assert.DoesNotContain("mv -T", storagePublisher, StringComparison.Ordinal);
 
         foreach (var relativePath in new[]
@@ -100,6 +104,7 @@ public sealed class ProductAutonomyTests
         Assert.Contains("webassistant-builder", readme, StringComparison.Ordinal);
         Assert.Contains("create-gitlab-variables", readme, StringComparison.Ordinal);
         Assert.Contains("build-altlinux-release", readme, StringComparison.Ordinal);
+        Assert.Contains("prepare-release-storage", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA_SECRET", readme, StringComparison.Ordinal);
         Assert.Contains("copy → verify → delete", readme, StringComparison.Ordinal);
