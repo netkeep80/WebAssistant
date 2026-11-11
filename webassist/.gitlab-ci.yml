@@ -43,9 +43,6 @@ create-gitlab-variables:
       create_if_absent CI_DISTRIBUTION_NAME env_var
       create_if_absent CI_NETWORK_DRIVE_PATH env_var
       create_if_absent CI_PROMOTION_PROJECT_PATH env_var
-      create_if_absent CI_RELEASE_SSH_HOST env_var
-      create_if_absent CI_RELEASE_SSH_USER env_var
-      create_if_absent CI_RELEASE_SSH_PRIVATE_KEY file
       create_if_absent CI_RELEASE_SSH_KNOWN_HOSTS file
       create_if_absent CI_RELEASE_STORAGE_RENAME_VERIFIED env_var
   rules:
@@ -71,7 +68,7 @@ build-altlinux-release:
       echo "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
       command -v dotnet >/dev/null 2>&1
       dotnet --list-sdks | grep -Eq '^10\.' || { echo '.NET SDK 10 is required in builder image' >&2; exit 1; }
-      for tool in bash jq zip sha256sum base64 stat realpath tar ssh find sort cmp diff mv mktemp; do
+      for tool in bash jq zip sha256sum base64 stat realpath tar ssh ssh-agent ssh-add find sort cmp diff mv mktemp; do
         command -v "$tool" >/dev/null 2>&1 || { echo "Builder missing $tool" >&2; exit 1; }
       done
 
