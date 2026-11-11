@@ -6,6 +6,7 @@ fail() { printf 'publish-ssh: %s\n' "$*" >&2; exit 1; }
 # One validation path for early GitLab preflight and the actual publisher.
 # Reuse inherited SSH credentials; only the storage root is project-scoped.
 check_ci_environment() {
+  local var value
   for var in CI_NETWORK_DRIVE_PATH CI_SSH_HOST CI_SSH_USER CI_SSH_ID_RSA CI_PIPELINE_ID CI_JOB_ID; do
     value="${!var:-}"
     [[ -n "$value" && "$value" != null && "$value" != masked_null ]] || fail "required CI variable not configured: $var"
@@ -15,7 +16,7 @@ check_ci_environment() {
   [[ "$CI_PIPELINE_ID" =~ ^[0-9]+$ && "$CI_JOB_ID" =~ ^[0-9]+$ ]] || fail 'invalid job identifiers'
 }
 
-if [[ $# == 1 && "$1" == --check-ci-environment ]]; then
+if [[ $# == 1 && "${1:-}" == --check-ci-environment ]]; then
   check_ci_environment
   exit 0
 fi
