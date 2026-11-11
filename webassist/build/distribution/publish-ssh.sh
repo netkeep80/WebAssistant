@@ -21,11 +21,20 @@ if [[ $# == 1 && "${1:-}" == --check-ci-environment ]]; then
   exit 0
 fi
 
-[[ $# == 4 ]] || fail 'usage: publish-ssh.sh RELEASE_DIR PRODUCT VERSION SOURCE_SHA'
-release="$1"; product="$2"; version="$3"; commit="$4"
+init_storage=0
+if [[ $# == 2 && "$1" == --init-storage ]]; then
+  init_storage=1
+  product="$2"
+else
+  [[ $# == 4 ]] || fail 'usage: publish-ssh.sh RELEASE_DIR PRODUCT VERSION SOURCE_SHA | --init-storage PRODUCT'
+  release="$1"; product="$2"; version="$3"; commit="$4"
+fi
+[[ "$product" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail 'invalid product'
 check_ci_environment
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-bash "$script_dir/release.sh" verify "$release" "$product" "$version" "$commit"
+if [[ "$init_storage" == 0 ]]; then
+  bash "$script_dir/release.sh" verify "$release" "$product" "$version" "$commit"
+fi
 
 for executable in ssh ssh-agent ssh-add mktemp; do
   command -v "$executable" >/dev/null 2>&1 || fail "missing SSH tool: $executable"
@@ -72,6 +81,11 @@ target="${CI_SSH_USER}@${CI_SSH_HOST}"
 ssh_options=( -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes -i "$private_key" -T )
 remote="$script_dir/remote-publish.sh"
 root_b64="$(printf '%s' "$CI_NETWORK_DRIVE_PATH" | base64 -w0)"
+
+if [[ "$init_storage" == 1 ]]; then
+  ssh "${ssh_options[@]}" "$target" "bash -s -- init-storage $root_b64 $product" < "$remote" || fail 'remote storage initialization failed'
+  exit 0
+fi
 
 stage="$(ssh "${ssh_options[@]}" "$target" "bash -s -- prepare $root_b64 $product $version $CI_PIPELINE_ID $CI_JOB_ID" < "$remote")" || fail 'remote publication preparation failed'
 [[ "$stage" =~ ^\.[0-9]+\.[0-9]+\.[0-9]+\.tmp-[0-9]+-[0-9]+\.[A-Za-z0-9]+$ ]] || fail 'remote returned invalid stage name'
