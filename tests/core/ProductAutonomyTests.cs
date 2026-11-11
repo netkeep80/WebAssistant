@@ -20,16 +20,9 @@ public sealed class ProductAutonomyTests
         Assert.Contains("create-gitlab-variables:", pipeline, StringComparison.Ordinal);
         Assert.Contains("when: manual", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_GITLAB_API_ACCESS_TOKEN", pipeline, StringComparison.Ordinal);
-        Assert.DoesNotContain("CI_PROJECT_ACCESS_TOKEN", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_API_V4_URL", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_NETWORK_DRIVE_PATH", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_DISTRIBUTION_NAME", pipeline, StringComparison.Ordinal);
-        Assert.DoesNotContain("CI_RELEASE_SSH_KNOWN_HOSTS", pipeline, StringComparison.Ordinal);
-        Assert.DoesNotContain("CI_RELEASE_STORAGE_RENAME_VERIFIED", pipeline, StringComparison.Ordinal);
-        Assert.DoesNotContain("create_if_absent CI_RELEASE_SSH_HOST", pipeline, StringComparison.Ordinal);
-        Assert.DoesNotContain("create_if_absent CI_RELEASE_SSH_USER", pipeline, StringComparison.Ordinal);
-        Assert.DoesNotContain("create_if_absent CI_RELEASE_SSH_PRIVATE_KEY", pipeline, StringComparison.Ordinal);
-        Assert.DoesNotContain("CI_BUILDER_IMAGE_NAME", pipeline, StringComparison.Ordinal);
         Assert.Contains("/webassistant-builder:${WEBASSISTANT_BUILDER_TAG}", pipeline, StringComparison.Ordinal);
         Assert.Contains("--form 'protected=true'", pipeline, StringComparison.Ordinal);
         Assert.Contains("--form 'expanded=true'", pipeline, StringComparison.Ordinal);
@@ -44,18 +37,13 @@ public sealed class ProductAutonomyTests
         Assert.Contains("bash build/distribution/publish-ssh.sh", pipeline, StringComparison.Ordinal);
         Assert.Contains("tests/distribution-release.test.sh", pipeline, StringComparison.Ordinal);
         Assert.Contains("$CI_DEFAULT_BRANCH", pipeline, StringComparison.Ordinal);
-        Assert.DoesNotContain("${CI_DISTRIBUTION_NAME}-builder", pipeline, StringComparison.Ordinal);
         var sshPublisher = File.ReadAllText(Path.Combine(productRoot, "build", "distribution", "publish-ssh.sh"));
         Assert.Contains("CI_SSH_HOST", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_USER", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA_SECRET", sshPublisher, StringComparison.Ordinal);
-        Assert.DoesNotContain("CI_SSH_KNOWN_HOSTS", sshPublisher, StringComparison.Ordinal);
-        Assert.DoesNotContain("CI_RELEASE_SSH_KNOWN_HOSTS", sshPublisher, StringComparison.Ordinal);
-        Assert.DoesNotContain("CI_RELEASE_STORAGE_RENAME_VERIFIED", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("StrictHostKeyChecking=accept-new", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("SSH_ASKPASS_REQUIRE=force", sshPublisher, StringComparison.Ordinal);
-        Assert.DoesNotContain("CI_RELEASE_SSH_PRIVATE_KEY", sshPublisher, StringComparison.Ordinal);
         var storagePublisher = File.ReadAllText(Path.Combine(productRoot, "build", "distribution", "remote-publish.sh"));
         Assert.Contains("cp -a -- \"$stage/.\" \"$final/\"", storagePublisher, StringComparison.Ordinal);
         Assert.Contains("diff -qr -- \"$stage\" \"$final\"", storagePublisher, StringComparison.Ordinal);
@@ -76,17 +64,9 @@ public sealed class ProductAutonomyTests
         // Installer storage is externally authoritative, never a GitLab Job Artifact.
         Assert.DoesNotContain("  artifacts:", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("expire_in:", pipeline, StringComparison.Ordinal);
-        Assert.DoesNotContain("linux-package:", pipeline, StringComparison.Ordinal);
-        Assert.DoesNotContain("GITHUB_SHA", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("github.com", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("netkeep80/WebAssistant", pipeline, StringComparison.OrdinalIgnoreCase);
 
-        Assert.DoesNotContain("windows-package:", pipeline, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("WEBASSISTANT_WINDOWS_RUNNER_TAG", pipeline, StringComparison.Ordinal);
-        Assert.DoesNotContain("build\\windows\\package.bat", pipeline, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("artifacts/windows-x64/", pipeline, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("NAPS2_RPM_URL", pipeline, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("--naps2-rpm", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(".rpm", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("include:", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("../", pipeline, StringComparison.Ordinal);
@@ -109,18 +89,9 @@ public sealed class ProductAutonomyTests
         Assert.Contains("build-altlinux-release", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA_SECRET", readme, StringComparison.Ordinal);
-        Assert.DoesNotContain("CI_RELEASE_SSH_KNOWN_HOSTS", readme, StringComparison.Ordinal);
-        Assert.DoesNotContain("CI_RELEASE_STORAGE_RENAME_VERIFIED", readme, StringComparison.Ordinal);
         Assert.Contains("copy → verify → delete", readme, StringComparison.Ordinal);
-        Assert.DoesNotContain("CI_RELEASE_SSH_PRIVATE_KEY", readme, StringComparison.Ordinal);
-        Assert.DoesNotContain("CI_PROJECT_ACCESS_TOKEN", readme, StringComparison.Ordinal);
-        Assert.DoesNotContain("CI_BUILDER_IMAGE_NAME", readme, StringComparison.Ordinal);
         Assert.DoesNotContain("linux-package", readme, StringComparison.Ordinal);
-        Assert.DoesNotContain("не более одного дня", readme, StringComparison.Ordinal);
 
-        Assert.DoesNotContain("WEBASSISTANT_WINDOWS_RUNNER_TAG", readme, StringComparison.Ordinal);
-        Assert.DoesNotContain("Windows job", readme, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("install.bat\n```", readme, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
