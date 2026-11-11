@@ -43,7 +43,6 @@ create-gitlab-variables:
       create_if_absent CI_DISTRIBUTION_NAME env_var
       create_if_absent CI_NETWORK_DRIVE_PATH env_var
       create_if_absent CI_PROMOTION_PROJECT_PATH env_var
-      create_if_absent CI_RELEASE_STORAGE_RENAME_VERIFIED env_var
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       when: manual
