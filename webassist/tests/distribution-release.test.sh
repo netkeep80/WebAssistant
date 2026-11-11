@@ -113,6 +113,42 @@ export CI_SSH_ID_RSA='mock inherited private key'
 export CI_SSH_ID_RSA_SECRET='mock inherited passphrase'
 export CI_PIPELINE_ID=203
 export CI_JOB_ID=204
-bash "$root/build/distribution/publish-ssh.sh" "$release" "$product" "$version" "$commit"
+
+# Early validation must reject every unset, placeholder or malformed mandatory
+# setting without a real SSH connection, release directory or package build.
+publisher="$root/build/distribution/publish-ssh.sh"
+bash "$publisher" --check-ci-environment
+preflight_reject() {
+  expected="$1"; shift
+  if "$@" >"$tmp/preflight-rejected.log" 2>&1; then
+    echo "Preflight accepted invalid CI configuration" >&2
+    exit 1
+  fi
+  grep -Fq "$expected" "$tmp/preflight-rejected.log" || {
+    echo "Unexpected preflight diagnostic; expected: $expected" >&2
+    cat "$tmp/preflight-rejected.log" >&2
+    exit 1
+  }
+}
+for bad in '' null masked_null; do
+  preflight_reject "required CI variable not configured: CI_NETWORK_DRIVE_PATH" env CI_NETWORK_DRIVE_PATH="$bad" bash "$publisher" --check-ci-environment
+  preflight_reject "required CI variable not configured: CI_SSH_ID_RSA" env CI_SSH_ID_RSA="$bad" bash "$publisher" --check-ci-environment
+done
+preflight_reject "required CI variable not configured: CI_SSH_HOST" env -u CI_SSH_HOST bash "$publisher" --check-ci-environment
+preflight_reject "required CI variable not configured: CI_SSH_USER" env CI_SSH_USER=null bash "$publisher" --check-ci-environment
+preflight_reject "required CI variable not configured: CI_PIPELINE_ID" env CI_PIPELINE_ID=masked_null bash "$publisher" --check-ci-environment
+preflight_reject "required CI variable not configured: CI_JOB_ID" env -u CI_JOB_ID bash "$publisher" --check-ci-environment
+for bad in / relative; do
+  preflight_reject "invalid storage root" env CI_NETWORK_DRIVE_PATH="$bad" bash "$publisher" --check-ci-environment
+done
+preflight_reject "invalid storage root" env CI_NETWORK_DRIVE_PATH="$(printf '/tmp/storage\\ninvalid')" bash "$publisher" --check-ci-environment
+preflight_reject "invalid inherited SSH target" env CI_SSH_HOST='invalid host' bash "$publisher" --check-ci-environment
+preflight_reject "invalid inherited SSH target" env CI_SSH_USER='invalid user' bash "$publisher" --check-ci-environment
+preflight_reject "invalid job identifiers" env CI_PIPELINE_ID=abc bash "$publisher" --check-ci-environment
+preflight_reject "invalid job identifiers" env CI_JOB_ID=4x bash "$publisher" --check-ci-environment
+# The group SSH passphrase remains optional (unencrypted private keys).
+env -u CI_SSH_ID_RSA_SECRET bash "$publisher" --check-ci-environment
+
+bash "$publisher" "$release" "$product" "$version" "$commit"
 diff -qr "$release" "$CI_NETWORK_DRIVE_PATH/shared/${product}-build/products/$product/releases/$version"
 echo 'distribution release assembly, verification, SSH transfer, idempotence, tamper rejection: PASS'
