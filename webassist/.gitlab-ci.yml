@@ -40,7 +40,6 @@ create-gitlab-variables:
         rm -f "$response"
       }
 
-      create_if_absent CI_DISTRIBUTION_NAME env_var
       create_if_absent CI_NETWORK_DRIVE_PATH env_var
       create_if_absent CI_PROMOTION_PROJECT_PATH env_var
   rules:
@@ -56,9 +55,9 @@ build-altlinux-release:
   script:
     - |
       set -eu
-      : "${CI_DISTRIBUTION_NAME:?CI_DISTRIBUTION_NAME is required}"
-      case "$CI_DISTRIBUTION_NAME" in
-        null|masked_null|.|..|*[!a-zA-Z0-9._-]*|'') echo 'Invalid CI_DISTRIBUTION_NAME' >&2; exit 1 ;;
+      : "${CI_PROJECT_NAME:?CI_PROJECT_NAME is required}"
+      case "$CI_PROJECT_NAME" in
+        null|masked_null|[!a-zA-Z0-9]*|*[!a-zA-Z0-9._-]*) echo 'Invalid CI_PROJECT_NAME' >&2; exit 1 ;;
       esac
       : "${CI_COMMIT_SHA:?GitLab source revision is required}"
       bash build/distribution/publish-ssh.sh --check-ci-environment
@@ -75,10 +74,10 @@ build-altlinux-release:
       export WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0
       bash tests/distribution-release.test.sh
       bash build/linux/package.sh artifacts/linux-x64
-      bash build/distribution/release.sh assemble artifacts/linux-x64 artifacts/release-staging "$CI_DISTRIBUTION_NAME" "$version" "$CI_COMMIT_SHA"
-      release="artifacts/release-staging/products/$CI_DISTRIBUTION_NAME/releases/$version"
-      bash build/distribution/release.sh verify "$release" "$CI_DISTRIBUTION_NAME" "$version" "$CI_COMMIT_SHA"
-      bash build/distribution/publish-ssh.sh "$release" "$CI_DISTRIBUTION_NAME" "$version" "$CI_COMMIT_SHA"
+      bash build/distribution/release.sh assemble artifacts/linux-x64 artifacts/release-staging "$CI_PROJECT_NAME" "$version" "$CI_COMMIT_SHA"
+      release="artifacts/release-staging/products/$CI_PROJECT_NAME/releases/$version"
+      bash build/distribution/release.sh verify "$release" "$CI_PROJECT_NAME" "$version" "$CI_COMMIT_SHA"
+      bash build/distribution/publish-ssh.sh "$release" "$CI_PROJECT_NAME" "$version" "$CI_COMMIT_SHA"
   # No GitLab Job Artifacts: exact release bytes are published directly to
   # external immutable build storage by this same job.
   rules:
