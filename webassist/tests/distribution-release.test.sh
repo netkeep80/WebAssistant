@@ -105,6 +105,15 @@ set -euo pipefail
 [[ "$("$SSH_ASKPASS")" == "${CI_SSH_ID_RSA_SECRET}" ]] || exit 4
 MOCK
 chmod +x "$tmp/mock-bin/ssh-agent" "$tmp/mock-bin/ssh-add"
+cat > "$tmp/mock-bin/sudo" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${1:-}" == -n && "${2:-}" == install ]] || exit 2
+[[ "${MOCK_SUDO_DENY:-0}" != 1 ]] || exit 1
+shift
+exec "$@"
+MOCK
+chmod +x "$tmp/mock-bin/sudo"
 export PATH="$tmp/mock-bin:$PATH"
 export CI_NETWORK_DRIVE_PATH="$tmp/full-wrapper-store"
 export CI_SSH_HOST=example.test
@@ -148,6 +157,22 @@ preflight_reject "invalid job identifiers" env CI_PIPELINE_ID=abc bash "$publish
 preflight_reject "invalid job identifiers" env CI_JOB_ID=4x bash "$publisher" --check-ci-environment
 # The group SSH passphrase remains optional (unencrypted private keys).
 env -u CI_SSH_ID_RSA_SECRET bash "$publisher" --check-ci-environment
+
+# Manual storage bootstrap: reuse real SSH wrapper; sudo is simulated locally.
+manual_root="$tmp/manual-storage"
+mkdir -p "$manual_root/shared"
+manual_dir="$manual_root/shared/${product}-build"
+env CI_NETWORK_DRIVE_PATH="$manual_root" bash "$publisher" --init-storage "$product"
+[[ -d "$manual_dir" && -w "$manual_dir" && "$(stat -c %a "$manual_dir")" == 750 ]]
+[[ "$(stat -c %U "$manual_dir")" == "$(id -un)" ]]
+[[ ! -d "$manual_dir/products" ]] # no release tree or artifacts created
+printf 'keep' > "$manual_dir/existing"
+env CI_NETWORK_DRIVE_PATH="$manual_root" bash "$publisher" --init-storage "$product"
+[[ "$(cat "$manual_dir/existing")" == keep ]] # idempotent, no recursive changes
+preflight_reject "storage root/shared missing or symlinked" env CI_NETWORK_DRIVE_PATH="$tmp/missing-root" bash "$publisher" --init-storage "$product"
+ln -s "$manual_dir" "$manual_root/shared/symlink-build"
+preflight_reject "project storage directory is a symlink" env CI_NETWORK_DRIVE_PATH="$manual_root" bash "$publisher" --init-storage symlink
+preflight_reject "storage initialization requires permitted passwordless sudo" env CI_NETWORK_DRIVE_PATH="$manual_root" MOCK_SUDO_DENY=1 bash "$publisher" --init-storage other-product
 
 bash "$publisher" "$release" "$product" "$version" "$commit"
 diff -qr "$release" "$CI_NETWORK_DRIVE_PATH/shared/${product}-build/products/$product/releases/$version"

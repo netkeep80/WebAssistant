@@ -47,6 +47,19 @@ create-gitlab-variables:
       when: manual
       allow_failure: true
 
+prepare-release-storage:
+  stage: utility-tasks
+  image: "${CI_DOCKER_HUB}/webassistant-builder:${WEBASSISTANT_BUILDER_TAG}"
+  script:
+    - |
+      set -eu
+      : "${CI_PROJECT_NAME:?CI_PROJECT_NAME is required}"
+      bash build/distribution/publish-ssh.sh --init-storage "$CI_PROJECT_NAME"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+      allow_failure: true
+
 build-altlinux-release:
   stage: package
   image: "${CI_DOCKER_HUB}/webassistant-builder:${WEBASSISTANT_BUILDER_TAG}"
