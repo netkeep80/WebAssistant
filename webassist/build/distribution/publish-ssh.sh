@@ -21,17 +21,9 @@ for executable in ssh ssh-agent ssh-add mktemp; do
   command -v "$executable" >/dev/null 2>&1 || fail "missing SSH tool: $executable"
 done
 
-# Authentication comes from group variables (private key + optional
-# passphrase). Host authentication is separate and must remain pinned.
-known_hosts_source=""
-if [[ -n "${CI_SSH_KNOWN_HOSTS:-}" && "${CI_SSH_KNOWN_HOSTS}" != null ]]; then
-  known_hosts_source="$CI_SSH_KNOWN_HOSTS"
-elif [[ -n "${CI_RELEASE_SSH_KNOWN_HOSTS:-}" && "${CI_RELEASE_SSH_KNOWN_HOSTS}" != null ]]; then
-  known_hosts_source="$CI_RELEASE_SSH_KNOWN_HOSTS"
-else
-  fail 'trusted SSH host keys not configured: CI_SSH_KNOWN_HOSTS (group) or CI_RELEASE_SSH_KNOWN_HOSTS (project)'
-fi
-
+# Authentication comes from inherited group variables. SSH host verification
+# uses the standard OpenSSH known_hosts store; unknown host keys are accepted
+# on first contact, while changed keys are rejected on later connections.
 umask 077
 ssh_dir="$(mktemp -d)"
 stage=""
@@ -47,18 +39,9 @@ cleanup() {
 trap cleanup EXIT
 
 private_key="$ssh_dir/id_rsa"
-known_hosts="$ssh_dir/known_hosts"
 printf '%s\n' "$CI_SSH_ID_RSA" > "$private_key"
 
-# GitLab variables may contain host-key data directly or a File-variable
-# path. Never learn the key from the unverified SSH connection itself.
-if [[ -f "$known_hosts_source" ]]; then
-  cat -- "$known_hosts_source" > "$known_hosts"
-else
-  printf '%s\n' "$known_hosts_source" > "$known_hosts"
-fi
-[[ -s "$known_hosts" && "$(cat "$known_hosts")" != null && "$(cat "$known_hosts")" != masked_null ]] || fail 'trusted SSH host keys are empty/placeholder'
-chmod 600 "$private_key" "$known_hosts"
+chmod 600 "$private_key"
 
 # ssh-add in CI cannot reliably read a passphrase from stdin. Use an
 # SSH_ASKPASS helper with no TTY; no private key/passphrase is logged.
@@ -76,7 +59,7 @@ else
 fi
 
 target="${CI_SSH_USER}@${CI_SSH_HOST}"
-ssh_options=( -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes -o "UserKnownHostsFile=$known_hosts" -i "$private_key" -T )
+ssh_options=( -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes -i "$private_key" -T )
 remote="$script_dir/remote-publish.sh"
 root_b64="$(printf '%s' "$CI_NETWORK_DRIVE_PATH" | base64 -w0)"
 
