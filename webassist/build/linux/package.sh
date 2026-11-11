@@ -167,7 +167,9 @@ trap cleanup_build EXIT
 }
 
 declare -A metadata=()
-while IFS='=' read -r key value; do
+while IFS= read -r line; do
+    key="${line%%=*}"
+    value="${line#*=}"
     [[ -n "$key" ]] || continue
     [[ -z "${metadata[$key]+x}" ]] || {
         echo "Duplicate ProductMetadataResolver key: $key" >&2
