@@ -162,6 +162,14 @@ public sealed class LinuxPackagingSdkResolutionTests
         IReadOnlyDictionary<string, string> environment)
     {
         var packageScript = Path.Combine(FindRepositoryRoot(), "webassist", "build", "linux", "package.sh");
+        // Catch missing Base64 padding even on GNU base64 versions that accept it.
+        WriteExecutable(Path.Combine(fakeBin, "base64"), """
+            #!/usr/bin/env bash
+            set -euo pipefail
+            input="$(cat)"
+            (( ${#input} % 4 == 0 )) || { echo 'Invalid Base64 padding' >&2; exit 1; }
+            printf '%s' "$input" | /usr/bin/base64 "$@"
+            """);
         var startInfo = new ProcessStartInfo("/usr/bin/bash")
         {
             RedirectStandardOutput = true,
@@ -210,7 +218,7 @@ if [[ "${1:-}" == "run" ]]; then
 metadataMode=defaults
 applicationNameBase64=V2ViQXNzaXN0YW50
 installerBaseNameBase64=V2ViQXNzaXN0YW50
-fileDescriptionBase64=V2ViQXNzaXN0YW50
+fileDescriptionBase64=V2ViQXNzaXN0YW50IEE=
 companyNameBase64=V2ViQXNzaXN0YW50
 copyrightBase64=Q29weXJpZ2h0IMKpIFdlYkFzc2lzdGFudA==
 metadataInputSha256=0000000000000000000000000000000000000000000000000000000000000000
@@ -277,7 +285,7 @@ if [[ "${1:-}" == "run" ]]; then
 metadataMode=defaults
 applicationNameBase64=V2ViQXNzaXN0YW50
 installerBaseNameBase64=V2ViQXNzaXN0YW50
-fileDescriptionBase64=V2ViQXNzaXN0YW50
+fileDescriptionBase64=V2ViQXNzaXN0YW50IEE=
 companyNameBase64=V2ViQXNzaXN0YW50
 copyrightBase64=Q29weXJpZ2h0IMKpIFdlYkFzc2lzdGFudA==
 metadataInputSha256=0000000000000000000000000000000000000000000000000000000000000000
