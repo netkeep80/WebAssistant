@@ -16,23 +16,23 @@ sha="$(sha256sum "$package/$zipname" | cut -d' ' -f1)"
 size="$(stat -c %s "$package/$zipname")"
 (cd "$package" && sha256sum "$zipname" > "$zipname.sha256")
 jq -n --arg f "$zipname" --arg v "$version" --arg c "$commit" --arg s "$sha" --argjson size "$size" '{artifact:$f,version:$v,sourceSha:$c,rid:"linux-x64",sha256:$s,size:$size,packageEntrypoint:"build/linux/package.sh"}' > "$package/$zipname.provenance.json"
-"$release_tool" assemble "$package" "$tmp/out" "$product" "$version" "$commit"
+bash "$release_tool" assemble "$package" "$tmp/out" "$product" "$version" "$commit"
 release="$tmp/out/products/$product/releases/$version"
-"$release_tool" verify "$release" "$product" "$version" "$commit"
+bash "$release_tool" verify "$release" "$product" "$version" "$commit"
 fail_expected() {
   if "$@" >"$tmp/rejected.log" 2>&1; then
     echo "Expected command to reject invalid input: $*" >&2
     exit 1
   fi
 }
-fail_expected "$release_tool" assemble "$package" "$tmp/out" "$product" "$version" "$commit"
-fail_expected "$release_tool" verify "$release" "$product" "$version" deadbeef
+fail_expected bash "$release_tool" assemble "$package" "$tmp/out" "$product" "$version" "$commit"
+fail_expected bash "$release_tool" verify "$release" "$product" "$version" deadbeef
 cp -a "$release" "$tmp/tampered"
 printf 'tampering' >> "$tmp/tampered/altlinux-x64/$zipname"
-fail_expected "$release_tool" verify "$tmp/tampered" "$product" "$version" "$commit"
+fail_expected bash "$release_tool" verify "$tmp/tampered" "$product" "$version" "$commit"
 cp -a "$release" "$tmp/extra"
 printf x > "$tmp/extra/unknown"
-fail_expected "$release_tool" verify "$tmp/extra" "$product" "$version" "$commit"
+fail_expected bash "$release_tool" verify "$tmp/extra" "$product" "$version" "$commit"
 
 root_b64="$(printf '%s' "$tmp/storage" | base64 -w0)"
 stage="$(bash "$remote" prepare "$root_b64" "$product" "$version" 111 222)"

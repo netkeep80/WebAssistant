@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Xunit;
 
 namespace WebAssistant.CoreTests;
@@ -126,6 +127,46 @@ public sealed class ProductAutonomyTests
         Assert.DoesNotContain("installer создаёт default", windows, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("installer записывает JSON-конфигурацию", linux, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("устанавливает default appsettings", windows, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExportRoot_DistributionShellReleaseTest_PassesWithNonExecutableScripts()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var testScript = Path.Combine(FindRepositoryRoot(), "webassist", "tests", "distribution-release.test.sh");
+        var startInfo = new ProcessStartInfo("bash")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add(testScript);
+
+        using var process = Process.Start(startInfo) ??
+            throw new InvalidOperationException("Не удалось запустить тест публикации релиза.");
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            throw;
+        }
+
+        var output = await stdout;
+        var errors = await stderr;
+        Assert.True(process.ExitCode == 0,
+            $"Сценарий публикации завершился ошибкой. stdout: {output}\\nstderr: {errors}");
+        Assert.Contains("distribution release assembly, verification, SSH transfer, idempotence, tamper rejection: PASS",
+            output, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()
