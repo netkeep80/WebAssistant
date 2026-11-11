@@ -55,6 +55,20 @@ fail_expected bash "$remote" finalize "$root_b64" "$product" "$version" "$stage"
 bash "$remote" cleanup "$root_b64" "$product" "$version" "$stage"
 # Exact bytes remain immutable after a rejected conflicting publication.
 diff -qr "$release" "$parent/$version"
+# A partially copied final directory must never be accepted as a release.
+partial_root_b64="$(printf '%s' "$tmp/partial-storage" | base64 -w0)"
+partial_stage="$(bash "$remote" prepare "$partial_root_b64" "$product" "$version" 114 225)"
+partial_parent="$tmp/partial-storage/shared/${product}-build/products/$product/releases"
+cp -a "$release/." "$partial_parent/$partial_stage/"
+mkdir -p "$partial_parent/$version"
+cp -- "$release/manifest.json" "$partial_parent/$version/manifest.json"
+fail_expected bash "$remote" finalize "$partial_root_b64" "$product" "$version" "$partial_stage" "$zipname" "${hashes[@]}"
+test -f "$partial_parent/$version/manifest.json"
+test ! -e "$partial_parent/$version/altlinux-x64/$zipname"
+bash "$remote" cleanup "$partial_root_b64" "$product" "$version" "$partial_stage"
+# Contract: final publication must be a verified copy followed by staging delete.
+grep -Fq 'cp -a -- "$stage/." "$final/"' "$remote"
+if grep -Fq 'mv -T' "$remote"; then echo 'atomic rename assumption found' >&2; exit 1; fi
 # The complete publish-ssh wrapper is exercised through an SSH command shim;
 # no actual remote host is contacted in this local test.
 mkdir -p "$tmp/mock-bin"
@@ -90,16 +104,12 @@ set -euo pipefail
 [[ "$("$SSH_ASKPASS")" == "${CI_SSH_ID_RSA_SECRET}" ]] || exit 4
 MOCK
 chmod +x "$tmp/mock-bin/ssh-agent" "$tmp/mock-bin/ssh-add"
-printf 'mock host key' > "$tmp/known-hosts"
 export PATH="$tmp/mock-bin:$PATH"
 export CI_NETWORK_DRIVE_PATH="$tmp/full-wrapper-store"
 export CI_SSH_HOST=example.test
 export CI_SSH_USER=builder
 export CI_SSH_ID_RSA='mock inherited private key'
 export CI_SSH_ID_RSA_SECRET='mock inherited passphrase'
-export CI_RELEASE_SSH_KNOWN_HOSTS="$tmp/known-hosts"
-unset CI_SSH_KNOWN_HOSTS || true
-export CI_RELEASE_STORAGE_RENAME_VERIFIED=1
 export CI_PIPELINE_ID=203
 export CI_JOB_ID=204
 bash "$root/build/distribution/publish-ssh.sh" "$release" "$product" "$version" "$commit"
