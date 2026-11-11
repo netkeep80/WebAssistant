@@ -73,14 +73,32 @@ shift # fake destination
 bash -c "$1"
 MOCK
 chmod +x "$tmp/mock-bin/ssh"
-printf 'mock key' > "$tmp/key-file"
+cat > "$tmp/mock-bin/ssh-agent" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  -s) printf '%s\n' 'SSH_AUTH_SOCK=mock; export SSH_AUTH_SOCK; SSH_AGENT_PID=1234; export SSH_AGENT_PID;' ;;
+  -k) exit 0 ;;
+  *) exit 2 ;;
+esac
+MOCK
+cat > "$tmp/mock-bin/ssh-add" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $# == 1 && -s "$1" ]] || exit 2
+[[ "${SSH_ASKPASS_REQUIRE:-}" == force && -x "${SSH_ASKPASS:-}" ]] || exit 3
+[[ "$("$SSH_ASKPASS")" == "${CI_SSH_ID_RSA_SECRET}" ]] || exit 4
+MOCK
+chmod +x "$tmp/mock-bin/ssh-agent" "$tmp/mock-bin/ssh-add"
 printf 'mock host key' > "$tmp/known-hosts"
 export PATH="$tmp/mock-bin:$PATH"
 export CI_NETWORK_DRIVE_PATH="$tmp/full-wrapper-store"
-export CI_RELEASE_SSH_HOST=example.test
-export CI_RELEASE_SSH_USER=builder
-export CI_RELEASE_SSH_PRIVATE_KEY="$tmp/key-file"
+export CI_SSH_HOST=example.test
+export CI_SSH_USER=builder
+export CI_SSH_ID_RSA='mock inherited private key'
+export CI_SSH_ID_RSA_SECRET='mock inherited passphrase'
 export CI_RELEASE_SSH_KNOWN_HOSTS="$tmp/known-hosts"
+unset CI_SSH_KNOWN_HOSTS || true
 export CI_RELEASE_STORAGE_RENAME_VERIFIED=1
 export CI_PIPELINE_ID=203
 export CI_JOB_ID=204
