@@ -298,13 +298,13 @@ artifacts/installation-guide/WebAssistant-Installation-Guide.pdf
 Итоговый путь на SSH-хосте относительно `CI_BUILD_PROJECT_PATH`:
 
     <CI_PROJECT_NAME>/releases/<VERSION>/
-
-Если групповой корень уже заканчивается на `products`, второй компонент `products/` **не добавляется**.
       manifest.json
       altlinux-x64/
         <installerBaseName>-linux-x64-<VERSION>.zip
         <installerBaseName>-linux-x64-<VERSION>.zip.sha256
         <installerBaseName>-linux-x64-<VERSION>.zip.provenance.json
+
+Если групповой корень уже заканчивается на `products`, второй компонент `products/` **не добавляется**.
 
 Релиз публикуется последовательностью **copy → verify → delete staging**: каталог версии создаётся, копируются точные файлы, затем проверяются структура и SHA-256, после чего удаляется временный каталог. Готовность релиза определяется успешным завершением job и проверкой байтов. До этого каталог версии может быть неполным; будущий promotion pipeline должен дополнительно проверить manifest и артефакты. При оборванной публикации частичная версия остаётся для ручного анализа.
 
