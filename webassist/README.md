@@ -285,11 +285,11 @@ artifacts/installation-guide/WebAssistant-Installation-Guide.pdf
 ### Порядок первичной настройки
 
 1. В GitLab registry должен быть доступен образ `${CI_DOCKER_HUB}/webassistant-builder:${WEBASSISTANT_BUILDER_TAG}` (по умолчанию `dotnet-10.0.403-v1`). Образ содержит .NET SDK 10, Bash и инструменты сборки, проверки и передачи артефактов по SSH.
-2. На уровне GitLab-группы задать `CI_BUILD_PROJECT_PATH` — **полный абсолютный путь каталога сборок на машине `CI_SSH_HOST`**. Наследуемые групповые `CI_SSH_HOST`, `CI_SSH_USER`, `CI_SSH_ID_RSA` и, при необходимости, `CI_SSH_ID_RSA_SECRET` определяют SSH-доступ к этому хосту. Имя продукта берётся из встроенной `CI_PROJECT_NAME`.
-3. При первой настройке или переносе каталога можно запустить ручную задачу `prepare-release-storage`. Она создаёт именно `CI_BUILD_PROJECT_PATH` с владельцем SSH-пользователя и правами `750` через `sudo -n install -d`. Родительский каталог должен уже существовать; на SSH-хосте нужно разрешение на соответствующий беспарольный `sudo`.
+2. На уровне GitLab-группы задать `CI_BUILD_PROJECT_PATH` — **общий абсолютный корень сборок на машине `CI_SSH_HOST` для всех проектов группы**. Наследуемые групповые `CI_SSH_HOST`, `CI_SSH_USER`, `CI_SSH_ID_RSA` и, при необходимости, `CI_SSH_ID_RSA_SECRET` определяют SSH-доступ к этому хосту. Имя конкретного проекта берётся из встроенной `CI_PROJECT_NAME`.
+3. При первой настройке проекта можно запустить ручную задачу `prepare-release-storage`. Она создаёт **только `CI_BUILD_PROJECT_PATH/<CI_PROJECT_NAME>`** с владельцем SSH-пользователя и правами `750` через `sudo -n install -d`. Общий корень `CI_BUILD_PROJECT_PATH` уже должен существовать; на SSH-хосте нужно разрешение на соответствующий беспарольный `sudo`.
 4. Запустить `build-altlinux-release` на основной ветке. Эта задача собирает, проверяет и сразу публикует immutable release в заданный групповой каталог, без промежуточного хранения установщика в GitLab Job Artifacts.
 
-Каталоги дисков целевых кластеров, перенос принятых версий на эти диски и HTTP-раздача через сайт распространения настраиваются **вне продукта**, в CI/CD соответствующих инфраструктурных проектов. WebAssistant использует только каталог сборок на исходном SSH-хосте.
+Каталоги дисков целевых кластеров, перенос принятых версий на эти диски и HTTP-раздача через сайт распространения настраиваются **вне продукта**, в CI/CD соответствующих инфраструктурных проектов. WebAssistant использует общий корень сборок на исходном SSH-хосте; проектные каталоги внутри него изолированы по `CI_PROJECT_NAME`.
 
 ### Что делает pipeline
 
@@ -297,7 +297,9 @@ artifacts/installation-guide/WebAssistant-Installation-Guide.pdf
 
 Итоговый путь на SSH-хосте относительно `CI_BUILD_PROJECT_PATH`:
 
-    products/<product>/releases/<VERSION>/
+    <CI_PROJECT_NAME>/releases/<VERSION>/
+
+Если групповой корень уже заканчивается на `products`, второй компонент `products/` **не добавляется**.
       manifest.json
       altlinux-x64/
         <installerBaseName>-linux-x64-<VERSION>.zip
