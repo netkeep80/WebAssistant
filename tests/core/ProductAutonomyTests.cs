@@ -48,6 +48,7 @@ public sealed class ProductAutonomyTests
 
         var sshPublisher = File.ReadAllText(Path.Combine(productRoot, "build", "distribution", "publish-ssh.sh"));
         Assert.Contains("CI_BUILD_PROJECT_PATH", sshPublisher, StringComparison.Ordinal);
+        Assert.Contains("stage_full=\"${CI_BUILD_PROJECT_PATH}/$product/releases/$stage\"", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_HOST", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_USER", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", sshPublisher, StringComparison.Ordinal);
@@ -60,6 +61,8 @@ public sealed class ProductAutonomyTests
         Assert.Contains("cp -a -- \"$stage/.\" \"$final/\"", storagePublisher, StringComparison.Ordinal);
         Assert.Contains("diff -qr -- \"$stage\" \"$final\"", storagePublisher, StringComparison.Ordinal);
         Assert.Contains("sudo -n install -d", storagePublisher, StringComparison.Ordinal);
+        Assert.Contains("project_dir=\"$root/$product\"", storagePublisher, StringComparison.Ordinal);
+        Assert.Contains("parent=\"$root/$product/releases\"", storagePublisher, StringComparison.Ordinal);
         Assert.DoesNotContain("mv -T", storagePublisher, StringComparison.Ordinal);
 
         foreach (var relativePath in new[]
