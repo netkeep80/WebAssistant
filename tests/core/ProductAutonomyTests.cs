@@ -49,6 +49,7 @@ public sealed class ProductAutonomyTests
         var sshPublisher = File.ReadAllText(Path.Combine(productRoot, "build", "distribution", "publish-ssh.sh"));
         Assert.Contains("CI_BUILD_PROJECT_PATH", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("stage_full=\"${CI_BUILD_PROJECT_PATH}/$product/releases/$stage\"", sshPublisher, StringComparison.Ordinal);
+        Assert.DoesNotContain("stage_full=\"${CI_BUILD_PROJECT_PATH}/products/", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_HOST", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_USER", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", sshPublisher, StringComparison.Ordinal);
