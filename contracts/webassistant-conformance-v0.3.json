@@ -215,7 +215,6 @@
       "evidence": [
         "webassist/build/distribution/remote-publish.sh",
         "webassist/build/distribution/publish-ssh.sh",
-        "webassist/tests/distribution-release.test.sh",
         "tests/core/ProductAutonomyTests.cs",
         "webassist/docs/gitlab-distribution.md"
       ]
