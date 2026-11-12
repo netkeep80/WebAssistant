@@ -205,6 +205,22 @@
       ]
     },
     {
+      "id": "WA-C-BUILD-STORAGE-ROOT-001",
+      "kind": "positive",
+      "assertion": "CI_BUILD_PROJECT_PATH является существующим общим каталогом products; manual prepare-release-storage создаёт прямой каталог CI_PROJECT_NAME, а build-altlinux-release проверяет его наличие и сохраняет проверенный immutable release в CI_PROJECT_NAME/releases/VERSION без изменения границы хранения.",
+      "requirements": [
+        "WA-CI-004",
+        "WA-CI-001"
+      ],
+      "evidence": [
+        "webassist/build/distribution/remote-publish.sh",
+        "webassist/build/distribution/publish-ssh.sh",
+        "webassist/tests/distribution-release.test.sh",
+        "tests/core/ProductAutonomyTests.cs",
+        "webassist/docs/gitlab-distribution.md"
+      ]
+    },
+    {
       "id": "WA-C-SERVICE-LIFECYCLE-001",
       "kind": "positive",
       "assertion": "WebAssistant устанавливается и работает как machine-wide Windows Service и ALT Linux systemd service через canonical product entrypoints.",

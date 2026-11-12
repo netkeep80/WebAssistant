@@ -63,6 +63,8 @@ public sealed class ProductAutonomyTests
         Assert.Contains("sudo -n install -d", storagePublisher, StringComparison.Ordinal);
         Assert.Contains("project_dir=\"$root/$product\"", storagePublisher, StringComparison.Ordinal);
         Assert.Contains("parent=\"$root/$product/releases\"", storagePublisher, StringComparison.Ordinal);
+        Assert.Contains("project storage directory missing or not writable; run prepare-release-storage", storagePublisher, StringComparison.Ordinal);
+        Assert.DoesNotContain("parent=\"$root/products/", storagePublisher, StringComparison.Ordinal);
         Assert.DoesNotContain("mv -T", storagePublisher, StringComparison.Ordinal);
 
         foreach (var relativePath in new[]
@@ -102,6 +104,8 @@ public sealed class ProductAutonomyTests
         Assert.Contains("CI_BUILD_PROJECT_PATH", readme, StringComparison.Ordinal);
         Assert.Contains("build-altlinux-release", readme, StringComparison.Ordinal);
         Assert.Contains("prepare-release-storage", readme, StringComparison.Ordinal);
+        Assert.Contains("<CI_PROJECT_NAME>/releases/<VERSION>/", readme, StringComparison.Ordinal);
+        Assert.DoesNotContain("Если групповой корень уже заканчивается на", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA_SECRET", readme, StringComparison.Ordinal);
         Assert.Contains("copy → verify → delete", readme, StringComparison.Ordinal);

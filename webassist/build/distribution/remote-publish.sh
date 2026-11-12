@@ -32,6 +32,7 @@ case "$operation" in
   prepare)
     [[ $# == 6 ]] || fail 'prepare requires pipeline and job IDs'
     [[ "$5" =~ ^[0-9]+$ && "$6" =~ ^[0-9]+$ ]] || fail 'invalid pipeline/job ID'
+    [[ -d "$root/$product" && ! -L "$root/$product" && -x "$root/$product" && -w "$root/$product" ]] || fail 'project storage directory missing or not writable; run prepare-release-storage'
     mkdir -p -- "$parent"
     mkdir -- "$lock" || fail 'publication lock exists; investigate stale transaction before retry'
     if ! stage="$(mktemp -d "$parent/.${version}.tmp-${5}-${6}.XXXXXXXX")"; then
