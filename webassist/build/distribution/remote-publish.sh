@@ -11,9 +11,11 @@ root="$(printf '%s' "$root_b64" | base64 -d)" || fail 'invalid storage path enco
 if [[ "$operation" != init-storage ]]; then
   [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || fail 'invalid version'
 fi
-parent="$root/products/$product/releases"
+parent="$root/$product/releases"
 final="$parent/$version"
 lock="$parent/.${version}.publish-lock"
+[[ -d "$root" && ! -L "$root" ]] || fail 'build storage root missing or symlinked'
+[[ ! -L "$root/$product" ]] || fail 'project storage directory is a symlink'
 
 check_stage_name() {
   [[ "$1" =~ ^\.[0-9]+\.[0-9]+\.[0-9]+\.tmp-[0-9]+-[0-9]+\.[A-Za-z0-9]+$ ]] || fail 'invalid staging name'
@@ -22,10 +24,7 @@ check_stage_name() {
 case "$operation" in
   init-storage)
     [[ $# == 3 ]] || fail 'init-storage requires storage root and product'
-    project_dir="$root"
-    storage_parent="$(dirname -- "$project_dir")"
-    [[ -d "$storage_parent" && ! -L "$storage_parent" ]] || fail 'build storage parent missing or symlinked'
-    [[ ! -L "$project_dir" ]] || fail 'project storage directory is a symlink'
+    project_dir="$root/$product"
     sudo -n install -d -o "$(id -un)" -g "$(id -gn)" -m 750 -- "$project_dir" || fail 'storage initialization requires permitted passwordless sudo'
     [[ -d "$project_dir" && ! -L "$project_dir" && -w "$project_dir" ]] || fail 'initialized storage directory is not writable'
     echo 'release storage directory ready'
