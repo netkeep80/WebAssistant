@@ -34,9 +34,10 @@ cp -a "$release" "$tmp/extra"
 printf x > "$tmp/extra/unknown"
 fail_expected bash "$release_tool" verify "$tmp/extra" "$product" "$version" "$commit"
 
+mkdir -p "$tmp/storage"
 root_b64="$(printf '%s' "$tmp/storage" | base64 -w0)"
 stage="$(bash "$remote" prepare "$root_b64" "$product" "$version" 111 222)"
-parent="$tmp/storage/products/$product/releases"
+parent="$tmp/storage/$product/releases"
 cp -a "$release/." "$parent/$stage/"
 hashes=("$(sha256sum "$release/manifest.json" | cut -d' ' -f1)" \
         "$(sha256sum "$release/altlinux-x64/$zipname" | cut -d' ' -f1)" \
@@ -57,9 +58,10 @@ bash "$remote" cleanup "$root_b64" "$product" "$version" "$stage"
 # Exact bytes remain immutable after a rejected conflicting publication.
 diff -qr "$release" "$parent/$version"
 # A partially copied final directory must never be accepted as a release.
+mkdir -p "$tmp/partial-storage"
 partial_root_b64="$(printf '%s' "$tmp/partial-storage" | base64 -w0)"
 partial_stage="$(bash "$remote" prepare "$partial_root_b64" "$product" "$version" 114 225)"
-partial_parent="$tmp/partial-storage/products/$product/releases"
+partial_parent="$tmp/partial-storage/$product/releases"
 cp -a "$release/." "$partial_parent/$partial_stage/"
 mkdir -p "$partial_parent/$version"
 cp -- "$release/manifest.json" "$partial_parent/$version/manifest.json"
@@ -116,6 +118,7 @@ MOCK
 chmod +x "$tmp/mock-bin/sudo"
 export PATH="$tmp/mock-bin:$PATH"
 export CI_BUILD_PROJECT_PATH="$tmp/full-wrapper-store"
+mkdir -p "$CI_BUILD_PROJECT_PATH"
 export CI_SSH_HOST=example.test
 export CI_SSH_USER=builder
 export CI_SSH_ID_RSA='mock inherited private key'
@@ -161,19 +164,28 @@ env -u CI_SSH_ID_RSA_SECRET bash "$publisher" --check-ci-environment
 # Manual storage bootstrap: reuse real SSH wrapper; sudo is simulated locally.
 manual_root="$tmp/manual-storage"
 mkdir -p "$manual_root"
-manual_dir="$manual_root/${product}-build"
-env CI_BUILD_PROJECT_PATH="$manual_dir" bash "$publisher" --init-storage "$product"
+manual_dir="$manual_root/$product"
+env CI_BUILD_PROJECT_PATH="$manual_root" bash "$publisher" --init-storage "$product"
 [[ -d "$manual_dir" && -w "$manual_dir" && "$(stat -c %a "$manual_dir")" == 750 ]]
 [[ "$(stat -c %U "$manual_dir")" == "$(id -un)" ]]
-[[ ! -d "$manual_dir/products" ]] # no release tree or artifacts created
+[[ ! -d "$manual_dir/releases" ]] # no release tree or artifacts created
 printf 'keep' > "$manual_dir/existing"
-env CI_BUILD_PROJECT_PATH="$manual_dir" bash "$publisher" --init-storage "$product"
+env CI_BUILD_PROJECT_PATH="$manual_root" bash "$publisher" --init-storage "$product"
 [[ "$(cat "$manual_dir/existing")" == keep ]] # idempotent, no recursive changes
-preflight_reject "build storage parent missing or symlinked" env CI_BUILD_PROJECT_PATH="$tmp/missing-root/${product}-build" bash "$publisher" --init-storage "$product"
-ln -s "$manual_dir" "$manual_root/symlink-build"
-preflight_reject "project storage directory is a symlink" env CI_BUILD_PROJECT_PATH="$manual_root/symlink-build" bash "$publisher" --init-storage symlink
-preflight_reject "storage initialization requires permitted passwordless sudo" env CI_BUILD_PROJECT_PATH="$manual_root/other-product-build" MOCK_SUDO_DENY=1 bash "$publisher" --init-storage other-product
+other_product=another-product
+env CI_BUILD_PROJECT_PATH="$manual_root" bash "$publisher" --init-storage "$other_product"
+[[ -d "$manual_root/$other_product" && "$(stat -c %a "$manual_root/$other_product")" == 750 ]]
+[[ -f "$manual_dir/existing" && ! -d "$manual_root/products" ]] # isolated siblings, no duplicate products/
+preflight_reject "build storage root missing or symlinked" env CI_BUILD_PROJECT_PATH="$tmp/missing-root" bash "$publisher" --init-storage "$product"
+ln -s "$manual_dir" "$manual_root/symlink"
+preflight_reject "project storage directory is a symlink" env CI_BUILD_PROJECT_PATH="$manual_root" bash "$publisher" --init-storage symlink
+ln -s "$manual_root" "$tmp/linked-build-root"
+preflight_reject "build storage root missing or symlinked" env CI_BUILD_PROJECT_PATH="$tmp/linked-build-root" bash "$publisher" --init-storage "$product"
+preflight_reject "storage initialization requires permitted passwordless sudo" env CI_BUILD_PROJECT_PATH="$manual_root" MOCK_SUDO_DENY=1 bash "$publisher" --init-storage other-product
+
+# Publication must reject a missing group root rather than create it.
+preflight_reject "build storage root missing or symlinked" env CI_BUILD_PROJECT_PATH="$tmp/absent-shared-root" bash "$publisher" "$release" "$product" "$version" "$commit"
 
 bash "$publisher" "$release" "$product" "$version" "$commit"
-diff -qr "$release" "$CI_BUILD_PROJECT_PATH/products/$product/releases/$version"
+diff -qr "$release" "$CI_BUILD_PROJECT_PATH/$product/releases/$version"
 echo 'distribution release assembly, verification, SSH transfer, idempotence, tamper rejection: PASS'
