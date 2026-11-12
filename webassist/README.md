@@ -284,32 +284,20 @@ artifacts/installation-guide/WebAssistant-Installation-Guide.pdf
 
 ### Порядок первичной настройки
 
-1. Убедиться, что в GitLab registry доступен заранее собранный образ `${CI_DOCKER_HUB}/webassistant-builder:${WEBASSISTANT_BUILDER_TAG}`. В продуктовой pipeline закреплено имя `webassistant-builder` и тег `dotnet-10.0.403-v1` по умолчанию. В образе должны присутствовать .NET SDK 10, bash, zip, jq, coreutils, tar, SSH-клиент и другие инструменты, проверяемые job. SDK из сети при сборке не скачивается.
-2. В Settings → CI/CD → Variables проверить доступность уже выданной **групповой** переменной `CI_GITLAB_API_ACCESS_TOKEN`. Её токен должен иметь права доступа к Project Variables API текущего проекта (в том числе создание переменных). Токен доступен через групповые переменные GitLab; его значение не выводится в лог.
-3. На защищённой основной ветке открыть Build → Pipelines и запустить manual job `create-gitlab-variables`. Он через `CI_API_V4_URL` создаёт **только отсутствующие** project-scoped variables со значением `null`, `protected=true` и `expanded=true`. Имеющиеся значения не заменяются.
-4. В Settings → CI/CD → Variables текущего GitLab-проекта отредактировать созданные заглушки по таблице ниже. Настроить доступ сборочного job к Docker runner и registry.
-5. Один раз запустить manual job `prepare-release-storage` (также после смены диска или пути к storage). Он через существующее SSH-подключение создаёт только `shared/<CI_PROJECT_NAME>-build` с владельцем `CI_SSH_USER` и правами `750`, используя `sudo -n install -d` на SSH-хосте. Каталоги `CI_NETWORK_DRIVE_PATH` и `shared` должны уже существовать; для команды требуется заранее разрешённый беспарольный `sudo`, иначе задача завершится ошибкой. Пользовательские каталоги релизов вручную не создаются.
-6. Выполнить `build-altlinux-release` на основной ветке. Сборка, создание manifest и публикация выполняются в одном job. Внешнее хранилище рассматривается как система с семантикой `copy → delete`; публикация выполняется как `copy → verify → delete staging`.
+1. В GitLab registry должен быть доступен образ `${CI_DOCKER_HUB}/webassistant-builder:${WEBASSISTANT_BUILDER_TAG}` (по умолчанию `dotnet-10.0.403-v1`). Образ содержит .NET SDK 10, Bash и инструменты сборки, проверки и передачи артефактов по SSH.
+2. На уровне GitLab-группы задать `CI_BUILD_PROJECT_PATH` — **полный абсолютный путь каталога сборок на машине `CI_SSH_HOST`**. Наследуемые групповые `CI_SSH_HOST`, `CI_SSH_USER`, `CI_SSH_ID_RSA` и, при необходимости, `CI_SSH_ID_RSA_SECRET` определяют SSH-доступ к этому хосту. Имя продукта берётся из встроенной `CI_PROJECT_NAME`.
+3. При первой настройке или переносе каталога можно запустить ручную задачу `prepare-release-storage`. Она создаёт именно `CI_BUILD_PROJECT_PATH` с владельцем SSH-пользователя и правами `750` через `sudo -n install -d`. Родительский каталог должен уже существовать; на SSH-хосте нужно разрешение на соответствующий беспарольный `sudo`.
+4. Запустить `build-altlinux-release` на основной ветке. Эта задача собирает, проверяет и сразу публикует immutable release в заданный групповой каталог, без промежуточного хранения установщика в GitLab Job Artifacts.
 
-| Project variable | Что задать |
-|---|---|
-| `CI_NETWORK_DRIVE_PATH` | Абсолютный путь к storage **на SSH-хосте**, отдельная project variable |
-| `CI_PROMOTION_PROJECT_PATH` | Путь отдельного promotion-контура (зарезервирован для следующего этапа) |
-
-**SSH наследуется из групповых переменных**: `CI_SSH_HOST` — сервер, `CI_SSH_USER` — пользователь, `CI_SSH_ID_RSA` — приватный ключ, `CI_SSH_ID_RSA_SECRET` — парольная фраза, если ключ зашифрован. Сборка использует эти групповые значения непосредственно. Групповой `CI_SSH_HOST` должен указывать именно на хост, где смонтировано внешнее build storage, а `CI_SSH_USER` должен иметь права на публикацию.
-
-SSH использует штатное хранилище `known_hosts` OpenSSH. Параметр `StrictHostKeyChecking=accept-new` автоматически принимает ключ нового сервера при первом соединении, но **отклоняет изменившийся ключ** при следующих подключениях. На одноразовом GitLab Runner запись `known_hosts` может не сохраняться между jobs — тогда первый контакт не удостоверяет сервер по заранее известному ключу. Для более строгой проверки можно централизованно подготовить стандартный `known_hosts` в окружении Runner без изменения продуктового CI.
-
-
-`CI_NETWORK_DRIVE_PATH` настраивается именно на уровне проекта. Переменные `CI_DOCKER_HUB` и доступ к registry наследуются из GitLab-инфраструктуры.
+Каталоги дисков целевых кластеров, перенос принятых версий на эти диски и HTTP-раздача через сайт распространения настраиваются **вне продукта**, в CI/CD соответствующих инфраструктурных проектов. WebAssistant использует только каталог сборок на исходном SSH-хосте.
 
 ### Что делает pipeline
 
-Имя каталога продукта и идентификатор в manifest берутся из встроенной переменной GitLab `CI_PROJECT_NAME` (имя каталога проекта в URL). `create-gitlab-variables` и `prepare-release-storage` — отдельные ручные служебные задачи. `build-altlinux-release` сначала проверяет `CI_PROJECT_NAME`, `CI_NETWORK_DRIVE_PATH`, групповые `CI_SSH_HOST`, `CI_SSH_USER`, `CI_SSH_ID_RSA`, а также GitLab job identifiers. Пустые значения, заглушки `null`/`masked_null` и некорректные адреса отклоняются до тестов и упаковки. Проверка выполняется локально, без подключения к SSH-хосту; парольная фраза `CI_SSH_ID_RSA_SECRET` может отсутствовать. После проверки основная сборка вызывает единственный канонический producer `build/linux/package.sh` с `WEBASSISTANT_SOURCE_SHA=$CI_COMMIT_SHA` и `WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0`, проверяет ZIP, SHA-256 и provenance, создаёт относительный `manifest.json` и передаёт точные байты через SSH на внешний storage.
+Имя продукта и идентификатор в manifest берутся из встроенной переменной GitLab `CI_PROJECT_NAME` (имя каталога проекта в URL). `prepare-release-storage` — ручная задача подготовки каталога сборок. `build-altlinux-release` сначала проверяет `CI_PROJECT_NAME`, групповой `CI_BUILD_PROJECT_PATH`, `CI_SSH_HOST`, `CI_SSH_USER`, `CI_SSH_ID_RSA`, а также GitLab job identifiers. Пустые значения, заглушки `null`/`masked_null` и некорректные адреса отклоняются до тестов и упаковки. Проверка выполняется локально, без подключения к SSH-хосту; парольная фраза `CI_SSH_ID_RSA_SECRET` может отсутствовать. После проверки основная сборка вызывает единственный канонический producer `build/linux/package.sh` с `WEBASSISTANT_SOURCE_SHA=$CI_COMMIT_SHA` и `WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0`, проверяет ZIP, SHA-256 и provenance, создаёт относительный `manifest.json` и передаёт точные байты через SSH на внешний storage.
 
-Итоговый путь на SSH-хосте относительно `CI_NETWORK_DRIVE_PATH`:
+Итоговый путь на SSH-хосте относительно `CI_BUILD_PROJECT_PATH`:
 
-    shared/<product>-build/products/<product>/releases/<VERSION>/
+    products/<product>/releases/<VERSION>/
       manifest.json
       altlinux-x64/
         <installerBaseName>-linux-x64-<VERSION>.zip
@@ -318,7 +306,7 @@ SSH использует штатное хранилище `known_hosts` OpenSSH
 
 Релиз публикуется последовательностью **copy → verify → delete staging**: каталог версии создаётся, копируются точные файлы, затем проверяются структура и SHA-256, после чего удаляется временный каталог. Готовность релиза определяется успешным завершением job и проверкой байтов. До этого каталог версии может быть неполным; будущий promotion pipeline должен дополнительно проверить manifest и артефакты. При оборванной публикации частичная версия остаётся для ручного анализа.
 
-Каждая версия immutable. Повторная публикация допускается только при **полном совпадении байтов**; любая разница даёт ошибку. Установщик публикуется непосредственно во внешнее хранилище. Deployment/promotion и переключение каналов релизов выполняются отдельным pipeline и **не** пересобирают продукт.
+Каждая версия immutable. Повторная публикация допускается только при **полном совпадении байтов**; любая разница даёт ошибку. Установщик публикуется непосредственно во внешнее хранилище. Копирование в целевые кластеры, выбор принятых версий и переключение каналов релизов выполняются внешними конвейерами и **не** пересобирают продукт.
 
 Переопределение `src/WebAssistant/product-metadata.json` (если есть во внешнем GitLab-репозитории) меняет отображаемую идентичность и basename установщика через общий `ProductMetadataResolver`; отдельного packager для GitLab нет.
 
