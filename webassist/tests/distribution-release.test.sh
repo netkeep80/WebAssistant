@@ -36,7 +36,7 @@ fail_expected bash "$release_tool" verify "$tmp/extra" "$product" "$version" "$c
 
 root_b64="$(printf '%s' "$tmp/storage" | base64 -w0)"
 stage="$(bash "$remote" prepare "$root_b64" "$product" "$version" 111 222)"
-parent="$tmp/storage/shared/${product}-build/products/$product/releases"
+parent="$tmp/storage/products/$product/releases"
 cp -a "$release/." "$parent/$stage/"
 hashes=("$(sha256sum "$release/manifest.json" | cut -d' ' -f1)" \
         "$(sha256sum "$release/altlinux-x64/$zipname" | cut -d' ' -f1)" \
@@ -59,7 +59,7 @@ diff -qr "$release" "$parent/$version"
 # A partially copied final directory must never be accepted as a release.
 partial_root_b64="$(printf '%s' "$tmp/partial-storage" | base64 -w0)"
 partial_stage="$(bash "$remote" prepare "$partial_root_b64" "$product" "$version" 114 225)"
-partial_parent="$tmp/partial-storage/shared/${product}-build/products/$product/releases"
+partial_parent="$tmp/partial-storage/products/$product/releases"
 cp -a "$release/." "$partial_parent/$partial_stage/"
 mkdir -p "$partial_parent/$version"
 cp -- "$release/manifest.json" "$partial_parent/$version/manifest.json"
@@ -115,7 +115,7 @@ exec "$@"
 MOCK
 chmod +x "$tmp/mock-bin/sudo"
 export PATH="$tmp/mock-bin:$PATH"
-export CI_NETWORK_DRIVE_PATH="$tmp/full-wrapper-store"
+export CI_BUILD_PROJECT_PATH="$tmp/full-wrapper-store"
 export CI_SSH_HOST=example.test
 export CI_SSH_USER=builder
 export CI_SSH_ID_RSA='mock inherited private key'
@@ -140,7 +140,7 @@ preflight_reject() {
   }
 }
 for bad in '' null masked_null; do
-  preflight_reject "required CI variable not configured: CI_NETWORK_DRIVE_PATH" env CI_NETWORK_DRIVE_PATH="$bad" bash "$publisher" --check-ci-environment
+  preflight_reject "required CI variable not configured: CI_BUILD_PROJECT_PATH" env CI_BUILD_PROJECT_PATH="$bad" bash "$publisher" --check-ci-environment
   preflight_reject "required CI variable not configured: CI_SSH_ID_RSA" env CI_SSH_ID_RSA="$bad" bash "$publisher" --check-ci-environment
 done
 preflight_reject "required CI variable not configured: CI_SSH_HOST" env -u CI_SSH_HOST bash "$publisher" --check-ci-environment
@@ -148,9 +148,9 @@ preflight_reject "required CI variable not configured: CI_SSH_USER" env CI_SSH_U
 preflight_reject "required CI variable not configured: CI_PIPELINE_ID" env CI_PIPELINE_ID=masked_null bash "$publisher" --check-ci-environment
 preflight_reject "required CI variable not configured: CI_JOB_ID" env -u CI_JOB_ID bash "$publisher" --check-ci-environment
 for bad in / relative; do
-  preflight_reject "invalid storage root" env CI_NETWORK_DRIVE_PATH="$bad" bash "$publisher" --check-ci-environment
+  preflight_reject "invalid storage root" env CI_BUILD_PROJECT_PATH="$bad" bash "$publisher" --check-ci-environment
 done
-preflight_reject "invalid storage root" env CI_NETWORK_DRIVE_PATH="$(printf '/tmp/storage\ninvalid')" bash "$publisher" --check-ci-environment
+preflight_reject "invalid storage root" env CI_BUILD_PROJECT_PATH="$(printf '/tmp/storage\ninvalid')" bash "$publisher" --check-ci-environment
 preflight_reject "invalid inherited SSH target" env CI_SSH_HOST='invalid host' bash "$publisher" --check-ci-environment
 preflight_reject "invalid inherited SSH target" env CI_SSH_USER='invalid user' bash "$publisher" --check-ci-environment
 preflight_reject "invalid job identifiers" env CI_PIPELINE_ID=abc bash "$publisher" --check-ci-environment
@@ -160,20 +160,20 @@ env -u CI_SSH_ID_RSA_SECRET bash "$publisher" --check-ci-environment
 
 # Manual storage bootstrap: reuse real SSH wrapper; sudo is simulated locally.
 manual_root="$tmp/manual-storage"
-mkdir -p "$manual_root/shared"
-manual_dir="$manual_root/shared/${product}-build"
-env CI_NETWORK_DRIVE_PATH="$manual_root" bash "$publisher" --init-storage "$product"
+mkdir -p "$manual_root"
+manual_dir="$manual_root/${product}-build"
+env CI_BUILD_PROJECT_PATH="$manual_dir" bash "$publisher" --init-storage "$product"
 [[ -d "$manual_dir" && -w "$manual_dir" && "$(stat -c %a "$manual_dir")" == 750 ]]
 [[ "$(stat -c %U "$manual_dir")" == "$(id -un)" ]]
 [[ ! -d "$manual_dir/products" ]] # no release tree or artifacts created
 printf 'keep' > "$manual_dir/existing"
-env CI_NETWORK_DRIVE_PATH="$manual_root" bash "$publisher" --init-storage "$product"
+env CI_BUILD_PROJECT_PATH="$manual_dir" bash "$publisher" --init-storage "$product"
 [[ "$(cat "$manual_dir/existing")" == keep ]] # idempotent, no recursive changes
-preflight_reject "storage root/shared missing or symlinked" env CI_NETWORK_DRIVE_PATH="$tmp/missing-root" bash "$publisher" --init-storage "$product"
-ln -s "$manual_dir" "$manual_root/shared/symlink-build"
-preflight_reject "project storage directory is a symlink" env CI_NETWORK_DRIVE_PATH="$manual_root" bash "$publisher" --init-storage symlink
-preflight_reject "storage initialization requires permitted passwordless sudo" env CI_NETWORK_DRIVE_PATH="$manual_root" MOCK_SUDO_DENY=1 bash "$publisher" --init-storage other-product
+preflight_reject "build storage parent missing or symlinked" env CI_BUILD_PROJECT_PATH="$tmp/missing-root/${product}-build" bash "$publisher" --init-storage "$product"
+ln -s "$manual_dir" "$manual_root/symlink-build"
+preflight_reject "project storage directory is a symlink" env CI_BUILD_PROJECT_PATH="$manual_root/symlink-build" bash "$publisher" --init-storage symlink
+preflight_reject "storage initialization requires permitted passwordless sudo" env CI_BUILD_PROJECT_PATH="$manual_root/other-product-build" MOCK_SUDO_DENY=1 bash "$publisher" --init-storage other-product
 
 bash "$publisher" "$release" "$product" "$version" "$commit"
-diff -qr "$release" "$CI_NETWORK_DRIVE_PATH/shared/${product}-build/products/$product/releases/$version"
+diff -qr "$release" "$CI_BUILD_PROJECT_PATH/products/$product/releases/$version"
 echo 'distribution release assembly, verification, SSH transfer, idempotence, tamper rejection: PASS'

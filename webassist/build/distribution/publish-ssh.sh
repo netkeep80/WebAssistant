@@ -7,11 +7,11 @@ fail() { printf 'publish-ssh: %s\n' "$*" >&2; exit 1; }
 # Reuse inherited SSH credentials; only the storage root is project-scoped.
 check_ci_environment() {
   local var value
-  for var in CI_NETWORK_DRIVE_PATH CI_SSH_HOST CI_SSH_USER CI_SSH_ID_RSA CI_PIPELINE_ID CI_JOB_ID; do
+  for var in CI_BUILD_PROJECT_PATH CI_SSH_HOST CI_SSH_USER CI_SSH_ID_RSA CI_PIPELINE_ID CI_JOB_ID; do
     value="${!var:-}"
     [[ -n "$value" && "$value" != null && "$value" != masked_null ]] || fail "required CI variable not configured: $var"
   done
-  [[ "$CI_NETWORK_DRIVE_PATH" == /* && "$CI_NETWORK_DRIVE_PATH" != / && "$CI_NETWORK_DRIVE_PATH" != *$'\n'* ]] || fail 'invalid storage root'
+  [[ "$CI_BUILD_PROJECT_PATH" == /* && "$CI_BUILD_PROJECT_PATH" != / && "$CI_BUILD_PROJECT_PATH" != *$'\n'* ]] || fail 'invalid storage root'
   [[ "$CI_SSH_HOST" =~ ^[A-Za-z0-9._-]+$ && "$CI_SSH_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || fail 'invalid inherited SSH target'
   [[ "$CI_PIPELINE_ID" =~ ^[0-9]+$ && "$CI_JOB_ID" =~ ^[0-9]+$ ]] || fail 'invalid job identifiers'
 }
@@ -80,7 +80,7 @@ fi
 target="${CI_SSH_USER}@${CI_SSH_HOST}"
 ssh_options=( -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes -i "$private_key" -T )
 remote="$script_dir/remote-publish.sh"
-root_b64="$(printf '%s' "$CI_NETWORK_DRIVE_PATH" | base64 -w0)"
+root_b64="$(printf '%s' "$CI_BUILD_PROJECT_PATH" | base64 -w0)"
 
 if [[ "$init_storage" == 1 ]]; then
   ssh "${ssh_options[@]}" "$target" "bash -s -- init-storage $root_b64 $product" < "$remote" || fail 'remote storage initialization failed'
@@ -91,7 +91,7 @@ stage="$(ssh "${ssh_options[@]}" "$target" "bash -s -- prepare $root_b64 $produc
 [[ "$stage" =~ ^\.[0-9]+\.[0-9]+\.[0-9]+\.tmp-[0-9]+-[0-9]+\.[A-Za-z0-9]+$ ]] || fail 'remote returned invalid stage name'
 
 # Receive the exact validated release files, never rebuild on the host.
-stage_full="${CI_NETWORK_DRIVE_PATH}/shared/${product}-build/products/$product/releases/$stage"
+stage_full="${CI_BUILD_PROJECT_PATH}/products/$product/releases/$stage"
 stage_b64="$(printf '%s' "$stage_full" | base64 -w0)"
 tar -C "$release" -cf - . | ssh "${ssh_options[@]}" "$target" \
   "bash -c 'set -e; dest=\$(printf %s $stage_b64 | base64 -d); tar -xf - -C \"\$dest\"'"
