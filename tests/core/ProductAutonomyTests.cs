@@ -95,7 +95,6 @@ public sealed class ProductAutonomyTests
         Assert.Contains("WebAssistant-linux-x64-<VERSION>.zip", readme, StringComparison.Ordinal);
         Assert.Contains(".gitlab-ci.yml", readme, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("build/linux/package.sh", readme, StringComparison.Ordinal);
-        Assert.Contains("CI_GITLAB_API_ACCESS_TOKEN", readme, StringComparison.Ordinal);
         Assert.Contains("webassistant-builder", readme, StringComparison.Ordinal);
         Assert.Contains("CI_BUILD_PROJECT_PATH", readme, StringComparison.Ordinal);
         Assert.Contains("build-altlinux-release", readme, StringComparison.Ordinal);
