@@ -4,7 +4,7 @@ set -euo pipefail
 fail() { printf 'publish-ssh: %s\n' "$*" >&2; exit 1; }
 
 # One validation path for early GitLab preflight and the actual publisher.
-# Reuse inherited SSH credentials; only the storage root is project-scoped.
+# Reuse inherited SSH credentials and the group-scoped build storage root.
 check_ci_environment() {
   local var value
   for var in CI_BUILD_PROJECT_PATH CI_SSH_HOST CI_SSH_USER CI_SSH_ID_RSA CI_PIPELINE_ID CI_JOB_ID; do
@@ -91,7 +91,7 @@ stage="$(ssh "${ssh_options[@]}" "$target" "bash -s -- prepare $root_b64 $produc
 [[ "$stage" =~ ^\.[0-9]+\.[0-9]+\.[0-9]+\.tmp-[0-9]+-[0-9]+\.[A-Za-z0-9]+$ ]] || fail 'remote returned invalid stage name'
 
 # Receive the exact validated release files, never rebuild on the host.
-stage_full="${CI_BUILD_PROJECT_PATH}/products/$product/releases/$stage"
+stage_full="${CI_BUILD_PROJECT_PATH}/$product/releases/$stage"
 stage_b64="$(printf '%s' "$stage_full" | base64 -w0)"
 tar -C "$release" -cf - . | ssh "${ssh_options[@]}" "$target" \
   "bash -c 'set -e; dest=\$(printf %s $stage_b64 | base64 -d); tar -xf - -C \"\$dest\"'"
