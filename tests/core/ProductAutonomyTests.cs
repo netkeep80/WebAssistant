@@ -6,7 +6,7 @@ namespace WebAssistant.CoreTests;
 public sealed class ProductAutonomyTests
 {
     [Fact]
-    public void ExportRoot_ContainsStandaloneAltOnlyGitLabBuildAndVariableBootstrap()
+    public void ExportRoot_ContainsStandaloneAltOnlyGitLabBuildAndStorageBootstrap()
     {
         var root = FindRepositoryRoot();
         var productRoot = Path.Combine(root, "webassist");
@@ -16,19 +16,13 @@ public sealed class ProductAutonomyTests
 
         var pipeline = File.ReadAllText(pipelinePath);
 
-        // Bootstrap is project-scoped, create-if-absent and administrator-configured.
+        // Storage initialization is manual; the build path is inherited from GitLab group CI.
         Assert.Contains("utility-tasks", pipeline, StringComparison.Ordinal);
-        Assert.Contains("create-gitlab-variables:", pipeline, StringComparison.Ordinal);
         Assert.Contains("prepare-release-storage:", pipeline, StringComparison.Ordinal);
         Assert.Contains("bash build/distribution/publish-ssh.sh --init-storage \"$CI_PROJECT_NAME\"", pipeline, StringComparison.Ordinal);
         Assert.Contains("when: manual", pipeline, StringComparison.Ordinal);
-        Assert.Contains("CI_GITLAB_API_ACCESS_TOKEN", pipeline, StringComparison.Ordinal);
-        Assert.Contains("CI_API_V4_URL", pipeline, StringComparison.Ordinal);
-        Assert.Contains("create_if_absent CI_NETWORK_DRIVE_PATH env_var", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_PROJECT_NAME", pipeline, StringComparison.Ordinal);
         Assert.Contains("/webassistant-builder:${WEBASSISTANT_BUILDER_TAG}", pipeline, StringComparison.Ordinal);
-        Assert.Contains("--form 'protected=true'", pipeline, StringComparison.Ordinal);
-        Assert.Contains("--form 'expanded=true'", pipeline, StringComparison.Ordinal);
 
         // One canonical Linux packager, with downstream-local source revision.
         Assert.Contains("build-altlinux-release:", pipeline, StringComparison.Ordinal);
@@ -53,6 +47,7 @@ public sealed class ProductAutonomyTests
         Assert.Contains("$CI_DEFAULT_BRANCH", pipeline, StringComparison.Ordinal);
 
         var sshPublisher = File.ReadAllText(Path.Combine(productRoot, "build", "distribution", "publish-ssh.sh"));
+        Assert.Contains("CI_BUILD_PROJECT_PATH", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_HOST", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_USER", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", sshPublisher, StringComparison.Ordinal);
@@ -102,7 +97,7 @@ public sealed class ProductAutonomyTests
         Assert.Contains("build/linux/package.sh", readme, StringComparison.Ordinal);
         Assert.Contains("CI_GITLAB_API_ACCESS_TOKEN", readme, StringComparison.Ordinal);
         Assert.Contains("webassistant-builder", readme, StringComparison.Ordinal);
-        Assert.Contains("create-gitlab-variables", readme, StringComparison.Ordinal);
+        Assert.Contains("CI_BUILD_PROJECT_PATH", readme, StringComparison.Ordinal);
         Assert.Contains("build-altlinux-release", readme, StringComparison.Ordinal);
         Assert.Contains("prepare-release-storage", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", readme, StringComparison.Ordinal);
