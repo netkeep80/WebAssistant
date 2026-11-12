@@ -147,7 +147,10 @@
     "tests/core/AppSettingsBootstrapTests.cs",
     "webassist/install/windows/uninstall.ps1",
     "webassist/build/windows/upgrade-preflight/Program.cs",
-    "tests/windows-service/run-upgrade-acceptance.ps1"
+    "tests/windows-service/run-upgrade-acceptance.ps1",
+    "webassist/build/distribution/remote-publish.sh",
+    "webassist/build/distribution/publish-ssh.sh",
+    "webassist/docs/gitlab-distribution.md"
   ],
   "vectors": [
     {
@@ -202,6 +205,21 @@
       ],
       "evidence": [
         "tests/core/DistributionContractCandidateTests.cs"
+      ]
+    },
+    {
+      "id": "WA-C-BUILD-STORAGE-ROOT-001",
+      "kind": "positive",
+      "assertion": "CI_BUILD_PROJECT_PATH является существующим общим каталогом products; manual prepare-release-storage создаёт прямой каталог CI_PROJECT_NAME, а build-altlinux-release проверяет его наличие и сохраняет проверенный immutable release в CI_PROJECT_NAME/releases/VERSION без изменения границы хранения.",
+      "requirements": [
+        "WA-CI-004",
+        "WA-CI-001"
+      ],
+      "evidence": [
+        "webassist/build/distribution/remote-publish.sh",
+        "webassist/build/distribution/publish-ssh.sh",
+        "tests/core/ProductAutonomyTests.cs",
+        "webassist/docs/gitlab-distribution.md"
       ]
     },
     {

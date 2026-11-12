@@ -36,6 +36,9 @@ fail_expected bash "$release_tool" verify "$tmp/extra" "$product" "$version" "$c
 
 mkdir -p "$tmp/storage"
 root_b64="$(printf '%s' "$tmp/storage" | base64 -w0)"
+fail_expected bash "$remote" prepare "$root_b64" "$product" "$version" 111 222
+[[ ! -e "$tmp/storage/$product" ]] # automatic publication must not initialize project storage
+mkdir -p "$tmp/storage/$product" "$tmp/storage/another-product"
 stage="$(bash "$remote" prepare "$root_b64" "$product" "$version" 111 222)"
 parent="$tmp/storage/$product/releases"
 cp -a "$release/." "$parent/$stage/"
@@ -63,7 +66,7 @@ bash "$remote" cleanup "$root_b64" "$product" "$version" "$stage"
 # Exact bytes remain immutable after a rejected conflicting publication.
 diff -qr "$release" "$parent/$version"
 # A partially copied final directory must never be accepted as a release.
-mkdir -p "$tmp/partial-storage"
+mkdir -p "$tmp/partial-storage/$product"
 partial_root_b64="$(printf '%s' "$tmp/partial-storage" | base64 -w0)"
 partial_stage="$(bash "$remote" prepare "$partial_root_b64" "$product" "$version" 114 225)"
 partial_parent="$tmp/partial-storage/$product/releases"
@@ -191,6 +194,10 @@ preflight_reject "storage initialization requires permitted passwordless sudo" e
 # Publication must reject a missing group root rather than create it.
 preflight_reject "build storage root missing or symlinked" env CI_BUILD_PROJECT_PATH="$tmp/absent-shared-root" bash "$publisher" "$release" "$product" "$version" "$commit"
 
+preflight_reject "project storage directory missing or not writable; run prepare-release-storage" bash "$publisher" "$release" "$product" "$version" "$commit"
+[[ ! -e "$CI_BUILD_PROJECT_PATH/$product" ]]
+bash "$publisher" --init-storage "$product"
 bash "$publisher" "$release" "$product" "$version" "$commit"
 diff -qr "$release" "$CI_BUILD_PROJECT_PATH/$product/releases/$version"
+[[ ! -e "$CI_BUILD_PROJECT_PATH/products" ]] # the group root itself is the products directory
 echo 'distribution release assembly, verification, SSH transfer, idempotence, tamper rejection: PASS'

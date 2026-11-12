@@ -42,6 +42,11 @@
       "statement": "Development repository описывает downstream CI/CD и distribution только через generic parameterized contracts. Product requirements, conformance, repository-owned scripts и current product documentation не содержат concrete downstream repository/project/organization/host/share/cluster/path identities; environment-specific значения задаются только во внешней downstream CI/CD configuration."
     },
     {
+      "id": "WA-CI-004",
+      "kind": "required",
+      "statement": "Групповая переменная CI_BUILD_PROJECT_PATH задаёт уже существующий общий каталог products на SSH-хосте. Ручная задача prepare-release-storage инициализирует только прямой дочерний каталог CI_PROJECT_NAME с правами 0750. Автоматическая публикация требует предварительно подготовленного каталога проекта и размещает неизменяемый релиз по относительному пути <CI_PROJECT_NAME>/releases/<VERSION>/; отсутствие каталога проекта вызывает отказ без неявного создания. Манифест и артефакты сохраняют проверяемую точную идентичность байтов."
+    },
+    {
       "id": "WA-SERVICE-001",
       "kind": "required",
       "statement": "WebAssistant устанавливается администратором один раз на рабочую станцию и работает как machine-wide системная служба."

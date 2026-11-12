@@ -49,6 +49,7 @@ public sealed class ProductAutonomyTests
         var sshPublisher = File.ReadAllText(Path.Combine(productRoot, "build", "distribution", "publish-ssh.sh"));
         Assert.Contains("CI_BUILD_PROJECT_PATH", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("stage_full=\"${CI_BUILD_PROJECT_PATH}/$product/releases/$stage\"", sshPublisher, StringComparison.Ordinal);
+        Assert.DoesNotContain("stage_full=\"${CI_BUILD_PROJECT_PATH}/products/", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_HOST", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_USER", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", sshPublisher, StringComparison.Ordinal);
@@ -63,6 +64,8 @@ public sealed class ProductAutonomyTests
         Assert.Contains("sudo -n install -d", storagePublisher, StringComparison.Ordinal);
         Assert.Contains("project_dir=\"$root/$product\"", storagePublisher, StringComparison.Ordinal);
         Assert.Contains("parent=\"$root/$product/releases\"", storagePublisher, StringComparison.Ordinal);
+        Assert.Contains("project storage directory missing or not writable; run prepare-release-storage", storagePublisher, StringComparison.Ordinal);
+        Assert.DoesNotContain("parent=\"$root/products/", storagePublisher, StringComparison.Ordinal);
         Assert.DoesNotContain("mv -T", storagePublisher, StringComparison.Ordinal);
 
         foreach (var relativePath in new[]
@@ -102,6 +105,8 @@ public sealed class ProductAutonomyTests
         Assert.Contains("CI_BUILD_PROJECT_PATH", readme, StringComparison.Ordinal);
         Assert.Contains("build-altlinux-release", readme, StringComparison.Ordinal);
         Assert.Contains("prepare-release-storage", readme, StringComparison.Ordinal);
+        Assert.Contains("<CI_PROJECT_NAME>/releases/<VERSION>/", readme, StringComparison.Ordinal);
+        Assert.DoesNotContain("Если групповой корень уже заканчивается на", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA_SECRET", readme, StringComparison.Ordinal);
         Assert.Contains("copy → verify → delete", readme, StringComparison.Ordinal);
