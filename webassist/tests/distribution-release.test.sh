@@ -47,6 +47,11 @@ fail_expected bash "$remote" finalize "$root_b64" "$product" "$version" "$stage"
 bash "$remote" finalize "$root_b64" "$product" "$version" "$stage" "$zipname" "${hashes[@]}"
 test ! -e "$parent/$stage" # verified copy must remove the staging directory
 diff -qr "$release" "$parent/$version"
+# The same group root supports independent product release subtrees.
+other_stage="$(bash "$remote" prepare "$root_b64" another-product "$version" 115 226)"
+[[ -d "$tmp/storage/another-product/releases/$other_stage" ]]
+bash "$remote" cleanup "$root_b64" another-product "$version" "$other_stage"
+[[ -f "$parent/$version/manifest.json" ]]
 stage="$(bash "$remote" prepare "$root_b64" "$product" "$version" 112 223)"
 cp -a "$release/." "$parent/$stage/"
 bash "$remote" finalize "$root_b64" "$product" "$version" "$stage" "$zipname" "${hashes[@]}"
