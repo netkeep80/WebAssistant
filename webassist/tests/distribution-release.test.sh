@@ -199,4 +199,5 @@ preflight_reject "project storage directory missing or not writable; run prepare
 bash "$publisher" --init-storage "$product"
 bash "$publisher" "$release" "$product" "$version" "$commit"
 diff -qr "$release" "$CI_BUILD_PROJECT_PATH/$product/releases/$version"
+[[ ! -e "$CI_BUILD_PROJECT_PATH/products" ]] # the group root itself is the products directory
 echo 'distribution release assembly, verification, SSH transfer, idempotence, tamper rejection: PASS'
