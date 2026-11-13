@@ -63,6 +63,10 @@ public sealed class ProductAutonomyTests
         Assert.Contains("CI_SSH_USER", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA_SECRET", sshPublisher, StringComparison.Ordinal);
+        var configPublisher = File.ReadAllText(Path.Combine(productRoot, "build", "distribution", "publish-config-version.sh"));
+        Assert.Contains("CI_GITLAB_CICD_AGENT_USER", configPublisher, StringComparison.Ordinal);
+        Assert.Contains("*Username*) printf '%s' \"$CI_GITLAB_CICD_AGENT_USER\"", configPublisher, StringComparison.Ordinal);
+        Assert.Contains("*Password*) printf '%s' \"$CI_GITLAB_CICD_AGENT_SECRET\"", configPublisher, StringComparison.Ordinal);
         Assert.Contains("StrictHostKeyChecking=accept-new", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("SSH_ASKPASS_REQUIRE=force", sshPublisher, StringComparison.Ordinal);
         Assert.Contains("--init-storage", sshPublisher, StringComparison.Ordinal);
@@ -116,6 +120,7 @@ public sealed class ProductAutonomyTests
         Assert.Contains("webassistant-builder", readme, StringComparison.Ordinal);
         Assert.Contains("CI_BUILD_PROJECT_PATH", readme, StringComparison.Ordinal);
         Assert.Contains("CI_RELEASE_CONFIG_REPO", readme, StringComparison.Ordinal);
+        Assert.Contains("CI_GITLAB_CICD_AGENT_USER", readme, StringComparison.Ordinal);
         Assert.Contains("release-version.txt", readme, StringComparison.Ordinal);
         Assert.Contains("build-altlinux-release", readme, StringComparison.Ordinal);
         Assert.Contains("prepare-release-storage", readme, StringComparison.Ordinal);
