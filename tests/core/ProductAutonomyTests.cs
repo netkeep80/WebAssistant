@@ -32,6 +32,15 @@ public sealed class ProductAutonomyTests
         Assert.Contains("bash build/distribution/release.sh assemble", pipeline, StringComparison.Ordinal);
         Assert.Contains("bash build/distribution/release.sh verify", pipeline, StringComparison.Ordinal);
         Assert.Contains("bash build/distribution/publish-ssh.sh", pipeline, StringComparison.Ordinal);
+        Assert.Contains("create-release-config-variable:", pipeline, StringComparison.Ordinal);
+        Assert.Contains("CI_RELEASE_CONFIG_REPO", pipeline, StringComparison.Ordinal);
+        Assert.Contains("bash build/distribution/publish-config-version.sh --check-ci-environment", pipeline, StringComparison.Ordinal);
+        Assert.Contains("bash tests/promotion-version.test.sh", pipeline, StringComparison.Ordinal);
+        Assert.Contains("bash build/distribution/publish-config-version.sh \"$CI_PROJECT_NAME\" \"$version\"", pipeline, StringComparison.Ordinal);
+        Assert.True(
+            pipeline.IndexOf("bash build/distribution/publish-ssh.sh \"$release\"", StringComparison.Ordinal) <
+            pipeline.IndexOf("bash build/distribution/publish-config-version.sh \"$CI_PROJECT_NAME\"", StringComparison.Ordinal),
+            "Номер версии разрешено коммитить только после успешной SSH-публикации.");
         const string preflight = "bash build/distribution/publish-ssh.sh --check-ci-environment";
         Assert.Contains(preflight, pipeline, StringComparison.Ordinal);
         Assert.True(
@@ -73,7 +82,10 @@ public sealed class ProductAutonomyTests
             "build/distribution/release.sh",
             "build/distribution/remote-publish.sh",
             "build/distribution/publish-ssh.sh",
-            "tests/distribution-release.test.sh"
+            "build/distribution/publish-config-version.sh",
+            "build/distribution/update-config-repo.sh",
+            "tests/distribution-release.test.sh",
+            "tests/promotion-version.test.sh"
         })
         {
             Assert.True(File.Exists(Path.Combine(productRoot, relativePath)),
@@ -103,6 +115,8 @@ public sealed class ProductAutonomyTests
         Assert.Contains("build/linux/package.sh", readme, StringComparison.Ordinal);
         Assert.Contains("webassistant-builder", readme, StringComparison.Ordinal);
         Assert.Contains("CI_BUILD_PROJECT_PATH", readme, StringComparison.Ordinal);
+        Assert.Contains("CI_RELEASE_CONFIG_REPO", readme, StringComparison.Ordinal);
+        Assert.Contains("release-version.txt", readme, StringComparison.Ordinal);
         Assert.Contains("build-altlinux-release", readme, StringComparison.Ordinal);
         Assert.Contains("prepare-release-storage", readme, StringComparison.Ordinal);
         Assert.Contains("<CI_PROJECT_NAME>/releases/<VERSION>/", readme, StringComparison.Ordinal);
@@ -174,6 +188,32 @@ public sealed class ProductAutonomyTests
             $"Сценарий публикации завершился ошибкой. stdout: {output}\\nstderr: {errors}");
         Assert.Contains("distribution release assembly, verification, SSH transfer, idempotence, tamper rejection: PASS",
             output, StringComparison.Ordinal);
+    }
+
+
+    [Fact]
+    public async Task ExportRoot_DownstreamVersionHandoff_UsesLocalGitAndRejectsDowngrades()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        var script = Path.Combine(FindRepositoryRoot(), "webassist", "tests", "promotion-version.test.sh");
+        var info = new ProcessStartInfo("bash")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        info.ArgumentList.Add(script);
+        using var process = Process.Start(info) ??
+            throw new InvalidOperationException("Не удалось запустить тест передачи версии.");
+        var stdout = process.StandardOutput.ReadToEndAsync();
+        var stderr = process.StandardError.ReadToEndAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        try { await process.WaitForExitAsync(timeout.Token); }
+        catch (OperationCanceledException) { process.Kill(entireProcessTree: true); throw; }
+        Assert.True(process.ExitCode == 0,
+            $"Git version handoff failed. stdout: {await stdout}\\nstderr: {await stderr}");
+        Assert.Contains("downstream version commit, idempotence, downgrade guard: PASS",
+            await stdout, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

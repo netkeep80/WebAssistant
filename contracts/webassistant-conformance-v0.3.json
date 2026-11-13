@@ -150,7 +150,10 @@
     "tests/windows-service/run-upgrade-acceptance.ps1",
     "webassist/build/distribution/remote-publish.sh",
     "webassist/build/distribution/publish-ssh.sh",
-    "webassist/docs/gitlab-distribution.md"
+    "webassist/docs/gitlab-distribution.md",
+    "webassist/build/distribution/update-config-repo.sh",
+    "webassist/build/distribution/publish-config-version.sh",
+    "webassist/tests/promotion-version.test.sh"
   ],
   "vectors": [
     {
@@ -218,6 +221,22 @@
       "evidence": [
         "webassist/build/distribution/remote-publish.sh",
         "webassist/build/distribution/publish-ssh.sh",
+        "tests/core/ProductAutonomyTests.cs",
+        "webassist/docs/gitlab-distribution.md"
+      ]
+    },
+    {
+      "id": "WA-C-DOWNSTREAM-VERSION-HANDOFF-001",
+      "kind": "positive",
+      "assertion": "Product CI commits one validated semantic version to a downstream GitLab configuration repository named exclusively by external project variable, after successful immutable source publication; same version is a no-op, downgrade and force push are forbidden. No concrete downstream identities are present in the development repository.",
+      "requirements": [
+        "WA-CI-005",
+        "WA-CI-003"
+      ],
+      "evidence": [
+        "webassist/.gitlab-ci.yml",
+        "webassist/build/distribution/publish-config-version.sh",
+        "webassist/build/distribution/update-config-repo.sh",
         "tests/core/ProductAutonomyTests.cs",
         "webassist/docs/gitlab-distribution.md"
       ]
