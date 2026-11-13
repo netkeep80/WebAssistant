@@ -82,7 +82,7 @@ builder, сетевой ФС и целевой ALT Linux системы.
 `CI_PROJECT_ACCESS_TOKEN` с правами управления CI/CD-переменными.
 
 `build-altlinux-release` перед сборкой проверяет `CI_RELEASE_CONFIG_REPO`,
-`CI_GITLAB_CICD_AGENT_SECRET`, `CI_PROJECT_NAMESPACE` и `CI_SERVER_URL`.
+`CI_GITLAB_CICD_AGENT_USER`, `CI_GITLAB_CICD_AGENT_SECRET`, `CI_PROJECT_NAMESPACE` и `CI_SERVER_URL`.
 После успешной верификации и SSH-публикации **тех же байтов** в хранилище
 вызывается `publish-config-version.sh`; он коммитит одну строку
 `<CI_PROJECT_NAME>/release-version.txt` в default branch конфигурационного GitLab-репозитория.
@@ -90,7 +90,7 @@ builder, сетевой ФС и целевой ALT Linux системы.
 Каталог `<CI_PROJECT_NAME>/` должен уже находиться под управлением Git.
 Повтор одинаковой версии является no-op, downgrade запрещён, push не использует force;
 конфликт параллельных коммитов обрабатывается повторной загрузкой и ограниченными попытками.
-Секрет передаётся Git через `GIT_ASKPASS`, а не помещается в remote URL или текст коммита.
+Имя пользователя и секрет передаются Git через `GIT_ASKPASS`; оба значения задаются внешними CI-переменными и не помещаются в remote URL или текст коммита.
 
 Предпочтителен HTTPS. Для GitLab с разрешённым только HTTP существует **явное**
 частное согласование `CI_RELEASE_CONFIG_ALLOW_HTTP=1`, которое допускает передачу
