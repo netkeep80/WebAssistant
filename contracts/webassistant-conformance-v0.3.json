@@ -237,7 +237,6 @@
         "webassist/.gitlab-ci.yml",
         "webassist/build/distribution/publish-config-version.sh",
         "webassist/build/distribution/update-config-repo.sh",
-        "webassist/tests/promotion-version.test.sh",
         "tests/core/ProductAutonomyTests.cs",
         "webassist/docs/gitlab-distribution.md"
       ]
