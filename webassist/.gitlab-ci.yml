@@ -2,7 +2,8 @@
 # must be configured in downstream GitLab settings, never in this repository.
 stages:
   - utility-tasks
-  - package
+  - build
+  - publish
 
 variables:
   WEBASSISTANT_BUILDER_TAG: "dotnet-10.0.403-v1"
@@ -49,7 +50,7 @@ create-release-config-variable:
       allow_failure: true
 
 build-altlinux-release:
-  stage: package
+  stage: build
   image: "${CI_DOCKER_HUB}/webassistant-builder:${WEBASSISTANT_BUILDER_TAG}"
   variables:
     GIT_STRATEGY: fetch
@@ -62,28 +63,45 @@ build-altlinux-release:
       esac
       : "${CI_COMMIT_SHA:?GitLab source revision is required}"
       bash build/distribution/publish-ssh.sh --check-ci-environment
-      bash build/distribution/publish-config-version.sh --check-ci-environment
       test -f VERSION
       version="$(cat VERSION)"
       echo "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
       command -v dotnet >/dev/null 2>&1
       dotnet --list-sdks | grep -Eq '^10\.' || { echo '.NET SDK 10 is required in builder image' >&2; exit 1; }
-      for tool in bash jq zip sha256sum base64 stat realpath tar ssh ssh-agent ssh-add find sort cmp diff mv mktemp git; do
+      for tool in bash jq zip sha256sum base64 stat realpath tar ssh ssh-agent ssh-add find sort cmp diff mv mktemp; do
         command -v "$tool" >/dev/null 2>&1 || { echo "Builder missing $tool" >&2; exit 1; }
       done
 
       export WEBASSISTANT_SOURCE_SHA="$CI_COMMIT_SHA"
       export WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0
-      bash tests/distribution-release.test.sh
-      bash tests/promotion-version.test.sh
       bash build/linux/package.sh artifacts/linux-x64
       bash build/distribution/release.sh assemble artifacts/linux-x64 artifacts/release-staging "$CI_PROJECT_NAME" "$version" "$CI_COMMIT_SHA"
       release="artifacts/release-staging/products/$CI_PROJECT_NAME/releases/$version"
       bash build/distribution/release.sh verify "$release" "$CI_PROJECT_NAME" "$version" "$CI_COMMIT_SHA"
       bash build/distribution/publish-ssh.sh "$release" "$CI_PROJECT_NAME" "$version" "$CI_COMMIT_SHA"
+  # GitLab Job Artifacts не используются: точные байты релиза публикуются напрямую
+  # во внешнее неизменяемое хранилище задачей платформенной сборки.
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+
+publish-release-version:
+  stage: publish
+  image: "$CI_DOCKER_HUB/webassistant-builder:$WEBASSISTANT_BUILDER_TAG"
+  script:
+    - |
+      set -eu
+      : "${CI_PROJECT_NAME:?CI_PROJECT_NAME is required}"
+      case "$CI_PROJECT_NAME" in
+        null|masked_null|[!a-zA-Z0-9]*|*[!a-zA-Z0-9._-]*) echo 'Invalid CI_PROJECT_NAME' >&2; exit 1 ;;
+      esac
+      bash build/distribution/publish-config-version.sh --check-ci-environment
+      test -f VERSION
+      version="$(cat VERSION)"
+      echo "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
       bash build/distribution/publish-config-version.sh "$CI_PROJECT_NAME" "$version"
-  # No GitLab Job Artifacts: exact release bytes are published directly to
-  # external immutable build storage by this same job.
+  # Порядок стадий GitLab является платформенным барьером: добавление ещё одной
+  # платформенной задачи в стадию "build" автоматически задерживает эту публикацию.
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       when: on_success
