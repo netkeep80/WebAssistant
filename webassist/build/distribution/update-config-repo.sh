@@ -18,7 +18,11 @@ for attempt in 1 2 3; do
   branch="$(git -C "$work/repo" branch --show-current)"
   [[ -n $branch && $branch != HEAD ]] || fail 'configuration repository default branch is unavailable'
   release_dir="$work/repo/$product"
-  [[ -d $release_dir && ! -L $release_dir ]] || fail 'product configuration directory must exist'
+  if [[ -e $release_dir || -L $release_dir ]]; then
+    [[ -d $release_dir && ! -L $release_dir ]] || fail 'product configuration path must be a real directory'
+  else
+    mkdir -- "$release_dir" || fail 'cannot create product configuration directory'
+  fi
   version_file="$release_dir/release-version.txt"
   [[ ! -L $version_file ]] || fail 'version file symlink forbidden'
   if [[ -f $version_file ]]; then
