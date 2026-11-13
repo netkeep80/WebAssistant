@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-root="$(cd "$(dirname "$0")/.." && pwd)"
-publisher="$root/build/distribution/update-config-repo.sh"
+repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
+publisher="$repo_root/webassist/build/distribution/update-config-repo.sh"
 tmp="$(mktemp -d)"; trap 'rm -rf -- "$tmp"' EXIT
 mkdir -p "$tmp/seed/sample-product" "$tmp/bare.git"
 git init --bare --quiet "$tmp/bare.git"

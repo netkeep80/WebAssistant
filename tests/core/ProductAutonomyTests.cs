@@ -6,7 +6,7 @@ namespace WebAssistant.CoreTests;
 public sealed class ProductAutonomyTests
 {
     [Fact]
-    public void ExportRoot_ContainsStandaloneAltOnlyGitLabBuildAndStorageBootstrap()
+    public void ExportRoot_SeparatesPlatformBuildsFromPlatformNeutralVersionPublication()
     {
         var root = FindRepositoryRoot();
         var productRoot = Path.Combine(root, "webassist");
@@ -24,23 +24,53 @@ public sealed class ProductAutonomyTests
         Assert.Contains("CI_PROJECT_NAME", pipeline, StringComparison.Ordinal);
         Assert.Contains("/webassistant-builder:${WEBASSISTANT_BUILDER_TAG}", pipeline, StringComparison.Ordinal);
 
-        // One canonical Linux packager, with downstream-local source revision.
-        Assert.Contains("build-altlinux-release:", pipeline, StringComparison.Ordinal);
-        Assert.Contains("WEBASSISTANT_SOURCE_SHA=\"$CI_COMMIT_SHA\"", pipeline, StringComparison.Ordinal);
-        Assert.Contains("WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0", pipeline, StringComparison.Ordinal);
-        Assert.Contains("bash build/linux/package.sh artifacts/linux-x64", pipeline, StringComparison.Ordinal);
-        Assert.Contains("bash build/distribution/release.sh assemble", pipeline, StringComparison.Ordinal);
-        Assert.Contains("bash build/distribution/release.sh verify", pipeline, StringComparison.Ordinal);
-        Assert.Contains("bash build/distribution/publish-ssh.sh", pipeline, StringComparison.Ordinal);
+        // Платформенные задачи собирают и публикуют байты; общий VERSION публикуется позже на платформенно-нейтральной стадии.
+        var stages = GetTopLevelYamlBlock(pipeline, "stages")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith("- ", StringComparison.Ordinal))
+            .Select(line => line[2..])
+            .ToArray();
+        Assert.Equal(new[] { "utility-tasks", "build", "publish" }, stages);
+
+        var buildJob = GetTopLevelYamlBlock(pipeline, "build-altlinux-release");
+        var publishJob = GetTopLevelYamlBlock(pipeline, "publish-release-version");
+
+        Assert.Contains("stage: build", buildJob, StringComparison.Ordinal);
+        Assert.Contains("stage: publish", publishJob, StringComparison.Ordinal);
+        Assert.Contains("if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'", buildJob, StringComparison.Ordinal);
+        Assert.Contains("if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'", publishJob, StringComparison.Ordinal);
+        Assert.Contains("when: on_success", buildJob, StringComparison.Ordinal);
+        Assert.Contains("when: on_success", publishJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("needs:", publishJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("allow_failure:", buildJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("allow_failure:", publishJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("when: manual", buildJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("when: manual", publishJob, StringComparison.Ordinal);
+
+        Assert.Contains("WEBASSISTANT_SOURCE_SHA=\"$CI_COMMIT_SHA\"", buildJob, StringComparison.Ordinal);
+        Assert.Contains("WEBASSISTANT_ALLOW_DOTNET_BOOTSTRAP=0", buildJob, StringComparison.Ordinal);
+        Assert.Contains("bash build/linux/package.sh artifacts/linux-x64", buildJob, StringComparison.Ordinal);
+        Assert.Contains("bash build/distribution/release.sh assemble", buildJob, StringComparison.Ordinal);
+        Assert.Contains("bash build/distribution/release.sh verify", buildJob, StringComparison.Ordinal);
+        Assert.Contains("bash build/distribution/publish-ssh.sh", buildJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("publish-config-version.sh", buildJob, StringComparison.Ordinal);
+
+        Assert.Contains("bash build/distribution/publish-config-version.sh --check-ci-environment", publishJob, StringComparison.Ordinal);
+        Assert.Contains("bash build/distribution/publish-config-version.sh \"$CI_PROJECT_NAME\" \"$version\"", publishJob, StringComparison.Ordinal);
+        foreach (var platformSpecific in new[]
+        {
+            "altlinux", "linux-x64", "windows", "installer", "manifest.json",
+            "publish-ssh.sh", "release.sh", "CI_BUILD_PROJECT_PATH", "CI_SSH_"
+        })
+        {
+            Assert.DoesNotContain(platformSpecific, publishJob, StringComparison.OrdinalIgnoreCase);
+        }
+
         Assert.Contains("create-release-config-variable:", pipeline, StringComparison.Ordinal);
         Assert.Contains("CI_RELEASE_CONFIG_REPO", pipeline, StringComparison.Ordinal);
-        Assert.Contains("bash build/distribution/publish-config-version.sh --check-ci-environment", pipeline, StringComparison.Ordinal);
-        Assert.Contains("bash tests/promotion-version.test.sh", pipeline, StringComparison.Ordinal);
-        Assert.Contains("bash build/distribution/publish-config-version.sh \"$CI_PROJECT_NAME\" \"$version\"", pipeline, StringComparison.Ordinal);
-        Assert.True(
-            pipeline.IndexOf("bash build/distribution/publish-ssh.sh \"$release\"", StringComparison.Ordinal) <
-            pipeline.IndexOf("bash build/distribution/publish-config-version.sh \"$CI_PROJECT_NAME\"", StringComparison.Ordinal),
-            "Номер версии разрешено коммитить только после успешной SSH-публикации.");
+        Assert.DoesNotContain("bash tests/distribution-release.test.sh", pipeline, StringComparison.Ordinal);
+        Assert.DoesNotContain("bash tests/promotion-version.test.sh", pipeline, StringComparison.Ordinal);
         const string preflight = "bash build/distribution/publish-ssh.sh --check-ci-environment";
         Assert.Contains(preflight, pipeline, StringComparison.Ordinal);
         Assert.True(
@@ -49,10 +79,9 @@ public sealed class ProductAutonomyTests
             "Проверка CI-переменных должна выполняться до проверки SDK.");
         Assert.True(
             pipeline.IndexOf(preflight, StringComparison.Ordinal) <
-            pipeline.IndexOf("bash tests/distribution-release.test.sh", StringComparison.Ordinal),
-            "Проверка CI-переменных должна выполняться до тестов и упаковки.");
+            pipeline.IndexOf("bash build/linux/package.sh", StringComparison.Ordinal),
+            "Проверка CI-переменных должна выполняться до упаковки.");
         Assert.Contains("null|masked_null|", pipeline, StringComparison.Ordinal);
-        Assert.Contains("tests/distribution-release.test.sh", pipeline, StringComparison.Ordinal);
         Assert.Contains("$CI_DEFAULT_BRANCH", pipeline, StringComparison.Ordinal);
 
         var sshPublisher = File.ReadAllText(Path.Combine(productRoot, "build", "distribution", "publish-ssh.sh"));
@@ -87,9 +116,7 @@ public sealed class ProductAutonomyTests
             "build/distribution/remote-publish.sh",
             "build/distribution/publish-ssh.sh",
             "build/distribution/publish-config-version.sh",
-            "build/distribution/update-config-repo.sh",
-            "tests/distribution-release.test.sh",
-            "tests/promotion-version.test.sh"
+            "build/distribution/update-config-repo.sh"
         })
         {
             Assert.True(File.Exists(Path.Combine(productRoot, relativePath)),
@@ -101,6 +128,20 @@ public sealed class ProductAutonomyTests
         Assert.DoesNotContain("expire_in:", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("github.com", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("netkeep80/WebAssistant", pipeline, StringComparison.OrdinalIgnoreCase);
+
+        Assert.False(File.Exists(Path.Combine(productRoot, "tests", "distribution-release.test.sh")));
+        Assert.False(File.Exists(Path.Combine(productRoot, "tests", "promotion-version.test.sh")));
+
+        foreach (var shellScript in Directory.EnumerateFiles(productRoot, "*.sh", SearchOption.AllDirectories))
+        {
+            var text = File.ReadAllText(shellScript);
+            Assert.DoesNotContain(
+                "distribution release assembly, verification, SSH transfer, idempotence, tamper rejection: PASS",
+                text, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "downstream version commit, idempotence, downgrade guard: PASS",
+                text, StringComparison.Ordinal);
+        }
 
         Assert.DoesNotContain("include:", pipeline, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("../", pipeline, StringComparison.Ordinal);
@@ -128,7 +169,7 @@ public sealed class ProductAutonomyTests
         Assert.DoesNotContain("Если групповой корень уже заканчивается на", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA", readme, StringComparison.Ordinal);
         Assert.Contains("CI_SSH_ID_RSA_SECRET", readme, StringComparison.Ordinal);
-        Assert.Contains("copy → verify → delete", readme, StringComparison.Ordinal);
+        Assert.Contains("копирование → проверка → удаление временного каталога", readme, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -156,14 +197,14 @@ public sealed class ProductAutonomyTests
     }
 
     [Fact]
-    public async Task ExportRoot_DistributionShellReleaseTest_PassesWithNonExecutableScripts()
+    public async Task DevelopmentRepo_DistributionShellRegression_Passes()
     {
         if (!OperatingSystem.IsLinux())
         {
             return;
         }
 
-        var testScript = Path.Combine(FindRepositoryRoot(), "webassist", "tests", "distribution-release.test.sh");
+        var testScript = Path.Combine(FindRepositoryRoot(), "tests", "distribution", "distribution-release.test.sh");
         var startInfo = new ProcessStartInfo("bash")
         {
             RedirectStandardOutput = true,
@@ -197,10 +238,10 @@ public sealed class ProductAutonomyTests
 
 
     [Fact]
-    public async Task ExportRoot_DownstreamVersionHandoff_UsesLocalGitAndRejectsDowngrades()
+    public async Task DevelopmentRepo_DownstreamVersionHandoff_UsesLocalGitAndRejectsDowngrades()
     {
         if (!OperatingSystem.IsLinux()) return;
-        var script = Path.Combine(FindRepositoryRoot(), "webassist", "tests", "promotion-version.test.sh");
+        var script = Path.Combine(FindRepositoryRoot(), "tests", "distribution", "promotion-version.test.sh");
         var info = new ProcessStartInfo("bash")
         {
             RedirectStandardOutput = true,
@@ -219,6 +260,23 @@ public sealed class ProductAutonomyTests
             $"Git version handoff failed. stdout: {await stdout}\\nstderr: {await stderr}");
         Assert.Contains("downstream version commit, idempotence, downgrade guard: PASS",
             await stdout, StringComparison.Ordinal);
+    }
+
+    private static string GetTopLevelYamlBlock(string yaml, string key)
+    {
+        var lines = yaml.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var marker = key + ":";
+        var start = Array.FindIndex(lines, line => string.Equals(line, marker, StringComparison.Ordinal));
+        Assert.True(start >= 0, $"В GitLab CI отсутствует top-level блок {key}.");
+
+        var end = start + 1;
+        while (end < lines.Length &&
+               (string.IsNullOrWhiteSpace(lines[end]) || char.IsWhiteSpace(lines[end][0])))
+        {
+            end++;
+        }
+
+        return string.Join('\n', lines[start..end]);
     }
 
     private static string FindRepositoryRoot()

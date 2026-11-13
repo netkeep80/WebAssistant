@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+root="$repo_root/webassist"
 release_tool="$root/build/distribution/release.sh"
 remote="$root/build/distribution/remote-publish.sh"
 tmp="$(mktemp -d)"

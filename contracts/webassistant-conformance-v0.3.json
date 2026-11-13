@@ -152,8 +152,7 @@
     "webassist/build/distribution/publish-ssh.sh",
     "webassist/docs/gitlab-distribution.md",
     "webassist/build/distribution/update-config-repo.sh",
-    "webassist/build/distribution/publish-config-version.sh",
-    "webassist/tests/promotion-version.test.sh"
+    "webassist/build/distribution/publish-config-version.sh"
   ],
   "vectors": [
     {
@@ -228,7 +227,7 @@
     {
       "id": "WA-C-DOWNSTREAM-VERSION-HANDOFF-001",
       "kind": "positive",
-      "assertion": "Product CI commits one validated semantic version to a downstream GitLab configuration repository named exclusively by external project variable, after successful immutable source publication; same version is a no-op, downgrade and force push are forbidden. No concrete downstream identities are present in the development repository.",
+      "assertion": "Платформенные задачи стадии `build` публикуют проверенные неизменяемые байты. Отдельная платформенно-нейтральная задача `publish-release-version` выполняется на следующей стадии `publish` только после успешного завершения всех задач стадии `build` и коммитит один проверенный семантический `VERSION` в настраиваемый конфигурационный репозиторий; равная версия является идемпотентной операцией, понижение версии и принудительная отправка запрещены.",
       "requirements": [
         "WA-CI-005",
         "WA-CI-003"
