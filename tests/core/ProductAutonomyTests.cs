@@ -153,6 +153,53 @@ public sealed class ProductAutonomyTests
     }
 
     [Fact]
+    public async Task ReleaseConfigPreflight_AcceptsHttpAndHttpsWithoutExtraOptInVariable()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        var script = Path.Combine(
+            FindRepositoryRoot(),
+            "webassist",
+            "build",
+            "distribution",
+            "publish-config-version.sh");
+
+        foreach (var serverUrl in new[] { "http://gitlab.example.test", "https://gitlab.example.test" })
+        {
+            var info = new ProcessStartInfo("bash")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false
+            };
+            info.ArgumentList.Add(script);
+            info.ArgumentList.Add("--check-ci-environment");
+            info.Environment["CI_RELEASE_CONFIG_REPO"] = "release-config";
+            info.Environment["CI_PROJECT_NAMESPACE"] = "group/subgroup";
+            info.Environment["CI_SERVER_URL"] = serverUrl;
+            info.Environment["CI_GITLAB_CICD_AGENT_USER"] = "ci";
+            info.Environment["CI_GITLAB_CICD_AGENT_SECRET"] = "secret";
+            info.Environment.Remove("CI_RELEASE_CONFIG_ALLOW_HTTP");
+
+            using var process = Process.Start(info) ??
+                throw new InvalidOperationException("Не удалось запустить проверку CI-окружения.");
+            var stdout = process.StandardOutput.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            Assert.True(
+                process.ExitCode == 0,
+                $"Preflight отклонил {serverUrl}. stdout: {await stdout}\\nstderr: {await stderr}");
+        }
+
+        var content = File.ReadAllText(script);
+        Assert.DoesNotContain("CI_RELEASE_CONFIG_ALLOW_HTTP", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ExportRoot_ReadmeDocumentsCanonicalDistributionAndAltOnlyGitLabBoundary()
     {
         var root = FindRepositoryRoot();
