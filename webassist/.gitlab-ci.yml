@@ -28,16 +28,16 @@ create-release-config-variable:
   script:
     - |
       set -eu
-      : "$CI_PROJECT_ACCESS_TOKEN"
+      : "${CI_GITLAB_API_ACCESS_TOKEN:?CI_GITLAB_API_ACCESS_TOKEN is required}"
       : "$CI_API_V4_URL"
       : "$CI_PROJECT_ID"
       command -v curl >/dev/null
       api="$CI_API_V4_URL/projects/$CI_PROJECT_ID/variables"
-      code="$(curl -sS -o /dev/null -w '%{http_code}' -H "PRIVATE-TOKEN: $CI_PROJECT_ACCESS_TOKEN" "$api/CI_RELEASE_CONFIG_REPO")"
+      code="$(curl -sS -o /dev/null -w '%{http_code}' -H "PRIVATE-TOKEN: $CI_GITLAB_API_ACCESS_TOKEN" "$api/CI_RELEASE_CONFIG_REPO")"
       case "$code" in
         200) echo 'CI_RELEASE_CONFIG_REPO already exists; leaving value unchanged' ;;
         404)
-          created="$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "PRIVATE-TOKEN: $CI_PROJECT_ACCESS_TOKEN" \
+          created="$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H "PRIVATE-TOKEN: $CI_GITLAB_API_ACCESS_TOKEN" \
             --form 'key=CI_RELEASE_CONFIG_REPO' --form 'value=null' --form 'protected=true' --form 'masked=false' --form 'raw=true' "$api")"
           test "$created" = 201 || { echo "variable creation failed, HTTP $created" >&2; exit 1; }
           echo 'CI_RELEASE_CONFIG_REPO created; set its value in private project CI settings'

@@ -68,7 +68,11 @@ public sealed class ProductAutonomyTests
         }
 
         Assert.Contains("create-release-config-variable:", pipeline, StringComparison.Ordinal);
-        Assert.Contains("CI_RELEASE_CONFIG_REPO", pipeline, StringComparison.Ordinal);
+        var createConfigVariableJob = GetTopLevelYamlBlock(pipeline, "create-release-config-variable");
+        Assert.Contains("CI_RELEASE_CONFIG_REPO", createConfigVariableJob, StringComparison.Ordinal);
+        Assert.Contains("CI_GITLAB_API_ACCESS_TOKEN", createConfigVariableJob, StringComparison.Ordinal);
+        Assert.Contains("PRIVATE-TOKEN: $CI_GITLAB_API_ACCESS_TOKEN", createConfigVariableJob, StringComparison.Ordinal);
+        Assert.DoesNotContain("CI_PROJECT_ACCESS_TOKEN", createConfigVariableJob, StringComparison.Ordinal);
         Assert.DoesNotContain("bash tests/distribution-release.test.sh", pipeline, StringComparison.Ordinal);
         Assert.DoesNotContain("bash tests/promotion-version.test.sh", pipeline, StringComparison.Ordinal);
         const string preflight = "bash build/distribution/publish-ssh.sh --check-ci-environment";

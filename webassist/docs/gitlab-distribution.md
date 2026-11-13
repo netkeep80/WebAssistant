@@ -20,7 +20,7 @@
 
 Ручная задача `prepare-release-storage` создаёт только `${CI_BUILD_PROJECT_PATH}/${CI_PROJECT_NAME}` с правами `0750`. Корневой каталог уже существует.
 
-Ручная задача `create-release-config-variable` создаёт защищённую переменную проекта `CI_RELEASE_CONFIG_REPO=null`, если её ещё нет. Администратор устанавливает имя конфигурационного репозитория и предоставляет `CI_GITLAB_CICD_AGENT_USER` вместе с `CI_GITLAB_CICD_AGENT_SECRET`.
+Ручная задача `create-release-config-variable` использует внешний `CI_GITLAB_API_ACCESS_TOKEN` для GitLab API и создаёт защищённую переменную проекта `CI_RELEASE_CONFIG_REPO=null`, если её ещё нет. Администратор устанавливает имя конфигурационного репозитория и предоставляет `CI_GITLAB_CICD_AGENT_USER` вместе с `CI_GITLAB_CICD_AGENT_SECRET`.
 
 SSH-ключ загружается через `ssh-agent` и `SSH_ASKPASS` без вывода секрета в журнал. Проверка ключа хоста использует `known_hosts` и `StrictHostKeyChecking=accept-new`: неизвестный ключ принимается при первом контакте, а изменившийся относительно сохранённой записи отклоняется. Для строгого доверия к серверу инфраструктура Runner должна предварительно предоставить доверенные ключи хоста.
 
