@@ -152,7 +152,9 @@
     "webassist/build/distribution/publish-ssh.sh",
     "webassist/docs/gitlab-distribution.md",
     "webassist/build/distribution/update-config-repo.sh",
-    "webassist/build/distribution/publish-config-version.sh"
+    "webassist/build/distribution/publish-config-version.sh",
+    "webassist/install/linux/runtime-dependencies.sh",
+    "tests/core/LinuxRuntimeDependencyTests.cs"
   ],
   "vectors": [
     {
@@ -841,7 +843,7 @@
     {
       "id": "WA-C-ALT-INSTALLER-001",
       "kind": "positive",
-      "assertion": "Distribution candidate определяет canonical ALT Linux 10.1 ZIP с configurable artifact/display identity, packaged config, VERSION, install/uninstall scripts и systemd lifecycle при неизменных technical executable/unit/path identifiers; distro-owned runtime dependencies могут приходить через apt-rpm.",
+      "assertion": "Кандидат распространения определяет канонический ZIP-архив ALT Linux 10.1 с настраиваемым именем артефакта и отображаемым наименованием, упакованной конфигурацией, VERSION, сценариями установки и удаления и жизненным циклом systemd при неизменных технических идентификаторах исполняемого файла, модуля и путей; системные зависимости среды выполнения могут устанавливаться через apt-rpm. Стандартный sane-airscan проверяется и при отсутствии устанавливается до запуска службы; проверяются разрешение динамических зависимостей и загрузка библиотеки от имени webassist через dlopen(RTLD_NOW), а также наличие экспортируемых точек входа SANE через dlsym. Проверка выполняется через ctypes штатного Python 3; отсутствие необходимого модуля после установки пакета является ошибкой. При отсутствии runuser устанавливается util-linux и повторно проверяется наличие команды; проверка подтверждает действительный непривилегированный UID. Повторная установка не изменяет состояние apt-rpm, неполная установка отклоняется. Административные файлы сохраняются побайтно, проверяются также права штатного файла регистрации. Новый файл dll.d/airscan.rpmnew рядом с существующим исходным файлом сохраняется вне области чтения SANE без интерпретации содержимого. Проверяются отказ архивирования и повторная установка при неразрешённой копии, в том числе при уже установленном пакете; фактическая регистрация в SANE проверяется независимо с учётом прав службы, включая кавычки, сохранность копии, повторную установку без apt и сохранность исходной конфигурации после перезапуска и удаления службы. Проверяются устойчивое свидетельство до пакетной операции, отказ записи, прерывание, изменение исходного содержимого и прав без RPM-копии, блокирование повтора и явное административное разрешение; реальный пакетный сценарий с совпадающим содержимым и отличающимися правами и чистая регистрация без исходного файла. Устройство не требуется для установки и проверки работоспособности; сетевое обнаружение и физическое сканирование проверяются отдельно.",
       "requirements": [
         "WA-ALT-INSTALL-001"
       ],
@@ -855,7 +857,9 @@
         "tests/linux-systemd/run-systemd-acceptance.sh",
         ".github/workflows/linux-systemd.yml",
         ".github/workflows/build-installers.yml",
-        ".github/workflows/installer-acceptance.yml"
+        ".github/workflows/installer-acceptance.yml",
+        "webassist/install/linux/runtime-dependencies.sh",
+        "tests/core/LinuxRuntimeDependencyTests.cs"
       ]
     },
     {

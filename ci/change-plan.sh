@@ -100,7 +100,7 @@ fi
 for path in "${paths[@]}"; do
   case "$path" in
     README.md|webassist/README.md|webassist/docs/*|docs/*)
-      # Documentation is validated by core/repository tests only.
+      # Документация проверяется только общими тестами репозитория.
       ;;
 
     .github/workflows/build-installers.yml|\
@@ -174,7 +174,6 @@ for path in "${paths[@]}"; do
     webassist/*|\
     *)
       require_full
-      break
       ;;
   esac
 done
