@@ -49,6 +49,7 @@ if ! getent group webassist >/dev/null 2>&1; then
     groupadd --system webassist
 fi
 if ! id webassist >/dev/null 2>&1; then
+    echo "Создание учётной записи службы webassist."
     nologin_shell="$(command -v nologin || true)"
     [[ -n "$nologin_shell" ]] || nologin_shell="/sbin/nologin"
     useradd --system --gid webassist --home-dir "$data_dir" --no-create-home --shell "$nologin_shell" webassist
@@ -59,6 +60,19 @@ for scanner_group in scanner scaner lp; do
         usermod -a -G "$scanner_group" webassist
     fi
 done
+
+# До остановки установленной службы проверяем загрузку от её имени.
+echo "Учётная запись службы:"
+id webassist
+airscan_library="$(webassistant_airscan_library)" || {
+    echo "Не найдена библиотека sane-airscan после подготовки зависимостей." >&2
+    exit 1
+}
+if ! webassistant_airscan_loadable "$airscan_library" webassist; then
+    echo "Не удалось загрузить библиотеку sane-airscan от имени webassist. Проверьте права доступа и динамические зависимости." >&2
+    exit 1
+fi
+echo "Регистрация драйверов SANE и права службы определяются административной конфигурацией; для диагностики используйте scanimage -L от имени webassist."
 
 systemctl stop webassist.service >/dev/null 2>&1 || true
 

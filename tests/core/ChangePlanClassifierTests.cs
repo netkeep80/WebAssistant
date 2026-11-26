@@ -286,6 +286,28 @@ public sealed class ChangePlanClassifierTests
             fullCrossPlatform: true);
     }
 
+    [Theory]
+    [InlineData("contracts/webassistant-contract-v0.3.json", "webassist/install/linux/runtime-dependencies.sh")]
+    [InlineData("tests/core/PlatformEndToEndTests.cs", "webassist/install/linux/runtime-dependencies.sh")]
+    [InlineData("contracts/webassistant-conformance-v0.3.json", "webassist/build/linux/package.sh")]
+    public void SharedAndLinuxInstallerChanges_AccumulateRequirementsInAnyOrder(string shared, string linux)
+    {
+        foreach (var paths in new[] { new[] { shared, linux }, new[] { linux, shared } })
+            AssertPlan(paths, true, true, true, true, false, true, true, true, true, true);
+    }
+
+    [Theory]
+    [InlineData("contracts/webassistant-contract-v0.3.json", "webassist/install/windows/install.ps1")]
+    [InlineData("contracts/webassistant-contract-v0.3.json", "ci/change-plan.sh")]
+    public void SharedChanges_NeverSuppressLaterDistributionRequirements(string shared, string distribution)
+    {
+        var a = RunPlan(new[] { shared, distribution });
+        var b = RunPlan(new[] { distribution, shared });
+        Assert.Equal(a.OrderBy(x => x.Key).ToArray(), b.OrderBy(x => x.Key).ToArray());
+        Assert.True(Flag(a, "installer_windows"));
+        Assert.Equal(distribution == "ci/change-plan.sh", Flag(a, "installer_linux"));
+    }
+
     private static void AssertPlan(
         string[] paths,
         bool core,
