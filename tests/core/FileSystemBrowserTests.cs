@@ -117,12 +117,82 @@ public sealed class FileSystemBrowserTests
             Assert.Equal("*", await page.Locator("#filesystem-left-wildcard").InputValueAsync());
             Assert.Equal("*", await page.Locator("#filesystem-right-wildcard").InputValueAsync());
 
-            await page.Locator("#filesystem-left-wildcard").FillAsync("*.xml");
-            await page.ClickAsync("#filesystem-left-apply-wildcard");
-            await Visible("left", "a.xml");
-            await Visible("left", "b.xml");
+            var allNames = new[] { "a.xml", "b.xml", "c.json", "nested" };
+            var xmlNames = new[] { "a.xml", "b.xml" };
+
+            // Проверяем именно итоговую таблицу, а не строки, общие для старого
+            // и нового списка. Строка перехода в родительский каталог не учитывается.
+            async Task WaitNames(string[] expected)
+            {
+                await page.WaitForFunctionAsync(
+                    """
+                    args => {
+                        const status = document.getElementById("filesystem-left-status");
+                        const rows = Array.from(document.querySelectorAll(
+                            "#filesystem-left-entries tr[data-entry-name]:not([data-parent-row])"));
+                        return status.dataset.state === "ok"
+                            && status.innerText.trim() === args.status
+                            && JSON.stringify(rows.map(row => row.dataset.entryName).sort())
+                                === JSON.stringify(args.expected);
+                    }
+                    """,
+                    new { expected, status = $"{expected.Length} объектов; выбрано: 0" },
+                    new() { Timeout = 15000 });
+            }
+
+            async Task ApplyMask(string mask, string[] expected)
+            {
+                await page.Locator("#filesystem-left-wildcard").FillAsync(mask);
+                await page.ClickAsync("#filesystem-left-apply-wildcard");
+                await WaitNames(expected);
+            }
+
+            await WaitNames(allNames);
+            // Управляемая точка воспроизведения: удерживаем только запрос новой
+            // маски, не подменяя ответ настоящего сервера. Прежний oracle
+            // проходит проверки видимости до завершения обновления.
+            var filterRequest = new System.Text.RegularExpressions.Regex(
+                @"/v1/filesystem/list\?[^#]*&wildcard=(?:\*|%2[Aa])\.xml(?:&|$)");
+            var requested = new TaskCompletionSource<string>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var releaseRequest = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            await page.RouteAsync(filterRequest, async route =>
+            {
+                requested.TrySetResult(route.Request.Url);
+                await releaseRequest.Task;
+                await route.ContinueAsync();
+            });
+            try
+            {
+                await page.Locator("#filesystem-left-wildcard").FillAsync("*.xml");
+                await page.ClickAsync("#filesystem-left-apply-wildcard");
+                var requestUrl = await requested.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                var query = Uri.UnescapeDataString(new Uri(requestUrl).Query.TrimStart('?')).Split('&');
+                Assert.Contains(query, value => value is "path=archive/incoming" or "path=archive/incoming/");
+                Assert.Contains("wildcard=*.xml", query);
+                await Visible("left", "a.xml");
+                await Visible("left", "b.xml");
+                Assert.Equal(1, await Row("left", "nested").CountAsync());
+                Assert.Equal(1, await Row("left", "c.json").CountAsync());
+                Console.WriteLine("WILDCARD_OLD_ORACLE=REPRODUCED");
+            }
+            finally
+            {
+                releaseRequest.TrySetResult();
+            }
+            await WaitNames(xmlNames);
+            await page.UnrouteAsync(filterRequest);
             Assert.Equal(0, await Row("left", "nested").CountAsync());
             Assert.Equal(0, await Row("left", "c.json").CountAsync());
+
+            // Повторяем переходы без искусственного удержания запроса.
+            for (var cycle = 0; cycle < 2; cycle++)
+            {
+                await ApplyMask("*", allNames);
+                await ApplyMask("*.xml", xmlNames);
+            }
+            Console.WriteLine("WILDCARD_TRANSITIONS=PASS cycles=3");
 
             var zipDownload = await page.RunAndWaitForDownloadAsync(
                 () => page.ClickAsync("#filesystem-left-zip"));
@@ -134,8 +204,7 @@ public sealed class FileSystemBrowserTests
                     zip.Entries.Select(entry => entry.FullName).Order(StringComparer.Ordinal).ToArray());
             }
 
-            await page.Locator("#filesystem-left-wildcard").FillAsync("*");
-            await page.ClickAsync("#filesystem-left-apply-wildcard");
+            await ApplyMask("*", allNames);
             await Visible("left", "c.json");
 
             await Row("left", "a.xml").ClickAsync();
