@@ -1,0 +1,177 @@
+name: ALT cache producer
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'tests/linux-systemd/cache/**'
+      - '.github/workflows/alt-cache-publish.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alt-cache-producer-${{ github.event.pull_request.number || 'main' }}
+  cancel-in-progress: false
+
+jobs:
+  build-linux-installer:
+    name: Build Linux installer artifact once
+    if: github.repository == 'netkeep80/WebAssistant' && (github.event_name == 'pull_request' || (github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && vars.ALT_CACHE_PUBLICATION_APPROVED == 'true'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Ensure ZIP builder dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v zip >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y zip
+          fi
+
+      - name: Create isolated product export root
+        shell: bash
+        run: |
+          set -euo pipefail
+          export_root="$RUNNER_TEMP/webassistant-linux-export-root"
+          rm -rf -- "$export_root"
+          mkdir -p -- "$export_root"
+          cp -a "$GITHUB_WORKSPACE/webassist/." "$export_root/"
+
+          test -f "$export_root/WebAssistant.sln"
+          test -f "$export_root/.gitlab-ci.yml"
+          test -f "$export_root/README.md"
+          test -x "$export_root/build/linux/package.sh"
+          test -f "$export_root/build/common/default-appsettings.json"
+          test -f "$export_root/build/common/write-provenance.sh"
+
+          echo "WEBASSISTANT_EXPORT_ROOT=$export_root" >> "$GITHUB_ENV"
+
+      - name: Build canonical versioned ZIP and evidence
+        shell: bash
+        env:
+          WEBASSISTANT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          output_root="$RUNNER_TEMP/webassistant-linux-artifacts"
+          rm -rf -- "$output_root"
+          mkdir -p -- "$output_root"
+          "$WEBASSISTANT_EXPORT_ROOT/build/linux/package.sh" "$output_root"
+
+          version="$(tr -d '\r\n' < "$WEBASSISTANT_EXPORT_ROOT/VERSION")"
+          artifact="$output_root/WebAssistant-linux-x64-${version}.zip"
+          test -f "$artifact"
+          test -f "${artifact}.sha256"
+          test -f "${artifact}.provenance.json"
+
+      - name: Upload immutable Linux installer bytes
+        uses: actions/upload-artifact@v4
+        with:
+          name: webassistant-linux-installer-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/webassistant-linux-artifacts/WebAssistant-linux-x64-*.zip
+            ${{ runner.temp }}/webassistant-linux-artifacts/WebAssistant-linux-x64-*.zip.sha256
+            ${{ runner.temp }}/webassistant-linux-artifacts/WebAssistant-linux-x64-*.zip.provenance.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Cleanup producer workspace
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          [[ -z "${WEBASSISTANT_EXPORT_ROOT:-}" ]] || rm -rf -- "$WEBASSISTANT_EXPORT_ROOT"
+          rm -rf -- "$RUNNER_TEMP/webassistant-linux-artifacts"
+
+  prepare:
+    if: ${{ needs.build-linux-installer.result == 'success' }}
+    name: ALT ${{ matrix.platform }} verified export
+    needs: build-linux-installer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [p10, p11]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Проверки протоколов снимка и публикации
+        run: |
+          bash -n tests/linux-systemd/cache/publish-cache-pair.sh
+          bash -n tests/linux-systemd/cache/run-cache-lifecycle.sh
+          python3 -m unittest discover -s tests/linux-systemd/cache -p 'test_*.py'
+      - uses: actions/download-artifact@v4
+        with:
+          name: webassistant-linux-installer-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/webassistant-linux-artifacts
+      - name: Проверенный локальный экспорт
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          artifact="$(find "$RUNNER_TEMP/webassistant-linux-artifacts" -maxdepth 1 -type f -name 'WebAssistant-linux-x64-*.zip' -print -quit)"
+          [[ -n "$artifact" ]]
+          bash tests/linux-systemd/cache/run-cache-lifecycle.sh "$PLATFORM" "$artifact" "$RUNNER_TEMP/alt-cache-evidence" "$RUNNER_TEMP/alt-cache-export"
+      - name: Малые свидетельства
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alt-cache-producer-evidence-${{ matrix.platform }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/alt-cache-evidence/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Временная передача проверенного образа
+        if: github.repository == 'netkeep80/WebAssistant' && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && vars.ALT_CACHE_PUBLICATION_APPROVED == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: alt-cache-export-${{ matrix.platform }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/alt-cache-export/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    if: github.repository == 'netkeep80/WebAssistant' && github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && vars.ALT_CACHE_PUBLICATION_APPROVED == 'true' && needs.prepare.result == 'success'
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: alt-cache-export-p10-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/alt-cache-pair/p10
+      - uses: actions/download-artifact@v4
+        with:
+          name: alt-cache-export-p11-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/alt-cache-pair/p11
+      - name: Публикация проверенной пары
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALT_CACHE_PUBLICATION_APPROVED: ${{ vars.ALT_CACHE_PUBLICATION_APPROVED }}
+        run: bash tests/linux-systemd/cache/publish-cache-pair.sh "$RUNNER_TEMP/alt-cache-pair"

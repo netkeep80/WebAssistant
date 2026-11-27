@@ -194,6 +194,27 @@ public sealed class CiWorkflowContractTests
     }
 
     [Fact]
+    public void AltCacheProducer_SeparatesPreparationAndTrustedPublication()
+    {
+        var root = FindRepositoryRoot();
+        var workflow = ReadRequired(Path.Combine(root, ".github", "workflows", "alt-cache-publish.yml"));
+        Assert.Contains("github.ref == 'refs/heads/main'", workflow, StringComparison.Ordinal);
+        Assert.Contains("vars.ALT_CACHE_PUBLICATION_APPROVED == 'true'", workflow, StringComparison.Ordinal);
+        Assert.Contains("needs.prepare.result == 'success'", workflow, StringComparison.Ordinal);
+        Assert.Contains("retention-days: 1", workflow, StringComparison.Ordinal);
+        Assert.Contains("cancel-in-progress: false", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("pull_request_target:", workflow, StringComparison.Ordinal);
+        var publishIndex = workflow.IndexOf("  publish:", StringComparison.Ordinal);
+        Assert.True(publishIndex > 0);
+        Assert.DoesNotContain("packages: write", workflow[..publishIndex], StringComparison.Ordinal);
+        Assert.Contains("packages: write", workflow[publishIndex..], StringComparison.Ordinal);
+        var script = ReadRequired(Path.Combine(root, "tests", "linux-systemd", "cache", "publish-cache-pair.sh"));
+        Assert.Contains("docker pull", script, StringComparison.Ordinal);
+        Assert.Contains("pair_ref:ready", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("docker run", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AltP11Acceptance_KeepsFiniteFortyFiveMinuteHangGuard()
     {
         var root = FindRepositoryRoot();

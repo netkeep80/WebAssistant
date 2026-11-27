@@ -181,7 +181,7 @@ PY
         # Упаковываем только данные снимка поверх чистого официального образа.
         pack="$(docker create --pull=never --network none "$base_id" /bin/true)"
         docker cp "$snapshot" "$pack:/wa-ci-snapshot"
-        docker commit "$pack" "$tag" >/dev/null
+        docker commit --change 'LABEL org.opencontainers.image.source=https://github.com/netkeep80/WebAssistant' "$pack" "$tag" >/dev/null
         docker rm "$pack" >/dev/null
         pack=""
         cache_id="$(docker image inspect -f '{{.Id}}' "$tag")"
@@ -215,3 +215,15 @@ PY
 done
 cmp "$evidence/record-inventory.txt" "$evidence/replay-inventory.txt"
 echo "ALT_CACHE_FULL_LIFECYCLE_EQUIVALENCE=PASS platform=$platform"
+# Экспорт только после полного успешного record/replay и сравнения inventory.
+if [[ -n "${4:-}" ]]; then
+    output="$(realpath -m "$4")"
+    mkdir -p "$output"
+    [[ -z "$(find "$output" -mindepth 1 -maxdepth 1 -print -quit)" ]]
+    cp "$work/cache.tar" "$output/cache.tar"
+    python3 tests/linux-systemd/cache/cache-publication.py receipt \
+        "$platform" "$source_sha" "$output" "$evidence"
+    python3 tests/linux-systemd/cache/cache-publication.py verify \
+        "$platform" "$source_sha" "$output"
+    echo "ALT_CACHE_EXPORT_VERIFIED=PASS platform=$platform"
+fi
