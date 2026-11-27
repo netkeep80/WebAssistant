@@ -125,4 +125,8 @@ inside_version="$(tr -d '\r\n' < "$payload_root/VERSION")"
 
 bash "$script_dir/run-systemd-acceptance.sh" "$payload_root"
 
-echo "linux_installer_artifact_acceptance=PASS"
+case "${ALT_ACCEPTANCE_SCOPE:-all}" in
+    all) echo "linux_installer_artifact_acceptance=PASS" ;;
+    p10|p11) printf 'linux_installer_artifact_scope_acceptance=PASS scope=%s\n' "$ALT_ACCEPTANCE_SCOPE" ;;
+    *) exit 2 ;;
+esac
