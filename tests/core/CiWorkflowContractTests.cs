@@ -171,6 +171,29 @@ public sealed class CiWorkflowContractTests
     }
 
     [Fact]
+    public void AltCacheLifecycle_IsReadOnlyAndOptIn()
+    {
+        var root = FindRepositoryRoot();
+        var workflow = ReadRequired(Path.Combine(root, ".github", "workflows", "alt-cache-lifecycle.yml"));
+        Assert.Contains("contents: read", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("packages: write", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("pull_request_target:", workflow, StringComparison.Ordinal);
+        Assert.Contains("platform: [p10, p11]", workflow, StringComparison.Ordinal);
+        var script = ReadRequired(Path.Combine(root, "tests", "linux-systemd", "cache", "run-cache-lifecycle.sh"));
+        Assert.Contains("for mode in record replay; do", script, StringComparison.Ordinal);
+        Assert.Contains("docker save", script, StringComparison.Ordinal);
+        Assert.Contains("docker load", script, StringComparison.Ordinal);
+        Assert.Contains("cmp \"$evidence/base-rpms.txt\" \"$evidence/cache-rpms.txt\"", script, StringComparison.Ordinal);
+        Assert.Contains("cmp \"$evidence/record-inventory.txt\" \"$evidence/replay-inventory.txt\"", script, StringComparison.Ordinal);
+        Assert.Contains("ALT_CACHE_FULL_LIFECYCLE_EQUIVALENCE=PASS", script, StringComparison.Ordinal);
+        var harness = ReadRequired(Path.Combine(root, "tests", "linux-systemd", "run-systemd-acceptance.sh"));
+        Assert.Contains("p10_pull=always", harness, StringComparison.Ordinal);
+        Assert.Contains("p10_pull=never", harness, StringComparison.Ordinal);
+        Assert.Contains("cache_network reboot", harness, StringComparison.Ordinal);
+        Assert.Contains("docker build --pull", harness, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AltP11Acceptance_KeepsFiniteFortyFiveMinuteHangGuard()
     {
         var root = FindRepositoryRoot();
