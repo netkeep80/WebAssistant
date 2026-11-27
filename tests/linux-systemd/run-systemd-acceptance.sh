@@ -15,6 +15,39 @@ TEST_IMAGE="webassistant-alt-p11-systemd:${GITHUB_RUN_ID:-local}-${GITHUB_RUN_AT
 PORT=17654
 LOG_DIR="/var/log/webassistant"
 DATA_DIR="/var/lib/webassistant"
+cache_args=()
+p10_image=registry.altlinux.org/p10/alt:latest
+p10_pull=always
+prep_container=""
+if [[ -n "${ALT_CACHE_NETNS:-}" || -n "${ALT_CACHE_BASE_IMAGE:-}" || -n "${ALT_CACHE_CONFIG:-}" ]]; then
+    [[ "$ALT_ACCEPTANCE_SCOPE" == p10 || "$ALT_ACCEPTANCE_SCOPE" == p11 ]]
+    [[ "${ALT_CACHE_BASE_IMAGE:-}" =~ ^sha256:[0-9a-f]{64}$ ]]
+    [[ "${ALT_CACHE_NETNS:-}" =~ ^[0-9a-f]{64}$ && -f "${ALT_CACHE_CONFIG:-}" ]]
+    [[ "$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$ALT_CACHE_NETNS")" == none ]]
+    cache_args=(--network "container:$ALT_CACHE_NETNS" --env APT_CONFIG=/etc/apt/webassistant-snapshot.conf
+        --env http_proxy=http://127.0.0.1:18765/ --env no_proxy=127.0.0.1,localhost
+        --env NO_PROXY=127.0.0.1,localhost --env ALT_CACHE_INVENTORY=1
+        --volume "$ALT_CACHE_CONFIG:/etc/apt/webassistant-snapshot.conf:ro")
+    p10_image="$ALT_CACHE_BASE_IMAGE"
+    p10_pull=never
+fi
+
+cache_network() {
+    if ((${#cache_args[@]})); then
+        local target anchor
+        target="$(docker inspect -f '{{.State.Pid}}' "$CONTAINER_NAME")"
+        anchor="$(docker inspect -f '{{.State.Pid}}' "$ALT_CACHE_NETNS")"
+        [[ "$target" != 0 && "$anchor" != 0 ]]
+        [[ "$(sudo -n readlink "/proc/$target/ns/net")" == "$(sudo -n readlink "/proc/$anchor/ns/net")" ]]
+        echo "ALT_CACHE_P11_SHARED_NETNS=PASS stage=$1"
+    fi
+}
+
+cache_inventory() {
+    if ((${#cache_args[@]})); then
+        docker exec "$1" rpm -qa --qf '%{NAME}\t%{EPOCH}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\n' | LC_ALL=C sort | sed "s/^/ALT_CACHE_RPM $2 /"
+    fi
+}
 
 if [[ -z "$PACKAGE_DIRECTORY" ]]; then
     echo "Использование: $0 <каталог распакованного product package>" >&2
@@ -24,6 +57,7 @@ PACKAGE_DIRECTORY="$(cd -- "$PACKAGE_DIRECTORY" && pwd)"
 
 cleanup() {
     set +e
+    if [[ -n "$prep_container" ]]; then docker rm -f "$prep_container" >/dev/null 2>&1 || true; fi
     docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
     docker image rm -f "$TEST_IMAGE" >/dev/null 2>&1 || true
 }
@@ -40,8 +74,8 @@ test -f "$PACKAGE_DIRECTORY/webassist.service"
 if [[ "$ALT_ACCEPTANCE_SCOPE" != p11 ]]; then
 p10_started=$SECONDS
 echo "ALT_TIMING_BEGIN phase=p10"
-docker run --pull=always --rm -i --volume "$PACKAGE_DIRECTORY:/webassistant-package:ro" \
-    registry.altlinux.org/p10/alt:latest bash -s <<'P10'
+docker run --pull="$p10_pull" "${cache_args[@]}" --rm -i --volume "$PACKAGE_DIRECTORY:/webassistant-package:ro" \
+    "$p10_image" bash -s <<'P10'
 set -Eeuo pipefail
 trap 'rc=$?; printf "Ошибка проверки p10: строка %s, команда %s, код %s\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2; exit "$rc"' ERR
 for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do
@@ -50,6 +84,9 @@ for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do
 done
 apt-get update
 apt-get install -y shadow-utils
+if [[ "${ALT_CACHE_INVENTORY:-}" == 1 ]]; then
+    rpm -qa --qf '%{NAME}\t%{EPOCH}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\n' | LC_ALL=C sort | sed 's/^/ALT_CACHE_RPM before-product /'
+fi
 if rpm -q sane-airscan; then
     echo "Для проверки первой установки p10 нужен контейнер без sane-airscan." >&2
     exit 1
@@ -70,6 +107,9 @@ else
     echo "p10_initial_ctypes=missing"
 fi
 ensure_webassistant_runtime_dependencies
+if [[ "${ALT_CACHE_INVENTORY:-}" == 1 ]]; then
+    rpm -qa --qf '%{NAME}\t%{EPOCH}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\n' | LC_ALL=C sort | sed 's/^/ALT_CACHE_RPM after-product /'
+fi
 rpm -q sane-airscan
 rpm -q --scripts sane-airscan
 rpm -q --queryformat '[%{FILENAMES}\t%{FILEFLAGS:fflags}\n]' sane-airscan
@@ -184,6 +224,9 @@ webassistant_airscan_loadable "$(webassistant_airscan_library)" webassist
 PATH="/tmp/webassistant-fail-apt:$PATH" ensure_webassistant_runtime_dependencies
 [[ ! -e "$pending" ]]
 echo "alt_p10_clean_registration=PASS"
+if [[ "${ALT_CACHE_INVENTORY:-}" == 1 ]]; then
+    rpm -qa --qf '%{NAME}\t%{EPOCH}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\n' | LC_ALL=C sort | sed 's/^/ALT_CACHE_RPM final /'
+fi
 P10
 printf 'ALT_TIMING_END phase=p10 seconds=%s\n' "$((SECONDS - p10_started))"
 echo "alt_p10_scope_acceptance=PASS"
@@ -212,11 +255,30 @@ CMD ["/sbin/init"]
 EOF
 
 p11_build_started=$SECONDS
-docker build --pull --tag "$TEST_IMAGE" "$build_context"
+if ((${#cache_args[@]})); then
+    # Те же команды подготовки, но APT работает в изолированном netns.
+    prep_container="$(docker create --pull=never "${cache_args[@]}" "$ALT_CACHE_BASE_IMAGE" bash -c '
+        set -eu
+        for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do
+            [ -f "$source" ] || continue
+            sed -i "\\|p11/branch/x86_64-i586[[:space:]]|d" "$source"
+        done
+        apt-get update
+        apt-get install -y systemd curl iproute2 procps shadow-utils findutils
+        apt-get clean
+    ')"
+    docker start -a "$prep_container"
+    [[ "$(docker inspect -f '{{.State.ExitCode}}' "$prep_container")" == 0 ]]
+    docker commit --change 'STOPSIGNAL SIGRTMIN+3' --change 'CMD ["/sbin/init"]' "$prep_container" "$TEST_IMAGE"
+    docker rm "$prep_container" >/dev/null
+    prep_container=""
+else
+    docker build --pull --tag "$TEST_IMAGE" "$build_context"
+fi
 printf 'ALT_TIMING_END phase=p11-image seconds=%s\n' "$((SECONDS - p11_build_started))"
 rm -rf -- "$build_context"
 
-docker run --detach \
+docker run --detach "${cache_args[@]}" \
     --name "$CONTAINER_NAME" \
     --privileged \
     --cgroupns=host \
@@ -229,10 +291,12 @@ for attempt in {1..30}; do
     sleep 1
 done
 
+cache_network initial
 docker exec "$CONTAINER_NAME" mkdir -p /webassistant-package
 docker cp "$PACKAGE_DIRECTORY/." "$CONTAINER_NAME:/webassistant-package/"
 
 # Проверяем первую установку RPM поверх заранее заданной административной конфигурации.
+cache_inventory "$CONTAINER_NAME" before-product
 if docker exec "$CONTAINER_NAME" rpm -q sane-airscan; then
     echo "Для проверки первой установки нужен контейнер без sane-airscan." >&2
     exit 1
@@ -264,6 +328,7 @@ if ! docker exec "$CONTAINER_NAME" /webassistant-package/install.sh; then
     exit 1
 fi
 
+cache_inventory "$CONTAINER_NAME" after-product
 docker exec "$CONTAINER_NAME" rpm -q libicu74
 docker exec "$CONTAINER_NAME" rpm -q libgtk+3
 docker exec "$CONTAINER_NAME" rpm -q libsane
@@ -493,6 +558,7 @@ docker exec "$CONTAINER_NAME" bash -c '
     webassistant_begin_airscan_transaction /etc/sane.d.webassistant-airscan-pending "$before"
 '
 docker restart "$CONTAINER_NAME" >/dev/null
+cache_network reboot
 for attempt in {1..30}; do
     if docker exec "$CONTAINER_NAME" systemctl show --property=Version >/dev/null 2>&1; then break; fi
     sleep 1
@@ -536,5 +602,6 @@ fi
 assert_no_listener
 assert_sane_configuration_preserved
 
+cache_inventory "$CONTAINER_NAME" final
 echo "alt_p11_systemd_acceptance=PASS"
 printf 'ALT_TIMING_END phase=p11 seconds=%s\n' "$((SECONDS - p11_started))"
