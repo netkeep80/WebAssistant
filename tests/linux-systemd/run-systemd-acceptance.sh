@@ -296,6 +296,25 @@ assert_service_enabled_active
 service_user="$(docker exec "$CONTAINER_NAME" systemctl show webassist.service --property=User --value)"
 [[ "$service_user" == "webassist" ]] || { echo "Неожиданный service user: $service_user" >&2; exit 1; }
 
+# Сохраняем первичную причину отказа до удаления контейнера.
+service_failure_evidence() {
+    docker exec "$CONTAINER_NAME" systemctl show webassist.service \
+        -p Result -p ExecMainStatus -p ExecMainCode -p ActiveState -p SubState \
+        -p StartLimitIntervalUSec -p StartLimitBurst -p NRestarts >&2 || true
+    docker exec "$CONTAINER_NAME" systemctl status webassist.service --no-pager >&2 || true
+    docker exec "$CONTAINER_NAME" journalctl -u webassist.service -n 100 --no-pager >&2 || true
+}
+
+service_action() {
+    if docker exec "$CONTAINER_NAME" systemctl "$@" webassist.service; then
+        return 0
+    else
+        local rc=$?
+        service_failure_evidence
+        return "$rc"
+    fi
+}
+
 wait_for_health() {
     for attempt in {1..30}; do
         if docker exec "$CONTAINER_NAME" curl --fail --silent --show-error \
@@ -386,8 +405,10 @@ for warning in warnings:
 fixture_id = "wa2-sane-kB7oUFx_zHPkiRHt"
 if phase in ("default", "restored"):
     require(fixture_id not in ids, "Отключённый тестовый AirScan не должен обнаруживаться")
-elif phase == "isolated-positive":
+elif phase in ("isolated-positive", "refresh-restart"):
     require(ids == {fixture_id} and warnings == [], "Ожидалась только явно зарегистрированная тестовая конечная точка")
+elif phase.startswith("refresh-live-"):
+    require(ids in (set(), {fixture_id}) and warnings == [], "Неожиданный результат живого перечня")
 elif phase == "isolated-empty":
     require(scanners == [] and warnings == [], "Изолированное перечисление должно вернуть пустые массивы")
 print("scanner_listing_" + phase + "=PASS count=" + str(len(scanners)))
@@ -426,7 +447,7 @@ docker exec "$CONTAINER_NAME" bash -c '
 positive_native="$(docker exec "$CONTAINER_NAME" runuser -u webassist -- env SANE_CONFIG_DIR=/run/webassistant-sane-empty SANE_DEBUG_DLL=5 scanimage -f '%d%n')"
 [[ "$positive_native" == 'airscan:e0:Fixture' ]] || { echo "Не воспроизведена регистрация из rpmnew: $positive_native" >&2; exit 1; }
 docker exec "$CONTAINER_NAME" systemctl daemon-reload
-docker exec "$CONTAINER_NAME" systemctl restart webassist.service
+service_action restart
 wait_for_health
 assert_scanner_listing isolated-positive
 docker exec "$CONTAINER_NAME" rm -- /run/webassistant-sane-empty/dll.d/airscan.rpmnew
@@ -434,15 +455,108 @@ empty_native="$(docker exec "$CONTAINER_NAME" runuser -u webassist -- env SANE_C
 printf 'p11: изолированное перечисление SANE: %s\n' "$empty_native"
 [[ -z "$empty_native" ]] || { echo "Изолированная конфигурация SANE не пуста." >&2; exit 1; }
 docker exec "$CONTAINER_NAME" systemctl daemon-reload
-docker exec "$CONTAINER_NAME" systemctl restart webassist.service
+service_action restart
 wait_for_health
 assert_scanner_listing isolated-empty
+
+# Исследовательская матрица B: тот же SANE_CONFIG_DIR, те же права и PID.
+# Допускаются оба результата живого listing; это наблюдение, а не приёмка исправления.
+refresh_pid="$(docker exec "$CONTAINER_NAME" systemctl show webassist.service --property=MainPID --value)"
+[[ "$refresh_pid" =~ ^[1-9][0-9]*$ ]]
+docker exec "$CONTAINER_NAME" bash -c 'printf "%s\n" airscan > /run/webassistant-sane-empty/dll.d/airscan'
+refresh_cli="$(docker exec "$CONTAINER_NAME" runuser -u webassist -- env SANE_CONFIG_DIR=/run/webassistant-sane-empty scanimage -f '%d%n')"
+[[ "$refresh_cli" == 'airscan:e0:Fixture' ]]
+printf 'B_HTTP_CLI=%s PID=%s\n' "$refresh_cli" "$refresh_pid"
+for attempt in 1 2 3; do
+    assert_scanner_listing "refresh-live-$attempt"
+    [[ "$(docker exec "$CONTAINER_NAME" systemctl show webassist.service --property=MainPID --value)" == "$refresh_pid" ]]
+    sleep 1
+done
+service_action restart
+wait_for_health
+[[ "$(docker exec "$CONTAINER_NAME" systemctl show webassist.service --property=MainPID --value)" != "$refresh_pid" ]]
+assert_scanner_listing refresh-restart
+echo 'B_HTTP_MATRIX=COMPLETE'
+
+# Независимый native probe: отдельный непривилегированный процесс, только временные файлы.
+docker exec -i "$CONTAINER_NAME" runuser -u webassist -- timeout 60s python3 - <<'B_NATIVE'
+import ctypes as c
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+class Device(c.Structure):
+    _fields_ = [(key, c.c_char_p) for key in ("name", "vendor", "model", "type")]
+
+with tempfile.TemporaryDirectory(prefix="webassistant-b-native-") as directory:
+    root = Path(directory)
+    (root / "dll.d").mkdir()
+    (root / "dll.conf").write_text("# empty\n")
+    registration = root / "dll.d" / "airscan"
+    registration.write_text("# airscan\n")
+    shutil.copyfile("/run/webassistant-sane-empty/airscan.conf", root / "airscan.conf")
+    os.environ["SANE_CONFIG_DIR"] = str(root)
+    sane = c.CDLL("libsane.so.1")
+    sane.sane_init.argtypes = [c.POINTER(c.c_int), c.c_void_p]
+    sane.sane_init.restype = c.c_int
+    sane.sane_exit.argtypes = []
+    sane.sane_exit.restype = None
+    device_list = c.POINTER(c.POINTER(Device))
+    sane.sane_get_devices.argtypes = [c.POINTER(device_list), c.c_int]
+    sane.sane_get_devices.restype = c.c_int
+
+    def init():
+        version = c.c_int()
+        status = sane.sane_init(c.byref(version), None)
+        assert status == 0, status
+        print("B_NATIVE_SANE_VERSION", version.value, flush=True)
+
+    def devices(label):
+        result = device_list()
+        status = sane.sane_get_devices(c.byref(result), 0)
+        assert status == 0, status
+        names = []
+        for i in range(100):
+            if not result[i]:
+                break
+            names.append(result[i].contents.name.decode())
+        else:
+            raise AssertionError("Unterminated device list")
+        print(label, names, flush=True)
+        return names
+
+    def cli():
+        result = subprocess.run(["scanimage", "-f", "%d%n"], check=True,
+                                capture_output=True, text=True, timeout=15)
+        return result.stdout.splitlines()
+
+    assert cli() == []
+    init()
+    try:
+        assert devices("B_NATIVE_INITIAL") == []
+        registration.write_text("airscan\n")
+        assert cli() == ["airscan:e0:Fixture"]
+        print("B_NATIVE_CLI_AFTER_EDIT=PASS", flush=True)
+        live = devices("B_NATIVE_SAME_SESSION")
+        assert live in ([], ["airscan:e0:Fixture"])
+    finally:
+        sane.sane_exit()
+    init()
+    try:
+        reset = devices("B_NATIVE_AFTER_EXIT_INIT")
+        assert reset in ([], ["airscan:e0:Fixture"])
+    finally:
+        sane.sane_exit()
+    print("B_NATIVE_MATRIX=COMPLETE", flush=True)
+B_NATIVE
 
 # Восстанавливаем штатное окружение до продолжения жизненного цикла.
 docker exec "$CONTAINER_NAME" rm -f /run/systemd/system/webassist.service.d/99-test-empty-sane.conf
 docker exec "$CONTAINER_NAME" rm -rf /run/webassistant-sane-empty
 docker exec "$CONTAINER_NAME" systemctl daemon-reload
-docker exec "$CONTAINER_NAME" systemctl restart webassist.service
+service_action restart
 wait_for_health
 assert_scanner_listing restored
 assert_sane_configuration_preserved
@@ -459,13 +573,46 @@ docker exec "$CONTAINER_NAME" rm -f /tmp/webassistant-scan-response
 docker exec "$CONTAINER_NAME" systemctl stop webassist.service
 assert_no_listener
 
-docker exec "$CONTAINER_NAME" systemctl start webassist.service
+service_action start
 wait_for_health
 assert_daily_log
 
-docker exec "$CONTAINER_NAME" systemctl restart webassist.service
+# Дополнительные исследовательские запуски могут исчерпать штатный лимит.
+# Любой другой отказ остаётся блокирующим; первичное свидетельство не теряется.
+if service_action restart; then
+    echo 'B_SYSTEMD_FINAL_RESTART=PASS_NO_REFUSAL'
+else
+    result="$(docker exec "$CONTAINER_NAME" systemctl show webassist.service -p Result --value)"
+    [[ "$result" == start-limit-hit ]] || exit 1
+    echo 'B_SYSTEMD_FINAL_RESTART=START_LIMIT_HIT'
+    # Только в одноразовом испытательном контейнере, без изменения модуля.
+    docker exec "$CONTAINER_NAME" systemctl reset-failed webassist.service
+    service_action restart
+    echo 'B_SYSTEMD_RATE_LIMIT_RECOVERY=PASS'
+fi
 wait_for_health
 assert_loopback_only
+
+# Управляемый SDK с реальным AirScan на той же ALT p11.
+# Сборка пробника отдельна от неизменных байтов установщика.
+probe_root="$(mktemp -d)"
+probe_project="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/research/SaneRefreshProbe.csproj"
+probe_sdk="$(dotnet --list-sdks | awk '$1 ~ /^10\.[0-9]+\.[0-9]+$/ {print $1}' | sort -V | tail -n 1)"
+[[ -n "$probe_sdk" ]] || { echo "Для исследовательского пробника необходим .NET SDK 10 на runner." >&2; exit 1; }
+printf '{"sdk":{"version":"%s","rollForward":"disable"}}\n' "$probe_sdk" > "$probe_root/global.json"
+(
+    cd "$probe_root"
+    echo "B_ALT_PROBE_SDK=$(dotnet --version)"
+    dotnet publish "$probe_project" -c Release -r linux-x64 --self-contained true -o "$probe_root/publish"
+)
+docker exec "$CONTAINER_NAME" mkdir -p /opt/webassistant-research-probe
+docker cp "$probe_root/publish/." "$CONTAINER_NAME:/opt/webassistant-research-probe/"
+rm -rf -- "$probe_root"
+docker exec "$CONTAINER_NAME" chmod -R a+rX /opt/webassistant-research-probe
+probe_config="$(docker exec "$CONTAINER_NAME" runuser -u webassist -- mktemp -d /tmp/webassistant-b-managed.XXXXXX)"
+docker exec "$CONTAINER_NAME" runuser -u webassist -- env SANE_CONFIG_DIR="$probe_config" timeout 90s \
+    /opt/webassistant-research-probe/SaneRefreshProbe /opt/webassist
+docker exec "$CONTAINER_NAME" rm -rf -- /opt/webassistant-research-probe "$probe_config"
 
 # Свидетельство прерванной операции должно пережить перезапуск контейнера.
 docker exec "$CONTAINER_NAME" bash -c '
