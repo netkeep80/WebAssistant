@@ -142,6 +142,35 @@ public sealed class CiWorkflowContractTests
     }
 
     [Fact]
+    public void AltAcceptance_RunsBothPlatformScopesWithoutFailFast()
+    {
+        var root = FindRepositoryRoot();
+        var workflows = Path.Combine(root, ".github", "workflows");
+        foreach (var file in new[] { "linux-systemd.yml", "installer-acceptance.yml" })
+        {
+            var workflow = ReadRequired(Path.Combine(workflows, file));
+            Assert.Contains("fail-fast: false", workflow, StringComparison.Ordinal);
+            Assert.Contains("platform: [p10, p11]", workflow, StringComparison.Ordinal);
+            Assert.Contains("ALT_ACCEPTANCE_SCOPE: ${{ matrix.platform }}", workflow, StringComparison.Ordinal);
+            Assert.Contains("tests/linux-systemd/run-installer-acceptance.sh", workflow, StringComparison.Ordinal);
+            Assert.DoesNotContain("continue-on-error:", workflow, StringComparison.Ordinal);
+        }
+
+        var harness = ReadRequired(Path.Combine(root, "tests", "linux-systemd", "run-systemd-acceptance.sh"));
+        Assert.Contains("ALT_ACCEPTANCE_SCOPE=\"${ALT_ACCEPTANCE_SCOPE:-all}\"", harness, StringComparison.Ordinal);
+        Assert.Contains("all|p10|p11)", harness, StringComparison.Ordinal);
+        Assert.Contains("exit 2", harness, StringComparison.Ordinal);
+        Assert.Contains("if [[ \"$ALT_ACCEPTANCE_SCOPE\" != p11 ]]; then", harness, StringComparison.Ordinal);
+        Assert.Contains("if [[ \"$ALT_ACCEPTANCE_SCOPE\" == p10 ]]; then", harness, StringComparison.Ordinal);
+        Assert.Contains("alt_p10_scope_acceptance=PASS", harness, StringComparison.Ordinal);
+        Assert.Contains("alt_p11_systemd_acceptance=PASS", harness, StringComparison.Ordinal);
+
+        var consumer = ReadRequired(Path.Combine(root, "tests", "linux-systemd", "run-installer-acceptance.sh"));
+        Assert.Contains("all) echo \"linux_installer_artifact_acceptance=PASS\"", consumer, StringComparison.Ordinal);
+        Assert.Contains("p10|p11) printf", consumer, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AltP11Acceptance_KeepsFiniteFortyFiveMinuteHangGuard()
     {
         var root = FindRepositoryRoot();

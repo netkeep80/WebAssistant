@@ -3,6 +3,11 @@ set -Eeuo pipefail
 trap 'rc=$?; printf "Ошибка проверки ALT: строка %s, команда %s, код %s\n" "$LINENO" "$BASH_COMMAND" "$rc" >&2; exit "$rc"' ERR
 
 PACKAGE_DIRECTORY="${1:-}"
+ALT_ACCEPTANCE_SCOPE="${ALT_ACCEPTANCE_SCOPE:-all}"
+case "$ALT_ACCEPTANCE_SCOPE" in
+    all|p10|p11) ;;
+    *) echo "Недопустимый режим ALT acceptance: $ALT_ACCEPTANCE_SCOPE" >&2; exit 2 ;;
+esac
 ALT_IMAGE="${ALT_IMAGE:-registry.altlinux.org/p11/alt:latest}"
 ALT_I586_REPOSITORY='p11/branch/x86_64-i586'
 CONTAINER_NAME="webassistant-alt-p11-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
@@ -32,6 +37,9 @@ test -x "$PACKAGE_DIRECTORY/uninstall.sh"
 test -f "$PACKAGE_DIRECTORY/webassist.service"
 
 # Отдельная пакетная проверка p10: это не приёмка физической ALT 10.1.
+if [[ "$ALT_ACCEPTANCE_SCOPE" != p11 ]]; then
+p10_started=$SECONDS
+echo "ALT_TIMING_BEGIN phase=p10"
 docker run --pull=always --rm -i --volume "$PACKAGE_DIRECTORY:/webassistant-package:ro" \
     registry.altlinux.org/p10/alt:latest bash -s <<'P10'
 set -Eeuo pipefail
@@ -177,7 +185,16 @@ PATH="/tmp/webassistant-fail-apt:$PATH" ensure_webassistant_runtime_dependencies
 [[ ! -e "$pending" ]]
 echo "alt_p10_clean_registration=PASS"
 P10
+printf 'ALT_TIMING_END phase=p10 seconds=%s\n' "$((SECONDS - p10_started))"
+echo "alt_p10_scope_acceptance=PASS"
+fi
 
+if [[ "$ALT_ACCEPTANCE_SCOPE" == p10 ]]; then
+    exit 0
+fi
+
+p11_started=$SECONDS
+echo "ALT_TIMING_BEGIN phase=p11"
 build_context="$(mktemp -d)"
 trap 'rm -rf -- "$build_context"; cleanup' EXIT
 cat >"$build_context/Dockerfile" <<EOF
@@ -194,7 +211,9 @@ STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]
 EOF
 
+p11_build_started=$SECONDS
 docker build --pull --tag "$TEST_IMAGE" "$build_context"
+printf 'ALT_TIMING_END phase=p11-image seconds=%s\n' "$((SECONDS - p11_build_started))"
 rm -rf -- "$build_context"
 
 docker run --detach \
@@ -518,3 +537,4 @@ assert_no_listener
 assert_sane_configuration_preserved
 
 echo "alt_p11_systemd_acceptance=PASS"
+printf 'ALT_TIMING_END phase=p11 seconds=%s\n' "$((SECONDS - p11_started))"

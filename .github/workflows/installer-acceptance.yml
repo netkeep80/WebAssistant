@@ -22,10 +22,14 @@ permissions:
 
 jobs:
   linux-installer-acceptance:
-    name: ALT p11 historical artifact lifecycle
+    name: ALT ${{ matrix.platform }} artifact acceptance
     if: ${{ inputs.run_linux }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [p10, p11]
     steps:
       - name: Checkout acceptance harness
         uses: actions/checkout@v6
@@ -49,6 +53,7 @@ jobs:
         shell: bash
         env:
           ALT_IMAGE: registry.altlinux.org/p11/alt:latest
+          ALT_ACCEPTANCE_SCOPE: ${{ matrix.platform }}
         run: |
           set -euo pipefail
           artifact="$(find "$RUNNER_TEMP/webassistant-linux-artifacts" -maxdepth 1 -type f -name 'WebAssistant-linux-x64-*.zip' -print -quit)"
