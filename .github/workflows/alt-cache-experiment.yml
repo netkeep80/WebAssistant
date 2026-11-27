@@ -1,0 +1,41 @@
+name: ALT cache experiment
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'tests/linux-systemd/cache/**'
+      - '.github/workflows/alt-cache-experiment.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    name: ALT ${{ matrix.platform }} snapshot record-replay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [p10, p11]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Проверка протокола снимка
+        run: python3 -m unittest discover -s tests/linux-systemd/cache -p 'test_*.py'
+      - name: Запись и воспроизведение настоящих RPM-транзакций
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: bash tests/linux-systemd/cache/run-snapshot-experiment.sh "$PLATFORM" "$RUNNER_TEMP/alt-cache-evidence"
+      - name: Сохранить только свидетельства
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alt-cache-evidence-${{ matrix.platform }}-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/alt-cache-evidence/
+          if-no-files-found: warn
+          retention-days: 7
