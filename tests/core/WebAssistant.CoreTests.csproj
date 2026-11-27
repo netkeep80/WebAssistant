@@ -4,6 +4,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <!-- Явный журнал исследовательских virtual-SANE испытаний без изменения workflow. -->
+    <VSTestLogger Condition="'$(WEBASSISTANT_LINUX_VIRTUAL)' == '1' and '$(VSTestLogger)' == ''">console%3Bverbosity=detailed</VSTestLogger>
     <AssemblyName>WebAssistant.CoreTests</AssemblyName>
     <RestoreAdditionalProjectSources>$(MSBuildThisFileDirectory)../../webassist/vendor/nuget</RestoreAdditionalProjectSources>
   </PropertyGroup>
